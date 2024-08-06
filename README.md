@@ -12,10 +12,10 @@ C# class that has all the methods to communicate with the WSS and software speci
 1. This only applies if the changes were made to the submodule, otherwise just commit as normal.
 2. Inside of the git Desktop a warning will appear that says there are submodule chnages.
 3. Changes to submodules must be commited first in the submodules repo.
-4. If the submodule repo is already setup, just click open repository shorcurt under the submodule changes warning.
+4. If the submodule repo is already setup, just click open repository shortcut under the submodule changes warning.
 5. If it is not setup, click the shortcut to add it to Git Desktop.
-6. Once in the submodule repo, commit the changes as normal
-7. Return to the main repo and commit the changes there. 
+6. Once in the submodule repo, commit the changes as normal.
+7. Return to the main repo and commit the changes there (The chnage in commit ID will be not be selected by default. select it and then commit). 
 
 ## How to commit a git porject that has submodules (Git CMD)
 
