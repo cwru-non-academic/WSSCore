@@ -13,6 +13,8 @@ public class Stimulation : MonoBehaviour
     [SerializeField] private bool testMode = true;
     [SerializeField] private string comPort = "COM7";
 
+    private const float delay = 0.1f;// delay between mesages to the WSS to avoid congestion on the radio
+
     public bool started = false;
     private bool ready = false;
     private bool editor = false;
@@ -39,19 +41,24 @@ public class Stimulation : MonoBehaviour
     public void Start()
     {
         editor = Application.isEditor;
+    }
 
+    void OnEnable()
+    {
         if ((editor || Application.platform == RuntimePlatform.WindowsPlayer) && !testMode) //runs USB mode only on editor mode or windows mode 
         {
             if (!forcePort) //overide useful when multiple ports
             {
                 WSS = new SerialToWSS();
-            } else
+            }
+            else
             {
                 WSS = new SerialToWSS(comPort);
             }
             NormalSetup();
             running = true;
-        } else if (testMode)
+        }
+        else if (testMode)
         {
             running = false;
         }
@@ -76,7 +83,16 @@ public class Stimulation : MonoBehaviour
 
     void OnDestroy()
     {
+        
+    }
+
+    void OnDisable()
+    {
         running = false;
+        WSS.stream_change(new int[] { AmpTo255Convention(ch1Amp), AmpTo255Convention(ch2Amp), AmpTo255Convention(ch3Amp) },
+            new int[] { 0, 0, 0 }, null);
+        WSS.releaseCOM_port();
+        ready = false;
     }
 
     #region "Stimulation methods"
@@ -176,8 +192,6 @@ public class Stimulation : MonoBehaviour
     {
         //gnd is first electrode 
         // thumb index middle
-        //
-        float delay = 0.1f;
         WSS.clear(0); //clear everything to make sure setup is correct
         yield return new WaitForSeconds(delay);
         WSS.create_schedule(1, 13, 170); //create a schedule to be sync with the 170 int signal  //13ms is period so freq of about 77Hz
@@ -268,16 +282,24 @@ public class Stimulation : MonoBehaviour
         if (ready)
         {
             ready = false;
-            StartCoroutine(DelayReadyCoroutine());
+            if (IPD > 1000)
+            {
+                IPD = 1000;
+            }
+            current_IPD = IPD;
+            StartCoroutine(UpdateIPDCoroutine());
         }
-        if (IPD > 1000)
-        {
-            IPD = 1000;
-        }
-        current_IPD = IPD;
-        WSS.edit_event_PW(1, new int[] { 0, 0, current_IPD}); //edit ch 1
+    }
+
+    IEnumerator UpdateIPDCoroutine()
+    {
+        WSS.edit_event_PW(1, new int[] { 0, 0, current_IPD }); //edit ch 1
+        yield return new WaitForSeconds(delay);
         WSS.edit_event_PW(2, new int[] { 0, 0, current_IPD }); //edit ch 2
+        yield return new WaitForSeconds(delay);
         WSS.edit_event_PW(3, new int[] { 0, 0, current_IPD }); //edit ch 3
+        yield return new WaitForSeconds(delay);
+        ready = true;
     }
 
     public void UpdateFrequency(int FR) //in Hz (1-1000Hz) might be further limited by PW duration
@@ -328,7 +350,6 @@ public class Stimulation : MonoBehaviour
 
     IEnumerator UpdateWaveformCoroutine(WaveformBuilder wave, int eventID)
     {
-        float delay = 0.1f;
         WSS.set_costume_waveform(1, wave.getCatShapeArray()[0..^24], 0);
         yield return new WaitForSeconds(delay);
         WSS.set_costume_waveform(1, wave.getCatShapeArray()[8..^16], 1);

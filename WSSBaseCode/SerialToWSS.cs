@@ -74,6 +74,21 @@ public class SerialToWSS
         errorMsgStartUp();
     }
 
+    //destructor
+    ~SerialToWSS()
+    {
+        //close the serial port once the class gets garbage collected
+        //(avoid the port being still open when the program is not running anymore,
+        //so other programs or another instance of this program can use the serial port)
+        if (stream != null)
+        {
+            if (stream.IsOpen)
+            {
+                stream.Close(); 
+            }
+        }
+    }
+
     private void errorMsgStartUp()
     {
         msgs = new List<string>();
@@ -110,27 +125,23 @@ public class SerialToWSS
 
     #endregion
 
-    //destructor
-    ~SerialToWSS()
-    {
-        //close the serial port once the class gets garbage collected
-        //(avoid the port being still open when the program is not running anymore,
-        //so other programs or another instance of this program can use the serial port)
-        if (stream != null)
-        {
-            if (stream.IsOpen)
-            {
-                stream.Close(); 
-            }
-        }
-    }
-   
     #region com_port_methods
-    void WriteToWSS(byte[] message, int lenght)
+    private void WriteToWSS(byte[] message, int lenght)
     {
         //msgs.Add(ByteToString(message, lenght)); //debug to see byte output
         stream.Write(message, 0, lenght); 
         stream.BaseStream.Flush();
+    }
+
+    public void releaseCOM_port()
+    {
+        if (stream != null)
+        {
+            if (stream.IsOpen)
+            {
+                stream.Close();
+            }
+        }
     }
 
     //pick first com port in list so if multiple com ports use overide (set desired port in contructor in the form "COMX")
