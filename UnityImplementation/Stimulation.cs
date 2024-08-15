@@ -40,11 +40,12 @@ public class Stimulation : MonoBehaviour
     // Start is called before the first frame update
     public void Start()
     {
-        editor = Application.isEditor;
+        
     }
 
     void OnEnable()
     {
+        editor = Application.isEditor;
         if ((editor || Application.platform == RuntimePlatform.WindowsPlayer) && !testMode) //runs USB mode only on editor mode or windows mode 
         {
             if (!forcePort) //overide useful when multiple ports
