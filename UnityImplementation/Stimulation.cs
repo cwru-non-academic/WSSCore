@@ -367,7 +367,7 @@ public class Stimulation : MonoBehaviour
         yield return new WaitForSeconds(delay);
         WSS.set_costume_waveform(2, wave.getAnodicShapeArray()[24..^0], 3);
         yield return new WaitForSeconds(delay);
-        WSS.edit_event_shape(eventID, 10, 11);
+        WSS.edit_event_shape(eventID, 12, 13);
         yield return new WaitForSeconds(delay);
         ready = true;
     }

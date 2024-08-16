@@ -6,6 +6,7 @@ using UnityEngine;
 public class WaveformBuilder
 {
     private const int shapeSize = 32;
+    private const float maxAmp = 65535.0f; //65535 or 255
     private int[] catShape = new int[shapeSize];
     private int[] anShape = new int[shapeSize];
     private Waveform wave;
@@ -30,9 +31,9 @@ public class WaveformBuilder
         for (int i = 0; i < catWaveform.Length; i++)
         {
             //calculate triangle difference area 
-            area += (1.0f / (shapeSize * 2)) * ((catWaveform[i] - prevY) / 255.0f); //base/2 * height
+            area += (1.0f / (shapeSize * 2)) * ((catWaveform[i] - prevY) / maxAmp); //base/2 * height
             //calculate square area based on previus y
-            area += (1.0f / shapeSize) * (prevY / 255.0f); //base * height
+            area += (1.0f / shapeSize) * (prevY / maxAmp); //base * height
             prevY = catWaveform[i];
         }
         return area;
@@ -40,7 +41,7 @@ public class WaveformBuilder
 
     private int[] anodicWaveMaker(float area)
     {
-        float rechargeHeight = area *255.0f;
+        float rechargeHeight = area *maxAmp;
         int[] anodicWaveform = new int[shapeSize];
         Array.Fill(anodicWaveform, (int)rechargeHeight);
         return anodicWaveform;
