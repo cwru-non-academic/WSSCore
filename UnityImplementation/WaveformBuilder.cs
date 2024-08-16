@@ -6,7 +6,7 @@ using UnityEngine;
 public class WaveformBuilder
 {
     private const int shapeSize = 32;
-    private const float maxAmp = 65535.0f; //65535 or 255
+    private const float maxAmp = 2000.0f;
     private int[] catShape = new int[shapeSize];
     private int[] anShape = new int[shapeSize];
     private Waveform wave;

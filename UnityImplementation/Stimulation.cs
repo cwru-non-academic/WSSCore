@@ -325,6 +325,17 @@ public class Stimulation : MonoBehaviour
         }
     }
 
+    public void updateWaveform(int cathodicWaveform, int anodicWaveform, int eventID) //overload to just select from waveforms in memory 
+    //slots 0 to 10 are predefined waveforms and slots 11 to 13 are custom defined waveforms
+    {
+        if (ready)
+        {
+            ready = false;
+            StartCoroutine(DelayReadyCoroutine());
+            WSS.edit_event_shape(eventID, cathodicWaveform, anodicWaveform);
+        }
+    }
+
     //overload for loading from json functionality
     public void updateWaveform(WaveformBuilder waveform, int eventID) 
     {
@@ -349,25 +360,26 @@ public class Stimulation : MonoBehaviour
         }
     }
 
-    IEnumerator UpdateWaveformCoroutine(WaveformBuilder wave, int eventID)
+
+    IEnumerator UpdateWaveformCoroutine(WaveformBuilder wave, int eventID)//custom waveform slots 0 to 2 are attached to shape slots 11 to 13
     {
-        WSS.set_costume_waveform(1, wave.getCatShapeArray()[0..^24], 0);
+        WSS.set_costume_waveform(0, wave.getCatShapeArray()[0..^24], 0);
         yield return new WaitForSeconds(delay);
-        WSS.set_costume_waveform(1, wave.getCatShapeArray()[8..^16], 1);
+        WSS.set_costume_waveform(0, wave.getCatShapeArray()[8..^16], 1);
         yield return new WaitForSeconds(delay);
-        WSS.set_costume_waveform(1, wave.getCatShapeArray()[16..^8], 2);
+        WSS.set_costume_waveform(0, wave.getCatShapeArray()[16..^8], 2);
         yield return new WaitForSeconds(delay);
-        WSS.set_costume_waveform(1, wave.getCatShapeArray()[24..^0], 3);
+        WSS.set_costume_waveform(0, wave.getCatShapeArray()[24..^0], 3);
         yield return new WaitForSeconds(delay);
-        WSS.set_costume_waveform(2, wave.getAnodicShapeArray()[0..^24], 0);
+        WSS.set_costume_waveform(1, wave.getAnodicShapeArray()[0..^24], 0);
         yield return new WaitForSeconds(delay);
-        WSS.set_costume_waveform(2, wave.getAnodicShapeArray()[8..^16], 1);
+        WSS.set_costume_waveform(1, wave.getAnodicShapeArray()[8..^16], 1);
         yield return new WaitForSeconds(delay);
-        WSS.set_costume_waveform(2, wave.getAnodicShapeArray()[16..^8], 2);
+        WSS.set_costume_waveform(1, wave.getAnodicShapeArray()[16..^8], 2);
         yield return new WaitForSeconds(delay);
-        WSS.set_costume_waveform(2, wave.getAnodicShapeArray()[24..^0], 3);
+        WSS.set_costume_waveform(1, wave.getAnodicShapeArray()[24..^0], 3);
         yield return new WaitForSeconds(delay);
-        WSS.edit_event_shape(eventID, 12, 13);
+        WSS.edit_event_shape(eventID, 11, 12);
         yield return new WaitForSeconds(delay);
         ready = true;
     }
