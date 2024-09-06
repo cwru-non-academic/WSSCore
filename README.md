@@ -23,7 +23,7 @@ C# class that has all the methods to communicate with the WSS and software speci
 7. Return to the main repo and commit the changes there (The chnage in commit ID will be not be selected by default. select it and then commit). 
 
 ## How to commit a git project that has submodules (Git CMD)
-'git clone --recursive git@github.com:cwru-non-academic/HFI_WSS_Interface.git'
+`git clone --recursive git@github.com:cwru-non-academic/HFI_WSS_Interface.git`
 
 ## How to pull a submodule change (Git Desktop)
 1. Make sure the git submodule repo is already part of your repos in git desktop
