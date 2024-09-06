@@ -4,9 +4,10 @@ C# class that has all the methods to communicate with the WSS and software speci
 ## How to add a submodule to exiting project
 1. Close other software using the code solution (Unity, Visual Studio, etc)
 2. If using git desktop, open the command prompt by going to `Repository>Open in Command Prompt`
-3. 1. Use command `git submodule add <submoduleURL> <pathInProject>` 
+3. Use command `git submodule add <submoduleURL> <pathInProject>` 
 	- if using a submodule inside of Unity make sure the path is inside the Assests folder
-	- Ex: `git submodule add https://github.com/cwru-non-academic/WSSInterfacingCode Assets\SubModules\WSSInterfacingModule`
+	- Ex HTTPS: `git submodule add https://github.com/cwru-non-academic/WSSInterfacingCode Assets\SubModules\WSSInterfacingModule`
+ 	- Ex SSH: `git submodule add git@github.com:cwru-non-academic/HFI_WSS_Interface.git Assets\SubModules\WSSInterfacingModule`
 4. Click `Current repository>Add>Add existing repository..` and locate the folder where you installed the submodule `<pathInProject>` 
 5. Remove old scripts from the project that are now part of the submodule
 6. Open solution dependent software and let it refactor.
@@ -22,7 +23,7 @@ C# class that has all the methods to communicate with the WSS and software speci
 7. Return to the main repo and commit the changes there (The chnage in commit ID will be not be selected by default. select it and then commit). 
 
 ## How to commit a git project that has submodules (Git CMD)
-
+'git clone --recursive git@github.com:cwru-non-academic/HFI_WSS_Interface.git'
 
 ## How to pull a submodule change (Git Desktop)
 1. Make sure the git submodule repo is already part of your repos in git desktop
