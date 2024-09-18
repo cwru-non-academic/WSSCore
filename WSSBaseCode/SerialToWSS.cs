@@ -211,7 +211,7 @@ public class SerialToWSS
             {
                 started = true;
                 return "Start Acknowleged";
-            } else if (data[4] == 0x04) //stop acknowlege
+            } else if (data[4] == 0x00) //stop acknowlege
             {
                 started= false;
                 return "Stop Acknowleged";
@@ -251,7 +251,7 @@ public class SerialToWSS
 
     private void queueWriteToWSS(byte msgID, byte[] message, int lenght)
     {
-        if((msgID >0x2F && msgID<0x34) || (msgID==0x0B && message[4]==0x04)) //stream msges do not go into queue because they have no response
+        if((msgID >0x2F && msgID<0x34)) //stream msges do not go into queue because they have no response
         {
             WriteToWSS(message, lenght);
         } else
