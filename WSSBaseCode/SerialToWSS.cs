@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.IO.Ports;
-using UnityEngine.UIElements;
+using System.Reflection;
+using System.Threading.Tasks;
 
 public class SerialToWSS
 {
@@ -19,9 +21,12 @@ public class SerialToWSS
     //each messesage consists of a preable, data , and ending
     //data changes contents and size so created on each msg
     private static byte sender_address = 0x00;
-    private static byte wss_address = 0x81;
+    private static byte wss_address1 = 0x81;
+    private static byte wss_address2 = 0x82;
+    private static byte wss_address3 = 0x83;
+    private static byte wss_broadcast = 0x8F;
     //preable size is constant but its content change at contructions so created and modify once
-    private byte[] preamble = new byte[] { sender_address, wss_address }; //sender address, wss address, command type
+    private byte[] preamble = new byte[] { sender_address, wss_address1 }; //sender address, wss address, command type
     //ending size is constant but its content change so created onece but modified for each msg
     private byte[] ending = new byte[] { 0x00, 0xC0 }; //check sum, ending byte
     private const byte END_BYTE = 0xC0;          // indicates end of message
@@ -30,6 +35,13 @@ public class SerialToWSS
     private const byte ESC_SUBST_BYTE = 0xDD;    // follows 0xDB; indicates to receiver that 0xDB is intended as data
     public List<string> msgs;
     Dictionary<byte, string> errorMsgs;
+    #endregion
+
+    #region queue vars
+    private List<QueueID> queue = new List<QueueID>(); // each queue position will hold a unique identifier and a message type identifier 
+    private int queueCount = 0;
+    private int timeOutQueue = 2000; // in ms
+    private bool started = false;
     #endregion
 
     #region constructors_and_overloads
@@ -178,15 +190,33 @@ public class SerialToWSS
     {
         //error msg struture wss sender 05 02 errorCode commandWithError Checksum endByte
         string error = "";
+        // etunr was an error
         if (data[2] == 0x05)
         {
+            //remove message from queue that caused error 
+
+            //transform codes in to plain text error message
             if (errorMsgs.TryGetValue(data[4], out error))
             {
-                return error + " in Command: " + data[5].ToString("x");
+                removeFromQueue(data[5]);
+                return "Error: "+error + " in Command: " + data[5].ToString("x");
             }
-            return "Error Not Found";
+            return "Error: Error Not Found";
         }
-        //Handle reponses, response identifier comes after data lenght byte or data[4]
+        //not an error. Handle reponses, response identifier comes after data lenght byte or data[4]
+        removeFromQueue(data[2]);
+        if (data[2] == 0x0B)
+        {
+            if (data[4]==0x01)//start acknowlege
+            {
+                started = true;
+                return "Start Acknowleged";
+            } else if (data[4] == 0x04) //stop acknowlege
+            {
+                started= false;
+                return "Stop Acknowleged";
+            }
+        }
         return ByteToString(data, length);
     }
 
@@ -209,10 +239,87 @@ public class SerialToWSS
     }
     #endregion
 
+    #region queue methods
+    public bool isQueueEmpty()
+    {
+        if (queue.Count == 0)
+        {
+            return true;
+        }
+        return false;
+    }
+
+    private void queueWriteToWSS(byte msgID, byte[] message, int lenght)
+    {
+        if((msgID >0x2F && msgID<0x34) || (msgID==0x0B && message[4]==0x04)) //stream msges do not go into queue because they have no response
+        {
+            WriteToWSS(message, lenght);
+        } else
+        {
+            QueueID q = new QueueID(queueCount, msgID);
+            queue.Add(q);
+            increaseCount();
+            Task task = Task.Run(() =>
+            {
+                int timeElapse = 0;
+                while (queue[0] != q && queue.Count > 0)
+                {
+                    Task.Delay(10).Wait();
+                    timeElapse += 10;
+                    if (timeElapse > timeOutQueue)
+                    {
+                        queue.Clear();
+                        msgs.Add("Error: Queue timed out");
+                    }
+                }
+                if (queue.Count > 0)
+                {
+                    WriteToWSS(message, lenght);
+                }
+
+            });
+        }
+    }
+
+    private void increaseCount()
+    {
+        queueCount++;
+        if (queueCount > 1000)
+        {
+            queueCount = 0;
+        }
+    }
+
+    private bool removeFromQueue(byte msgID)
+    {
+        for(int i=0; i<queue.Count; i++)
+        {
+            if (queue[i].msgID == msgID)
+            {
+                queue.RemoveAt(i);
+                return true;
+            }
+        }
+        queue.Clear();
+        msgs.Add("Error: No such msgID on queue. MsgID: "+ msgID.ToString("x"));
+        return false;
+    }
+
+    public bool Started()
+    {
+        return started;
+    }
+
+    public void Stoped()
+    {
+        started = false;
+    }
+    #endregion
 
     #region stimulation_communication_methods
-    private void msg_builder(byte[] data)
+    private void msg_builder(byte[] data, int target)
     {
+        setTarget(target);
         byte[] preMsg = new byte[preamble.Length + data.Length + ending.Length];
         Buffer.BlockCopy(preamble, 0, preMsg, 0, preamble.Length);
         Buffer.BlockCopy(data, 0, preMsg, preamble.Length, data.Length);
@@ -221,6 +328,28 @@ public class SerialToWSS
         preMsg[^2]= sum;
         checkSpecial(preMsg);
         
+    }
+
+    private void setTarget(int target)
+    {
+        switch (target)
+        {
+            case 0:
+                preamble = new byte[] { sender_address, wss_broadcast };
+                break;
+            case 1:
+                preamble = new byte[] { sender_address, wss_address1 };
+                break;
+            case 2:
+                preamble = new byte[] { sender_address, wss_address2 };
+                break;
+            case 3:
+                preamble = new byte[] { sender_address, wss_address3 };
+                break;
+            default:
+                preamble = new byte[] { sender_address, wss_address1 };
+                break;
+        }
     }
 
     private void checkSpecial(byte[] preMsg)
@@ -249,7 +378,7 @@ public class SerialToWSS
         }
         msg[lenght] = END_BYTE;
         lenght++;
-        WriteToWSS(msg, lenght);
+        queueWriteToWSS(preMsg[2] ,msg, lenght);
     }
 
     private byte check_Sum(byte[] msg)
@@ -266,39 +395,39 @@ public class SerialToWSS
 
     #region stimulation_base_methods
     //reset microcontroller
-    public void reset()
+    public void reset(int targetWSS)
     {
         byte[] data = new byte[] { 0x04, 0x00 };
         data[1] = BitConverter.GetBytes(data.Length-2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //echo msg
-    public void echo(int data1, int data2)
+    public void echo(int targetWSS, int data1, int data2)
     {
         byte[] data = new byte[] { 0x07, 0x00, BitConverter.GetBytes(data1)[0], BitConverter.GetBytes(data2)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //request battery and impedance
-    public void request_analog()
+    public void request_analog(int targetWSS)
     {
         //TODO add reading flag
         byte[] data = new byte[] { 0x02, 0x00, 0x01 };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //clears all:0, events:1, schedules:2, contacts:3
-    public void clear(int command)
+    public void clear(int targetWSS, int command)
     {
         byte[] data = new byte[] { 0x40, 0x00, BitConverter.GetBytes(command)[0]};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
-    public void request_configs( int command, int id)
+    public void request_configs(int targetWSS, int command, int id)
     {
         byte[] data = new byte[] { 0x41, 0x00, 0x00, 0x00, BitConverter.GetBytes(id)[0] };
         switch (command)
@@ -345,14 +474,14 @@ public class SerialToWSS
                 break;
         }
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //id is for future reference, stim setup defines sources and sinks for charge and recharge setup for recharge. 
     //array of 4 int one per output on the stimulator. Use 0 for not used, 1 for source, and 2 for sink
     //So, to set 3 cathodes and 1 anode for stim you would send [2, 2, 2, 1], and for recharge [1, 1, 1, 2].
     //The order fro the board is the forth element in the array is the connector clossest to the switch ir order so the first element is the one farthest from the switch.
-    public void creat_contact_config(int contactID, int[] stimSetup, int[] rechargSetup)
+    public void creat_contact_config(int targetWSS, int contactID, int[] stimSetup, int[] rechargSetup)
     {
         byte stimByte = processContact(stimSetup);
         byte rechargeByte = processContact(rechargSetup);
@@ -361,7 +490,7 @@ public class SerialToWSS
         //So, to set 3 cathodes and 1 anode for stim you would send 11 11 11 10 or (0xAB), and for recharge 10 10 10 11 (0xFE).
         byte[] data = new byte[] { 0x42, 0x00, BitConverter.GetBytes(contactID)[0], stimByte, rechargeByte};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     private byte processContact(int[] setup)
@@ -378,31 +507,31 @@ public class SerialToWSS
     }
 
     //deletes an contact based on ID
-    public void delete_contact_config(int contactID)
+    public void delete_contact_config(int targetWSS, int contactID)
     {
         byte[] data = new byte[] { 0x43, 0x00, BitConverter.GetBytes(contactID)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //create event (specified by id)based on inputs (overloads)
-    public void create_event(int eventID, int delay, int outConfigID)
+    public void create_event(int targetWSS, int eventID, int delay, int outConfigID)
     {
         byte[] data = new byte[] { 0x44, 0x00, BitConverter.GetBytes(eventID)[0], BitConverter.GetBytes(delay)[0], BitConverter.GetBytes(outConfigID)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
-    public void create_event(int eventID, int delay, int outConfigID, int standardShapeID, int rechargeShapeID)
+    public void create_event(int targetWSS, int eventID, int delay, int outConfigID, int standardShapeID, int rechargeShapeID)
     {
         byte[] data = new byte[] { 0x44, 0x00, BitConverter.GetBytes(eventID)[0], BitConverter.GetBytes(delay)[0], 
             BitConverter.GetBytes(outConfigID)[0], BitConverter.GetBytes(standardShapeID)[0] , BitConverter.GetBytes(rechargeShapeID)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //4 amplitues per arrays for standard and recharge, 3 PW params: standar PW, recharge PW, and IPD
-    public void create_event(int eventID, int delay, int outConfigID, int[] standardAmp, int[] rechargeAmp, int[] PW)
+    public void create_event(int targetWSS, int eventID, int delay, int outConfigID, int[] standardAmp, int[] rechargeAmp, int[] PW)
     {
         byte[] data;
         if (PW[0]>255 || PW[1]>255 || PW[2]>255 || PW[3] > 255) //handle pw greater than 255us 
@@ -421,10 +550,10 @@ public class SerialToWSS
             BitConverter.GetBytes(PW[0])[0], BitConverter.GetBytes(PW[2])[0], BitConverter.GetBytes(PW[1])[0]};
         }
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
-    public void create_event(int eventID, int delay, int outConfigID, int standardShapeID, int rechargeShapeID, int[] standardAmp, int[] rechargeAmp, int[] PW)
+    public void create_event(int targetWSS, int eventID, int delay, int outConfigID, int standardShapeID, int rechargeShapeID, int[] standardAmp, int[] rechargeAmp, int[] PW)
     {
         //delay from schedule start is in ms make sure different ch are at least 2ms apart on the same schedule
         byte[] data;
@@ -447,51 +576,51 @@ public class SerialToWSS
             BitConverter.GetBytes(standardShapeID)[0] , BitConverter.GetBytes(rechargeShapeID)[0]};
         }
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //delete event (specified by id)
-    public void delete_event(int eventID)
+    public void delete_event(int targetWSS, int eventID)
     {
         byte[] data = new byte[] { 0x45, 0x00, BitConverter.GetBytes(eventID)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     // add event with event id to schedule with schedule id
-    public void add_event_to_schedule(int eventID, int scheduleID)
+    public void add_event_to_schedule(int targetWSS, int eventID, int scheduleID)
     {
         byte[] data = new byte[] { 0x46, 0x00, BitConverter.GetBytes(eventID)[0], BitConverter.GetBytes(scheduleID)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //delete event (specified by id)from its only assign schedule
-    public void delete_event_from_schedule(int eventID)
+    public void delete_event_from_schedule(int targetWSS, int eventID)
     {
         byte[] data = new byte[] { 0x47, 0x00, BitConverter.GetBytes(eventID)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //TODO add how it works
-    public void move_event_to_schedule(int eventID, int scheduleID, int delay)
+    public void move_event_to_schedule(int targetWSS, int eventID, int scheduleID, int delay)
     {
         byte[] data = new byte[] { 0x48, 0x00, BitConverter.GetBytes(eventID)[0], BitConverter.GetBytes(scheduleID)[0], BitConverter.GetBytes(delay)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //change event (specified by id) output config based on id
-    public void edit_event_OutConfig(int eventID, int outConfigID)
+    public void edit_event_OutConfig(int targetWSS, int eventID, int outConfigID)
     {
         byte[] data = new byte[] { 0x49, 0x00, BitConverter.GetBytes(eventID)[0], 0x01, BitConverter.GetBytes(outConfigID)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //change event (specified by id) pulse widths 3 PW params: standar PW, recharge PW, and IPD
-    public void edit_event_PW(int eventID, int[] PW)
+    public void edit_event_PW(int targetWSS, int eventID, int[] PW)
     {
         byte[] data;
         if (PW[0] > 255 || PW[1] > 255 || PW[2] > 255) //handle pw greater than 255us 
@@ -507,112 +636,112 @@ public class SerialToWSS
                 BitConverter.GetBytes(PW[0])[0], BitConverter.GetBytes(PW[2])[0], BitConverter.GetBytes(PW[1])[0]};
         }
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //change event (specified by id) amplitude config
-    public void edit_event_Amp(int eventID, int[] standardAmp, int[] rechargeAmp)
+    public void edit_event_Amp(int targetWSS, int eventID, int[] standardAmp, int[] rechargeAmp)
     {
         byte[] data = new byte[] { 0x49, 0x00, BitConverter.GetBytes(eventID)[0], 0x04,
             BitConverter.GetBytes(standardAmp[0])[0], BitConverter.GetBytes(standardAmp[1])[0], BitConverter.GetBytes(standardAmp[2])[0], BitConverter.GetBytes(standardAmp[3])[0],
             BitConverter.GetBytes(rechargeAmp[0])[0], BitConverter.GetBytes(rechargeAmp[1])[0], BitConverter.GetBytes(rechargeAmp[2])[0], BitConverter.GetBytes(rechargeAmp[3])[0]};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //change event (specified by id) shape config
-    public void edit_event_shape(int eventID, int standardShapeID, int rechargeShapeID)
+    public void edit_event_shape(int targetWSS, int eventID, int standardShapeID, int rechargeShapeID)
     {
         byte[] data = new byte[] { 0x49, 0x00, BitConverter.GetBytes(eventID)[0], 0x05, 
             BitConverter.GetBytes(standardShapeID)[0], BitConverter.GetBytes(rechargeShapeID)[0]};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //change event (specified by id) delay in ms from start of schedule
-    public void edit_event_delay(int eventID, int delay)
+    public void edit_event_delay(int targetWSS, int eventID, int delay)
     {
         byte[] data = new byte[] { 0x49, 0x00, BitConverter.GetBytes(eventID)[0], 0x06,
             BitConverter.GetBytes(delay)[0]};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //change event (specified by id) ratio in ratios of 1 to 1, to 2, to 4, or to 8.
-    public void edit_event_ratio(int eventID, int ratio)
+    public void edit_event_ratio(int targetWSS, int eventID, int ratio)
     {
         byte[] data = new byte[] { 0x49, 0x00, BitConverter.GetBytes(eventID)[0], 0x07,
             BitConverter.GetBytes(ratio)[0]};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //create schedule
-    public void create_schedule(int scheduleID, int duration, int syncSignal)
+    public void create_schedule(int targetWSS, int scheduleID, int duration, int syncSignal)
     {
         byte[] data = new byte[] { 0x4A, 0x00, BitConverter.GetBytes(scheduleID)[0], BitConverter.GetBytes(duration)[1], BitConverter.GetBytes(duration)[0], BitConverter.GetBytes(syncSignal)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //delete schedule
-    public void delete_schedule(int scheduleID)
+    public void delete_schedule(int targetWSS, int scheduleID)
     {
         byte[] data = new byte[] { 0x4B, 0x00, BitConverter.GetBytes(scheduleID)[0]};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //sync group and starts scheculd from ready to active
-    public void sync_group(int syncSignal)
+    public void sync_group(int targetWSS, int syncSignal)
     {
         byte[] data = new byte[] { 0x4C, 0x00, BitConverter.GetBytes(syncSignal)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //change state of a sync group from STATE_READY = 1, STATE_ACTIVE = 0, STATE_SUSPEND = 2   
-    public void change_group_state(int syncSignal, int state)
+    public void change_group_state(int targetWSS, int syncSignal, int state)
     {
         byte[] data = new byte[] { 0x4D, 0x00, BitConverter.GetBytes(syncSignal)[0], BitConverter.GetBytes(state)[0]};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //change schedule(by schedule id) state
-    public void change_schedule_state(int scheduleID, int state)
+    public void change_schedule_state(int targetWSS, int scheduleID, int state)
     {
         byte[] data = new byte[] { 0x4E, 0x00, 0x01, BitConverter.GetBytes(scheduleID)[0], BitConverter.GetBytes(state)[0]};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //change schedule(by schedule id) group
-    public void change_schedule_group(int scheduleID, int syncSignal)
+    public void change_schedule_group(int targetWSS, int scheduleID, int syncSignal)
     {
         byte[] data = new byte[] { 0x4E, 0x00, 0x02, BitConverter.GetBytes(scheduleID)[0], BitConverter.GetBytes(syncSignal)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //change schedule(by schedule id) duration
-    public void change_schedule_duration(int scheduleID, int duration)
+    public void change_schedule_duration(int targetWSS, int scheduleID, int duration)
     {
         byte[] data = new byte[] { 0x4E, 0x00, 0x03, BitConverter.GetBytes(scheduleID)[0], BitConverter.GetBytes(duration)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //reset all schedules
-    public void reset_schedule()
+    public void reset_schedule(int targetWSS)
     {
         byte[] data = new byte[] { 0x4F, 0x00 };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //costumizable waveform upload
-    public void set_costume_waveform(int slot, int[] waveform, int msgNumber)//waveform is an array of 32 bytes 0 to 255 but only 8 can be sent a time call this method 4 times with coresponding delays in between
+    public void set_costume_waveform(int targetWSS, int slot, int[] waveform, int msgNumber)//waveform is an array of 32 bytes 0 to 255 but only 8 can be sent a time call this method 4 times with coresponding delays in between
     {
         int wfIndex = 0;
         byte[] data = new byte[] { 0x9D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -625,7 +754,7 @@ public class SerialToWSS
             wfIndex++;
         }
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //start stim
@@ -633,7 +762,7 @@ public class SerialToWSS
     {
         byte[] data = new byte[] { 0x0B, 0x00, 0x03};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, 0);
     }
 
     //stop stim
@@ -641,48 +770,48 @@ public class SerialToWSS
     {
         byte[] data = new byte[] { 0x0B, 0x00, 0x04 };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, 0);
     }
 
     //edit setting array
-    public void editSettings(int address, int value)
+    public void editSettings(int targetWSS, int address, int value)
     {
         byte[] data = new byte[] { 0x09, 0x00, 0x03, BitConverter.GetBytes(address)[0], BitConverter.GetBytes(value)[0]};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //move setting from FRAM to board
-    public void populateBoardSettings()
+    public void populateBoardSettings(int targetWSS)
     {
         byte[] data = new byte[] { 0x09, 0x00, 0x0A };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //move setting from board to FRAM
-    public void populateFRAMSettings()
+    public void populateFRAMSettings(int targetWSS)
     {
         byte[] data = new byte[] { 0x09, 0x00, 0x0B};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //erase log data
-    public void erraseLog()
+    public void erraseLog(int targetWSS)
     {
         byte[] data = new byte[] { 0x09, 0x00, 0x04 };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
     //get log data
-    public void GetLog()
+    public void GetLog(int targetWSS)
     {
         //TODO add read flag
         byte[] data = new byte[] { 0x09, 0x00, 0x05 };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
     }
 
 
@@ -690,7 +819,7 @@ public class SerialToWSS
     //change PA, PW, IPI all at the same time or two at a time (use null for not changing param) fro three diferent schedules for one schedule and one event use edit event cmd instead
     //three parameters per array
     //IPI is frequency in ms with 1 ms resolution and each Freq is for one schedule
-    public void stream_change(int[] PA, int[] PW, int[] IPI)
+    public void stream_change(int targetWSS, int[] PA, int[] PW, int[] IPI)
     {
         byte[] data;
         if (PA == null)
@@ -715,7 +844,16 @@ public class SerialToWSS
                 BitConverter.GetBytes(IPI[0])[0], BitConverter.GetBytes(IPI[1])[0], BitConverter.GetBytes(IPI[2])[0]};
         }
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
-        msg_builder(data);
+        msg_builder(data, targetWSS);
+    }
+
+    public void zero_out_stim() 
+    {
+        byte[]  data = new byte[] { 0x31, 0x00, BitConverter.GetBytes(0)[0], BitConverter.GetBytes(0)[0], BitConverter.GetBytes(0)[0],
+                BitConverter.GetBytes(0)[0], BitConverter.GetBytes(0)[0], BitConverter.GetBytes(0)[0],
+                0x00, 0x00, 0x00};
+        data[1] = BitConverter.GetBytes(data.Length - 2)[0];
+        msg_builder(data, 0);
     }
 
     //missing: 0x97, 0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x3A, 0x3B, 0x3C
