@@ -115,7 +115,7 @@ public class Stimulation : MonoBehaviour
     //current functions are design to be called by a discrete sensor  
     // like the bubble. For an analog sensor I suggets you only use the 
     //function below and disregard the rest
-    public void StimulateAnalog(string finger, bool rawValues, int PW, int amp)
+    public void StimulateAnalog(string finger, bool rawValues, int PW, int amp = 3)
     {
         //finger name of the finger (shown in if statements below) or channel name
         //right bool true for right hand false for left (not implemented yet)
@@ -340,7 +340,13 @@ public class Stimulation : MonoBehaviour
         {
             output = 0;
         }
-        output=(output*(max-min))+min;
+        if (output > 0)
+        {
+            output = (output * (max - min)) + min;
+        } else
+        {
+            output = 0;
+        }
         return (int) output;
     }
 
