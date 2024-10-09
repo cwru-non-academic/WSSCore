@@ -12,6 +12,7 @@ C# class that has all the methods to communicate with the WSS and software speci
 5. Remove old scripts from the project that are now part of the submodule
 6. Open solution dependent software and let it refactor.
 7. (Unity Only) Make sure all you scripts in the scene are still available and linked correctly.
+8. (Unity only) Add `"com.unity.nuget.newtonsoft-json": "3.2.1",` to your package manager manifest under dependencies found in `<project>/Packages/manifest.json`
 
 ## How to commit a git project that has submodules (Git Desktop)
 1. This only applies if the changes were made to the submodule, otherwise just commit as normal.

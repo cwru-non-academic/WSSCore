@@ -1,18 +1,16 @@
 ﻿using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using System.IO.Ports;
 using System;
-using System.Threading;
 
 public class Stimulation : MonoBehaviour
 {
     [SerializeField] public bool forcePort = false;
     [SerializeField] private bool testMode = true;
-    [SerializeField] public string comPort = "COM7";
+    [SerializeField] private string comPort = "COM7";
+    [SerializeField] private StimConfigController config;
 
     private const float delay = 0.1f;// delay between mesages to the WSS to avoid congestion on the radio
-    private const int maxWSS = 1;
+    private int maxWSS = 1;
 
     public bool started = false;
     private bool ready = false;
@@ -20,20 +18,12 @@ public class Stimulation : MonoBehaviour
     private bool running = false;
     private bool setup = false;
     private SerialToWSS WSS;
+    private float[] prevMagnitude;
+
 
     #region "Channels vars"
-    private int ch1Amp = 0;
-    private int ch2Amp = 0;
-    private int ch3Amp = 0;
-    private int ch4Amp = 0;
-    private int ch5Amp = 0;
-    private int ch6Amp = 0;
-    private int ch1PW = 0;
-    private int ch2PW = 0;
-    private int ch3PW = 0;
-    private int ch4PW = 0;
-    private int ch5PW = 0;
-    private int ch6PW = 0;
+    private int[] ChAmps;
+    private int[] ChPWs;
     private int current_IPD = 50; //in us
     #endregion
 
@@ -45,6 +35,9 @@ public class Stimulation : MonoBehaviour
 
     void OnEnable()
     {
+        config.LoadJSON();
+        maxWSS=config._config.maxWSS;
+        initStimVaribles();
         editor = Application.isEditor;
         if ((editor || Application.platform == RuntimePlatform.WindowsPlayer) && !testMode) //runs USB mode only on editor mode or windows mode 
         {
@@ -99,6 +92,7 @@ public class Stimulation : MonoBehaviour
 
     void OnDisable()
     {
+<<<<<<< HEAD
         running = false;
         if (!testMode)
         {
@@ -106,80 +100,83 @@ public class Stimulation : MonoBehaviour
             WSS.releaseCOM_port();
         }
         ready = false;
+=======
+        if (!testMode)
+        {
+            running = false;
+            WSS.zero_out_stim();
+            WSS.releaseCOM_port();
+            ready = false;
+        }
+>>>>>>> db5bf91 (Added json capabilities)
     }
 
     #region "Stimulation methods"
     //current functions are design to be called by a discrete sensor  
     // like the bubble. For an analog sensor I suggets you only use the 
     //function below and disregard the rest
-    public void StimulateAnalog(string finger, bool right, int PW, int amp)
+    public void StimulateAnalog(string finger, bool rawValues, int PW, int amp)
     {
         //finger name of the finger (shown in if statements below) or channel name
         //right bool true for right hand false for left (not implemented yet)
         //PW is pulse width of the stimualtion in the range 4 to 255 us or 0us for no stim
         //Amp is amplitude of the stimualtion in the rnage of 0 to 83mA (non linear or exact).
+        int channel = 0;
         if (finger == "Index")
         {
-            ch2Amp = amp;
-            ch2PW = PW; 
+            channel = 2;
         }
         else if (finger == "Middle")
         {
-            ch3Amp = amp;
-            ch3PW = PW;
+            channel = 3;
         }
         else if (finger == "Ring")
         {
-            ch4Amp = amp;
-            ch4PW = PW;
+            channel = 4;
         }
         else if (finger == "Pinky")
         {
-            ch5Amp = amp;
-            ch5PW = PW;
+            channel = 5;
         }
         else if (finger == "Thumb")
         {
-            ch1Amp = amp;
-            ch1PW = PW;
+            channel = 1;
         }
         else if (finger == "Palm")
         {
-            ch6Amp = amp;
-            ch6PW = PW;
+            channel = 6;
         }
-        else if (finger == "ch2")
+        else if (finger.Substring(0,2) == "ch")
         {
-            ch2Amp = amp;
-            ch2PW = PW;
+            try
+            {
+                channel = Int32.Parse(finger.Substring(2));
+            } catch (FormatException e)
+            { 
+                Debug.LogError("Stimualtion channel not a number: "+ e.Message);
+                channel = 0;
+            }
         }
-        else if (finger == "ch3")
+
+        if (channel > 0 && channel<maxWSS*3)
         {
-            ch3Amp = amp;
-            ch3PW = PW;
-        }
-        else if (finger == "ch4")
-        {
-            ch4Amp = amp;
-            ch4PW = PW;
-        }
-        else if (finger == "ch5")
-        {
-            ch5Amp = amp;
-            ch5PW = PW;
-        }
-        else if (finger == "ch1")
-        {
-            ch1Amp = amp;
-            ch1PW = PW;
-        }
-        else if (finger == "ch6")
-        {
-            ch6Amp = amp;
-            ch6PW = PW;
+            ChAmps[channel-1] = amp;
+            ChPWs[channel-1] = PW;
         }
     }
 
+    private void initStimVaribles()
+    {
+        ChAmps = new int[maxWSS * 3];
+        ChPWs = new int[maxWSS * 3];
+        prevMagnitude = new float[maxWSS * 3];
+        for (int i = 0; i < ChAmps.Length; i++)//initilize parameters at 0
+        {
+            ChAmps[i] = 0;
+            ChPWs[i] = 0;
+            prevMagnitude[i] = 0;
+        }
+    }
 
     IEnumerator UpdateCoroutine()
     {
@@ -187,12 +184,15 @@ public class Stimulation : MonoBehaviour
         {
             while (started && ready)
             {
-                WSS.stream_change(1, new int[] { AmpTo255Convention(ch1Amp), AmpTo255Convention(ch2Amp), AmpTo255Convention(ch3Amp) },
-                    new int[] { ch1PW, ch2PW, ch3PW }, null);
+                WSS.stream_change(1, new int[] { AmpTo255Convention(ChAmps[0]), AmpTo255Convention(ChAmps[1]), AmpTo255Convention(ChAmps[2]) },
+                    new int[] { ChPWs[0], ChPWs[1], ChPWs[2] }, null);
                 yield return new WaitForSeconds(0.02f);
-                WSS.stream_change(2, new int[] { AmpTo255Convention(ch4Amp), AmpTo255Convention(ch5Amp), AmpTo255Convention(ch6Amp) },
-                    new int[] { ch4PW, ch5PW, ch6PW }, null);
-                yield return new WaitForSeconds(0.02f);
+                if (maxWSS > 1)
+                {
+                    WSS.stream_change(2, new int[] { AmpTo255Convention(ChAmps[3]), AmpTo255Convention(ChAmps[4]), AmpTo255Convention(ChAmps[5]) },
+                    new int[] { ChPWs[3], ChPWs[4], ChPWs[5] }, null);
+                    yield return new WaitForSeconds(0.02f);
+                }
             }
             yield return new WaitForSeconds(0.02f);
         }
@@ -200,6 +200,10 @@ public class Stimulation : MonoBehaviour
 
     public void StartStimulation()
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         WSS.startStim();
         Debug.Log("sent start stim msg");
@@ -209,14 +213,137 @@ public class Stimulation : MonoBehaviour
 
     public void StopStimulation()
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         WSS.stopStim();
         Debug.Log("sent stop stim msg");
         running = false;
     }
 
+    public void StimWithMode(string finger, float magnitude)
+    {
+        int channel = 0;
+        if (finger == "Index")
+        {
+            channel = 2;
+        }
+        else if (finger == "Middle")
+        {
+            channel = 3;
+        }
+        else if (finger == "Ring")
+        {
+            channel = 4;
+        }
+        else if (finger == "Pinky")
+        {
+            channel = 5;
+        }
+        else if (finger == "Thumb")
+        {
+            channel = 1;
+        }
+        else if (finger == "Palm")
+        {
+            channel = 6;
+        }
+        else if (finger.Substring(0, 2) == "ch")
+        {
+            try
+            {
+                channel = Int32.Parse(finger.Substring(2));
+            }
+            catch (FormatException e)
+            {
+                Debug.LogError(e.Message);
+                channel = 0;
+            }
+        }
 
-    //TODO units of amplitude or max amplitude, unites of delay for scgeculd and event, max pW
+        if (channel > 0 && channel <= maxWSS * 3)
+        {
+            ChAmps[channel - 1] = (int)config.getStimParam("Ch"+channel.ToString()+"Amp"); ;
+            ChPWs[channel - 1] = calculateStim(channel, magnitude, config.getStimParam("Ch"+channel.ToString() + "Max"), config.getStimParam("Ch" + channel.ToString() +"Min")); ;
+        }
+    }
+
+    public void UpdateChannelParams(string finger, int max, int min, int amp)
+    {
+        int channel = 0;
+        if (finger == "Index")
+        {
+            channel = 2;
+        }
+        else if (finger == "Middle")
+        {
+            channel = 3;
+        }
+        else if (finger == "Ring")
+        {
+            channel = 4;
+        }
+        else if (finger == "Pinky")
+        {
+            channel = 5;
+        }
+        else if (finger == "Thumb")
+        {
+            channel = 1;
+        }
+        else if (finger == "Palm")
+        {
+            channel = 6;
+        }
+        else if (finger.Substring(0, 2) == "ch")
+        {
+            try
+            {
+                channel = Int32.Parse(finger.Substring(2));
+            }
+            catch (FormatException e)
+            {
+                Debug.LogError(e.Message);
+                channel = 0;
+            }
+        }
+
+        if (channel > 0 && channel <= maxWSS * 3)
+        {
+            config.modifyStimParam("Ch" + channel.ToString() + "Amp", amp);
+            config.modifyStimParam("Ch" + channel.ToString() + "Max", max);
+            config.modifyStimParam("Ch" + channel.ToString() + "Min", min);
+        }
+    }
+
+    private int calculateStim(int channel, float magnitude, float max, float min)
+    {
+        float output = 0;
+        //apply stimulation controller mode equation to magnitude
+        if (config._config.sensationController == "P")
+        {
+            output = magnitude * config.getConstant("PModeProportional") + config.getConstant("PModeOffsset");
+        } else if (config._config.sensationController == "PD")
+        {
+            float d = (magnitude - prevMagnitude[channel])/Time.deltaTime;
+            output= (d*config.getConstant("PDModeDerivative"))+(magnitude*config.getConstant("PDModeProportional"))+ config.getConstant("PDModeOffsset");
+            prevMagnitude[channel] = magnitude;
+        }
+
+        //handle case that could go above maxiumum or negative
+        if (output > 1)
+        {
+            output = 1;
+        } else if (output < 0)
+        {
+            output = 0;
+        }
+        output=(output*(max-min))+min;
+        return (int) output;
+    }
+
     public void NormalSetup()
     {
         for (int i = 1; i < maxWSS+1; i++)
@@ -246,12 +373,20 @@ public class Stimulation : MonoBehaviour
 
     public void Save(int targetWSS)
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         WSS.populateFRAMSettings(targetWSS);
     }
 
     public void Save()
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         for (int i = 1; i < maxWSS + 1; i++)
         {
@@ -261,12 +396,20 @@ public class Stimulation : MonoBehaviour
 
     public void load(int targetWSS)
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         WSS.populateBoardSettings(targetWSS);
     }
 
     public void load()
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         for (int i = 1; i < maxWSS + 1; i++)
         {
@@ -293,12 +436,20 @@ public class Stimulation : MonoBehaviour
 
     public void request_Configs(int targetWSS, int command, int id)
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         WSS.request_configs(targetWSS, command, id);
     }
 
     public void UpdateIPD(int targetWSS, int IPD) // in us (0 to 1000us)
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         if (IPD > 1000)
         {
@@ -312,6 +463,10 @@ public class Stimulation : MonoBehaviour
 
     public void UpdateIPD(int IPD) // in us (0 to 1000us)
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         if (IPD > 1000)
         {
@@ -328,6 +483,10 @@ public class Stimulation : MonoBehaviour
 
     public void UpdateFrequency(int targetWSS, int FR) //in Hz (1-1000Hz) might be further limited by PW duration
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         float temp = 1000.0f / FR;
         int Freq = (int)temp; //in ms now
@@ -337,6 +496,10 @@ public class Stimulation : MonoBehaviour
 
     public void UpdateFrequency(int FR) //in Hz (1-1000Hz) might be further limited by PW duration
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         float temp = 1000.0f / FR;
         int Freq = (int)temp; //in ms now
@@ -349,6 +512,10 @@ public class Stimulation : MonoBehaviour
 
     public void updateWaveform(int[] waveform, int eventID) 
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         WaveformBuilder stimShape = new WaveformBuilder(waveform);
         WaveformSetup(stimShape, eventID);
@@ -356,6 +523,10 @@ public class Stimulation : MonoBehaviour
 
     public void updateWaveform(int targetWSS, int[] waveform, int eventID)
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         WaveformBuilder stimShape = new WaveformBuilder(waveform);
         WaveformSetup(targetWSS, stimShape, eventID);
@@ -364,6 +535,10 @@ public class Stimulation : MonoBehaviour
     public void updateWaveform(int cathodicWaveform, int anodicWaveform, int eventID) //overload to just select from waveforms in memory 
     //slots 0 to 10 are predefined waveforms and slots 11 to 13 are custom defined waveforms
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         for (int i = 1; i < maxWSS + 1; i++)
         {
@@ -374,6 +549,10 @@ public class Stimulation : MonoBehaviour
     public void updateWaveform(int targetWSS, int cathodicWaveform, int anodicWaveform, int eventID) //overload to just select from waveforms in memory 
     //slots 0 to 10 are predefined waveforms and slots 11 to 13 are custom defined waveforms
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         WSS.edit_event_shape(targetWSS, eventID, cathodicWaveform, anodicWaveform);
     }
@@ -381,6 +560,10 @@ public class Stimulation : MonoBehaviour
     //overload for loading from json functionality
     public void updateWaveform(WaveformBuilder waveform, int eventID) 
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         WaveformBuilder stimShape = waveform;
         WaveformSetup(stimShape, eventID);
@@ -388,6 +571,10 @@ public class Stimulation : MonoBehaviour
 
     public void updateWaveform(int targetWSS, WaveformBuilder waveform, int eventID)
     {
+        if (testMode)
+        {
+            return;
+        }
         ready = false;
         WaveformBuilder stimShape = waveform;
         WaveformSetup(targetWSS, stimShape, eventID);
@@ -409,6 +596,10 @@ public class Stimulation : MonoBehaviour
 
     public void WaveformSetup(WaveformBuilder wave, int eventID)//custom waveform slots 0 to 2 are attached to shape slots 11 to 13
     {
+        if (testMode)
+        {
+            return;
+        }
         for (int i = 1; i < maxWSS + 1; i++)
         {
             WSS.set_costume_waveform(i, 0, wave.getCatShapeArray()[0..^24], 0);
@@ -425,6 +616,10 @@ public class Stimulation : MonoBehaviour
 
     public void WaveformSetup(int targetWSS, WaveformBuilder wave, int eventID)//custom waveform slots 0 to 2 are attached to shape slots 11 to 13
     {
+        if (testMode)
+        {
+            return;
+        }
         WSS.set_costume_waveform(targetWSS, 0, wave.getCatShapeArray()[0..^24], 0);
         WSS.set_costume_waveform(targetWSS, 0, wave.getCatShapeArray()[8..^16], 1);
         WSS.set_costume_waveform(targetWSS, 0, wave.getCatShapeArray()[16..^8], 2);
