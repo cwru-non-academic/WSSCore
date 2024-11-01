@@ -1,6 +1,5 @@
 using UnityEngine;
 using Newtonsoft.Json;
-using static OVRHaptics;
 
 public class StimConfigController : MonoBehaviour
 {
@@ -99,8 +98,8 @@ public class StimConfigController : MonoBehaviour
         addConstant("PModeProportional", 1.0f);
         addConstant("PModeOffsset", 0.0f);
 
-        addConstant("PDModeProportional", 0.8f);
-        addConstant("PDModeDerivative", 0.8f);
+        addConstant("PDModeProportional", 0.5f);
+        addConstant("PDModeDerivative", 0.2f);
         addConstant("PDModeOffsset", 0.0f);
 
         addStimParam("Ch1Max", 0);

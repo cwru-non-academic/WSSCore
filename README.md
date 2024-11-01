@@ -32,3 +32,8 @@ C# class that has all the methods to communicate with the WSS and software speci
 3. Go to the submodule repo and pull changes as normal. 
 4. Pulling a submodule will add a change in commit ID to the main repo. 
 	- Multiple changes in commit ID can be commited to the main repo as a single commit and together with other changes to the main repo.
+
+## How to add Newtonsoft json package
+1. Open Window> Package Manager
+2. Click the top left plus sign> add package by name `com.unity.nuget.newtonsoft-json`
+3. Leave version empty and click add
