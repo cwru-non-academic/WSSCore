@@ -191,7 +191,7 @@ public class SerialToWSS
     {
         //error msg struture wss sender 05 02 errorCode commandWithError Checksum endByte
         string error = "";
-        // etunr was an error
+        // Return was an error
         if (data[2] == 0x05)
         {
             //remove message from queue that caused error 
@@ -252,7 +252,7 @@ public class SerialToWSS
 
     private void queueWriteToWSS(byte msgID, byte[] message, int lenght)
     {
-        if((msgID >0x2F && msgID<0x34)) //stream msges do not go into queue because they have no response
+        if(msgID >0x2F && msgID<0x34) //stream msges do not go into queue because they have no response
         {
             WriteToWSS(message, lenght);
         } else

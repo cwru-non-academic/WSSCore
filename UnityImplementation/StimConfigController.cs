@@ -1,5 +1,6 @@
 using UnityEngine;
 using Newtonsoft.Json;
+using static OVRHaptics;
 
 public class StimConfigController : MonoBehaviour
 {
@@ -25,7 +26,10 @@ public class StimConfigController : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        
+        if (Input.GetKeyDown(KeyCode.L))
+        {
+            LoadJSON();
+        }
     }
 
     private bool verify_json()
@@ -135,6 +139,8 @@ public class StimConfigController : MonoBehaviour
         addStimParam("Ch9Min", 0);
         addStimParam("Ch9Amp", 3.0f);
     }
+
+    
 
 
 

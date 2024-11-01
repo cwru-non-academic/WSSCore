@@ -1,6 +1,8 @@
 ﻿using System.Collections;
 using UnityEngine;
 using System;
+using System.Text;
+using System.IO;
 
 public class Stimulation : MonoBehaviour
 {
@@ -19,6 +21,9 @@ public class Stimulation : MonoBehaviour
     private bool setup = false;
     private SerialToWSS WSS;
     private float[] prevMagnitude;
+    private float[] currentMag;
+    private float[] d_dt;
+    private float dt = 0;
 
 
     #region "Channels vars"
@@ -30,8 +35,9 @@ public class Stimulation : MonoBehaviour
     // Start is called before the first frame update
     public void Start()
     {
-        
+
     }
+
 
     void OnEnable()
     {
@@ -77,13 +83,20 @@ public class Stimulation : MonoBehaviour
                         Debug.LogError(WSS.msgs[i]);
                     }else
                     {
-                        Debug.Log(WSS.msgs[i]);
+                        Debug.LogError(WSS.msgs[i]);
                     }
                     WSS.msgs.RemoveAt(i);
                 }
             }
         }
+        for(int i = 0;i< currentMag.Length; i++)
+        {
+            d_dt[i] = (currentMag[i] - prevMagnitude[i]) / Time.deltaTime;
+            prevMagnitude[i] = currentMag[i];
+        }
     }
+
+
 
     void OnDestroy()
     {
@@ -170,6 +183,8 @@ public class Stimulation : MonoBehaviour
         ChAmps = new int[maxWSS * 3];
         ChPWs = new int[maxWSS * 3];
         prevMagnitude = new float[maxWSS * 3];
+        currentMag = new float[maxWSS * 3];
+        d_dt = new float[maxWSS * 3];
         for (int i = 0; i < ChAmps.Length; i++)//initilize parameters at 0
         {
             ChAmps[i] = 0;
@@ -321,15 +336,14 @@ public class Stimulation : MonoBehaviour
     private int calculateStim(int channel, float magnitude, float max, float min)
     {
         float output = 0;
+        currentMag[channel] = magnitude;
         //apply stimulation controller mode equation to magnitude
         if (config._config.sensationController == "P")
         {
             output = magnitude * config.getConstant("PModeProportional") + config.getConstant("PModeOffsset");
         } else if (config._config.sensationController == "PD")
         {
-            float d = (magnitude - prevMagnitude[channel])/Time.deltaTime;
-            output= (d*config.getConstant("PDModeDerivative"))+(magnitude*config.getConstant("PDModeProportional"))+ config.getConstant("PDModeOffsset");
-            prevMagnitude[channel] = magnitude;
+            output= (d_dt[channel]*config.getConstant("PDModeDerivative"))+(magnitude*config.getConstant("PDModeProportional"))+ config.getConstant("PDModeOffsset");
         }
 
         //handle case that could go above maxiumum or negative
@@ -642,6 +656,11 @@ public class Stimulation : MonoBehaviour
     public bool Ready()
     {
         return ready;
+    }
+
+    public bool isQueueEmpty()
+    {
+        return WSS.isQueueEmpty();
     }
     #endregion
 }
