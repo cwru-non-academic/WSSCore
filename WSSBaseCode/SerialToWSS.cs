@@ -48,42 +48,43 @@ public class SerialToWSS
     //Base Constructor
     public SerialToWSS()
     {
+        errorMsgStartUp();
         comPort = getCOMPort();
         stream = new SerialPort(comPort, BAUD_RATE, PARITY, BITS_PER_DATA_CHAR, STOP_BIT_COUNT);
         stream.ReadTimeout = timeOut;
         stream.Open();
-        errorMsgStartUp();
     }
     //overload to specify sender address and wss address
     public SerialToWSS(byte sender, byte wss)
     {
+        errorMsgStartUp();
         comPort = getCOMPort();
         stream = new SerialPort(comPort, BAUD_RATE, PARITY, BITS_PER_DATA_CHAR, STOP_BIT_COUNT);
         stream.ReadTimeout = timeOut;
         stream.Open();
         preamble[0]=sender; 
         preamble[1]=wss;
-        errorMsgStartUp();
+        
     }
     //overload to specify port
     public SerialToWSS(string port)
     {
+        errorMsgStartUp();
         comPort = port;
         stream = new SerialPort(comPort, BAUD_RATE, PARITY, BITS_PER_DATA_CHAR, STOP_BIT_COUNT);
         stream.ReadTimeout = timeOut;
         stream.Open();
-        errorMsgStartUp();
     }
     //overload to specify port and addresses
     public SerialToWSS(string port, byte sender, byte wss)
     {
+        errorMsgStartUp();
         comPort = port;
         stream = new SerialPort(comPort, BAUD_RATE, PARITY, BITS_PER_DATA_CHAR, STOP_BIT_COUNT);
         stream.ReadTimeout = timeOut;
         stream.Open();
         preamble[0] = sender;
         preamble[1] = wss;
-        errorMsgStartUp();
     }
 
     //destructor

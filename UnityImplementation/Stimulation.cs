@@ -7,9 +7,9 @@ using System.Threading;
 
 public class Stimulation : MonoBehaviour
 {
-    [SerializeField] private bool forcePort = false;
+    [SerializeField] public bool forcePort = false;
     [SerializeField] private bool testMode = true;
-    [SerializeField] private string comPort = "COM7";
+    [SerializeField] public string comPort = "COM7";
 
     private const float delay = 0.1f;// delay between mesages to the WSS to avoid congestion on the radio
     private const int maxWSS = 1;
@@ -100,8 +100,11 @@ public class Stimulation : MonoBehaviour
     void OnDisable()
     {
         running = false;
-        WSS.zero_out_stim();
-        WSS.releaseCOM_port();
+        if (!testMode)
+        {
+            WSS.zero_out_stim();
+            WSS.releaseCOM_port();
+        }
         ready = false;
     }
 
