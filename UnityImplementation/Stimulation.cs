@@ -8,6 +8,7 @@ public class Stimulation : MonoBehaviour
 {
     [SerializeField] public bool forcePort = false;
     [SerializeField] private bool testMode = true;
+    [SerializeField] private int maxSetupTries = 5;
     [SerializeField] public string comPort = "COM7";
     [SerializeField] private StimConfigController config;
 
@@ -18,12 +19,13 @@ public class Stimulation : MonoBehaviour
     private bool ready = false;
     private bool editor = false;
     private bool running = false;
+    private bool setupRunning = false;
     private bool setup = false;
+    private int currentSetupTries = 0;
     private SerialToWSS WSS;
     private float[] prevMagnitude;
     private float[] currentMag;
     private float[] d_dt;
-    private float dt = 0;
 
 
     #region "Channels vars"
@@ -41,8 +43,19 @@ public class Stimulation : MonoBehaviour
 
     void OnEnable()
     {
+        initialize();
+    }
+
+    public void initialize()
+    {
+        if(ready || setupRunning)
+        {
+            releaseRadio();
+        }
+        setup = false;
+        setupRunning = false;
         config.LoadJSON();
-        maxWSS=config._config.maxWSS;
+        maxWSS = config._config.maxWSS;
         initStimVaribles();
         editor = Application.isEditor;
         if ((editor || Application.platform == RuntimePlatform.WindowsPlayer) && !testMode) //runs USB mode only on editor mode or windows mode 
@@ -56,7 +69,6 @@ public class Stimulation : MonoBehaviour
                 WSS = new SerialToWSS(comPort);
             }
             NormalSetup();
-            running = true;
         }
         else if (testMode)
         {
@@ -71,22 +83,36 @@ public class Stimulation : MonoBehaviour
         {
             WSS.checkForErrors();
             started = WSS.Started();
-            if (WSS.isQueueEmpty() && setup)
-            {
-                ready = true;
-            }
             if (WSS.msgs.Count>0)
             {
                 for (int i = 0; i < WSS.msgs.Count; i++)
                 {
                     if (WSS.msgs[i].StartsWith("Error:")){
                         Debug.LogError(WSS.msgs[i]);
+                        WSS.msgs.RemoveAt(i);
+                        if (setupRunning && currentSetupTries < maxSetupTries)
+                        {
+                            Debug.LogError("Error in setup. Retriying. "+ currentSetupTries.ToString()+" out of "+maxSetupTries.ToString()+" attempts.");
+                            currentSetupTries++;
+                            WSS.clearQueue();
+                            initialize();
+                        }
                     }else
                     {
                         Debug.LogError(WSS.msgs[i]);
+                        WSS.msgs.RemoveAt(i);
                     }
-                    WSS.msgs.RemoveAt(i);
                 }
+            }
+            if (WSS.isQueueEmpty() && (setup || setupRunning))
+            {
+                if (setupRunning)
+                {
+                    currentSetupTries = 0;
+                    setupRunning = false;
+                    setup = true;
+                }
+                ready = true;
             }
         }
         for(int i = 0;i< currentMag.Length; i++)
@@ -105,18 +131,19 @@ public class Stimulation : MonoBehaviour
 
     void OnDisable()
     {
+        releaseRadio();
+    }
+
+    public void releaseRadio()
+    {
         if (!testMode)
         {
             running = false;
             WSS.zero_out_stim();
             WSS.releaseCOM_port();
+            started = false;
             ready = false;
         }
-<<<<<<< HEAD
->>>>>>> db5bf91 (Added json capabilities)
-=======
-
->>>>>>> 87f3550 (update from main)
     }
 
     #region "Stimulation methods"
@@ -360,6 +387,7 @@ public class Stimulation : MonoBehaviour
 
     public void NormalSetup()
     {
+        setupRunning = true;
         for (int i = 1; i < maxWSS+1; i++)
         {
             //gnd is first electrode 
@@ -382,7 +410,6 @@ public class Stimulation : MonoBehaviour
             WSS.add_event_to_schedule(i, 3, 3);
             WSS.sync_group(i, 170); //sync schedules with 170 sync signal
         }
-        setup = true;
     }
 
     public void Save(int targetWSS)

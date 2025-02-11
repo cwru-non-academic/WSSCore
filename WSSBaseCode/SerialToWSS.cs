@@ -250,6 +250,11 @@ public class SerialToWSS
         return false;
     }
 
+    public void clearQueue()
+    {
+        queue.Clear();
+    }
+
     private void queueWriteToWSS(byte msgID, byte[] message, int lenght)
     {
         if(msgID >0x2F && msgID<0x34) //stream msges do not go into queue because they have no response
