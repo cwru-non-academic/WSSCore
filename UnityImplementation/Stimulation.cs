@@ -8,7 +8,7 @@ public class Stimulation : MonoBehaviour
 {
     [SerializeField] public bool forcePort = false;
     [SerializeField] private bool testMode = true;
-    [SerializeField] private string comPort = "COM7";
+    [SerializeField] public string comPort = "COM7";
     [SerializeField] private StimConfigController config;
 
     private const float delay = 0.1f;// delay between mesages to the WSS to avoid congestion on the radio
@@ -105,15 +105,6 @@ public class Stimulation : MonoBehaviour
 
     void OnDisable()
     {
-<<<<<<< HEAD
-        running = false;
-        if (!testMode)
-        {
-            WSS.zero_out_stim();
-            WSS.releaseCOM_port();
-        }
-        ready = false;
-=======
         if (!testMode)
         {
             running = false;
@@ -121,7 +112,11 @@ public class Stimulation : MonoBehaviour
             WSS.releaseCOM_port();
             ready = false;
         }
+<<<<<<< HEAD
 >>>>>>> db5bf91 (Added json capabilities)
+=======
+
+>>>>>>> 87f3550 (update from main)
     }
 
     #region "Stimulation methods"
@@ -224,7 +219,6 @@ public class Stimulation : MonoBehaviour
         Debug.Log("sent start stim msg");
         StartCoroutine(UpdateCoroutine());
     }
-
 
     public void StopStimulation()
     {
