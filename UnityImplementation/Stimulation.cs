@@ -241,7 +241,7 @@ public class Stimulation : MonoBehaviour
         {
             return;
         }
-        ready = false;
+        running = true;
         WSS.startStim();
         Debug.Log("sent start stim msg");
         StartCoroutine(UpdateCoroutine());
