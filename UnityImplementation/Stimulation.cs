@@ -134,6 +134,11 @@ public class Stimulation : MonoBehaviour
         releaseRadio();
     }
 
+    public bool isTestMode()
+    {
+        return testMode;
+    }
+
     public void releaseRadio()
     {
         if (!testMode)
