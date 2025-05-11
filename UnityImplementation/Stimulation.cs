@@ -1,8 +1,7 @@
 ﻿using System.Collections;
 using UnityEngine;
 using System;
-using System.Text;
-using System.IO;
+using System.Diagnostics;
 
 public class Stimulation : MonoBehaviour
 {
@@ -19,13 +18,16 @@ public class Stimulation : MonoBehaviour
     private bool ready = false;
     private bool editor = false;
     private bool running = false;
+    private bool validMode = false;
     private bool setupRunning = false;
     private bool setup = false;
     private int currentSetupTries = 0;
+    private Stopwatch timer;
     private SerialToWSS WSS;
     private float[] prevMagnitude;
     private float[] currentMag;
     private float[] d_dt;
+    private float[] dt;
 
 
     #region "Channels vars"
@@ -54,9 +56,13 @@ public class Stimulation : MonoBehaviour
         }
         setup = false;
         setupRunning = false;
+        validMode = false;
         config.LoadJSON();
         maxWSS = config._config.maxWSS;
+        timer = new Stopwatch();
+        timer.Start();
         initStimVaribles();
+        verifyStimMode();
         editor = Application.isEditor;
         if ((editor || Application.platform == RuntimePlatform.WindowsPlayer) && !testMode) //runs USB mode only on editor mode or windows mode 
         {
@@ -88,18 +94,18 @@ public class Stimulation : MonoBehaviour
                 for (int i = 0; i < WSS.msgs.Count; i++)
                 {
                     if (WSS.msgs[i].StartsWith("Error:")){
-                        Debug.LogError(WSS.msgs[i]);
+                        UnityEngine.Debug.LogError(WSS.msgs[i]);
                         WSS.msgs.RemoveAt(i);
                         if (setupRunning && currentSetupTries < maxSetupTries)
                         {
-                            Debug.LogError("Error in setup. Retriying. "+ currentSetupTries.ToString()+" out of "+maxSetupTries.ToString()+" attempts.");
+                            UnityEngine.Debug.LogError("Error in setup. Retriying. "+ currentSetupTries.ToString()+" out of "+maxSetupTries.ToString()+" attempts.");
                             currentSetupTries++;
                             WSS.clearQueue();
                             initialize();
                         }
                     }else
                     {
-                        Debug.LogError(WSS.msgs[i]);
+                        UnityEngine.Debug.LogError(WSS.msgs[i]);
                         WSS.msgs.RemoveAt(i);
                     }
                 }
@@ -114,11 +120,6 @@ public class Stimulation : MonoBehaviour
                 }
                 ready = true;
             }
-        }
-        for(int i = 0;i< currentMag.Length; i++)
-        {
-            d_dt[i] = (currentMag[i] - prevMagnitude[i]) / Time.deltaTime;
-            prevMagnitude[i] = currentMag[i];
         }
     }
 
@@ -148,6 +149,19 @@ public class Stimulation : MonoBehaviour
             WSS.releaseCOM_port();
             started = false;
             ready = false;
+        }
+    }
+
+    private void verifyStimMode()
+    {
+        if (config._config.sensationController == "P" || config._config.sensationController == "PD")
+        {
+            validMode = true;
+        }
+        else
+        {
+            UnityEngine.Debug.LogError("Unrecognized mode, defaulting to proportional mode");
+            validMode = false;
         }
     }
 
@@ -193,7 +207,7 @@ public class Stimulation : MonoBehaviour
                 channel = Int32.Parse(finger.Substring(2));
             } catch (FormatException e)
             { 
-                Debug.LogError("Stimualtion channel not a number: "+ e.Message);
+                UnityEngine.Debug.LogError("Stimualtion channel not a number: "+ e.Message);
                 channel = 0;
             }
         }
@@ -212,11 +226,13 @@ public class Stimulation : MonoBehaviour
         prevMagnitude = new float[maxWSS * 3];
         currentMag = new float[maxWSS * 3];
         d_dt = new float[maxWSS * 3];
+        dt = new float[maxWSS * 3];
         for (int i = 0; i < ChAmps.Length; i++)//initilize parameters at 0
         {
             ChAmps[i] = 0;
             ChPWs[i] = 0;
             prevMagnitude[i] = 0;
+            dt[i] = timer.ElapsedMilliseconds/1000.0f;
         }
     }
 
@@ -248,7 +264,7 @@ public class Stimulation : MonoBehaviour
         }
         running = true;
         WSS.startStim();
-        Debug.Log("sent start stim msg");
+        UnityEngine.Debug.Log("sent start stim msg");
         StartCoroutine(UpdateCoroutine());
     }
 
@@ -260,7 +276,7 @@ public class Stimulation : MonoBehaviour
         }
         ready = false;
         WSS.stopStim();
-        Debug.Log("sent stop stim msg");
+        UnityEngine.Debug.Log("sent stop stim msg");
         running = false;
     }
 
@@ -299,7 +315,7 @@ public class Stimulation : MonoBehaviour
             }
             catch (FormatException e)
             {
-                Debug.LogError(e.Message);
+                UnityEngine.Debug.LogError(e.Message);
                 channel = 0;
             }
         }
@@ -346,7 +362,7 @@ public class Stimulation : MonoBehaviour
             }
             catch (FormatException e)
             {
-                Debug.LogError(e.Message);
+                UnityEngine.Debug.LogError(e.Message);
                 channel = 0;
             }
         }
@@ -363,6 +379,10 @@ public class Stimulation : MonoBehaviour
     {
         float output = 0;
         currentMag[channel] = magnitude;
+        float currentTime = timer.ElapsedMilliseconds / 1000.0f;
+        d_dt[channel] = (currentMag[channel] - prevMagnitude[channel]) / (currentTime - dt[channel]);
+        dt[channel] = currentTime;
+        prevMagnitude[channel] = currentMag[channel];
         //apply stimulation controller mode equation to magnitude
         if (config._config.sensationController == "P")
         {
@@ -370,8 +390,10 @@ public class Stimulation : MonoBehaviour
         } else if (config._config.sensationController == "PD")
         {
             output= (d_dt[channel]*config.getConstant("PDModeDerivative"))+(magnitude*config.getConstant("PDModeProportional"))+ config.getConstant("PDModeOffsset");
+        }else
+        {
+            output = magnitude * config.getConstant("PModeProportional") + config.getConstant("PModeOffsset");
         }
-
         //handle case that could go above maxiumum or negative
         if (output > 1)
         {
@@ -380,6 +402,7 @@ public class Stimulation : MonoBehaviour
         {
             output = 0;
         }
+        
         if (output > 0)
         {
             output = (output * (max - min)) + min;
@@ -635,7 +658,7 @@ public class Stimulation : MonoBehaviour
         }
         catch (System.Exception ex)
         {
-            Debug.LogError("JSON loading error: " + ex.Message);
+            UnityEngine.Debug.LogError("JSON loading error: " + ex.Message);
         }
     }
 
@@ -687,6 +710,12 @@ public class Stimulation : MonoBehaviour
     public bool isQueueEmpty()
     {
         return WSS.isQueueEmpty();
+    }
+
+    public bool isModeValid()
+    {
+        verifyStimMode();
+        return validMode;
     }
     #endregion
 }

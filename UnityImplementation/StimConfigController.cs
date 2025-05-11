@@ -25,7 +25,7 @@ public class StimConfigController : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if (Input.GetKeyDown(KeyCode.L))
+        if (Input.GetKeyDown(KeyCode.C))
         {
             LoadJSON();
         }
@@ -45,6 +45,7 @@ public class StimConfigController : MonoBehaviour
             if (verify_json())
             {
                 jsonLoaded = true;
+                Debug.LogError("New JSON loaded");
             } else
             {
                 Debug.LogError("JSON not in correct format");
