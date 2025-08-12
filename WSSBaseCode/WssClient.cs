@@ -18,6 +18,13 @@ public sealed class WssClient : IDisposable
         Wss3 = 0x83
     }
 
+    public enum WssIntLimits : int
+    {
+        general = 255,
+        shape = 13, 
+        clearIndex = 3,
+    }
+
     public enum WssMessageId : byte
     {
         Reset = 0x04,
@@ -212,9 +219,9 @@ public sealed class WssClient : IDisposable
 
     // Helper used to extract a byte from an int, ensuring it's within 0-255 range.
     // Throws ArgumentOutOfRangeException if not.
-    private static byte ToByteValidated(int v, string paramName = "value")
+    private static byte ToByteValidated(int v, int maxRange, string paramName = "value")
     {
-        if (v < 0 || v > 255) throw new ArgumentOutOfRangeException(paramName, "Value must be between 0 and 255.");
+        if (v < 0 || v > maxRange) throw new ArgumentOutOfRangeException(paramName, "Value must be between 0 and 255.");
         return (byte)v;
     }
 
@@ -235,8 +242,8 @@ public sealed class WssClient : IDisposable
     public Task<string> Echo(int echoData1, int echoData2, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
     {
         // Validate and convert ints into bytes
-        var b1 = ToByteValidated(echoData1, nameof(echoData1));
-        var b2 = ToByteValidated(echoData2, nameof(echoData2));
+        var b1 = ToByteValidated(echoData1, (int)WssIntLimits.general, nameof(echoData1));
+        var b2 = ToByteValidated(echoData2, (int)WssIntLimits.general, nameof(echoData2));
 
         return SendCmdAsync(WssMessageId.Echo, target, ct, b1, b2);
     }
@@ -255,7 +262,7 @@ public sealed class WssClient : IDisposable
     public Task<string> Clear(int configIndex, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
     {
         // Validate and convert ints into bytes
-        var b1 = ToByteValidated(configIndex, nameof(configIndex));
+        var b1 = ToByteValidated(configIndex, (int)WssIntLimits.clearIndex, nameof(configIndex));
 
         return SendCmdAsync(WssMessageId.Echo, target, ct, b1);
     }
@@ -264,6 +271,7 @@ public sealed class WssClient : IDisposable
     /// Sends a request to the WSS target for a specific configuration type.
     /// This is a general-purpose request that can target output configs, events,
     /// schedules, and their various sub-configurations.
+    /// Unstested, and reading from WSS devices is not yet implemented.
     /// </summary>
     /// <param name="command">
     /// Integer code that selects which configuration to request:
@@ -299,7 +307,7 @@ public sealed class WssClient : IDisposable
         };
 
         // Convert id safely to a byte with range validation
-        byte validatedId = ToByteValidated(id, nameof(id));
+        byte validatedId = ToByteValidated(id, (int)WssIntLimits.general, nameof(id));
 
         // SendCmdAsync will build [cmd][len][selectors][id] and handle framing/queue/await
         return SendCmdAsync(WssMessageId.RequestConfig, target, ct, (byte)selectors.Item1, (byte)selectors.Item2, validatedId);
@@ -334,7 +342,7 @@ public sealed class WssClient : IDisposable
             throw new ArgumentException("Recharge setup must be an array of exactly 4 integers.", nameof(rechargeSetup));
 
         // Convert ID safely
-        byte validatedId = ToByteValidated(contactId, nameof(contactId));
+        byte validatedId = ToByteValidated(contactId, (int)WssIntLimits.general, nameof(contactId));
 
         // Reverse order so index 0 (closest to switch) becomes index 3 internally
         // made so the order matches other methods in which array index 0 is closest to the switch
@@ -388,11 +396,51 @@ public sealed class WssClient : IDisposable
     public Task<string> DeleteContactConfig(int contactId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
     {
         // Convert ID safely to a byte (throws if out of range)
-        byte validatedId = ToByteValidated(contactId, nameof(contactId));
+        byte validatedId = ToByteValidated(contactId, (int)WssIntLimits.general, nameof(contactId));
         return SendCmdAsync(WssMessageId.DeleteContactConfig, target, ct, validatedId);
     }
 
+    /// <summary>
+    /// Creates a basic event on the WSS device.
+    /// </summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="delayMs">Delay from schedule start in milliseconds (0–255 in this command variant).</param>
+    /// <param name="contactConfigId">Contact configuration ID (0–255).</param>
+    /// <param name="target">Target WSS device (default: Wss1).</param>
+    /// <param name="ct">Optional cancellation token.</param>
+    /// <returns>Processed response string from the WSS target.</returns>
+    public Task<string> CreateEventAsync(int eventId, int delayMs, int contactConfigId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.general, nameof(eventId));
+        byte dly = ToByteValidated(delayMs, (int)WssIntLimits.general, nameof(delayMs));
+        byte oc = ToByteValidated(contactConfigId, (int)WssIntLimits.general, nameof(contactConfigId));
+
+        // Payload: [eventId][delay][contactConfigId]
+        return SendCmdAsync(WssMessageId.CreateEvent, target, ct, ev, dly, oc);
+    }
     
+    /// <summary>
+    /// Creates an event with explicit shape IDs for the standard and recharge phases.
+    /// </summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="delayMs">Delay from schedule start in milliseconds (0–255 in this command variant).</param>
+    /// <param name="contactConfigId">Contact configuration ID (0–255).</param>
+    /// <param name="standardShapeId">Shape ID used during the standard (stim) phase (0–13).</param>
+    /// <param name="rechargeShapeId">Shape ID used during the recharge phase (0–13).</param>
+    /// <param name="target">Target WSS device (default: Wss1).</param>
+    /// <param name="ct">Optional cancellation token.</param>
+    /// <returns>Processed response string from the WSS target.</returns>
+    public Task<string> CreateEventAsync(int eventId, int delayMs, int contactConfigId, int standardShapeId, int rechargeShapeId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte ev   = ToByteValidated(eventId, (int)WssIntLimits.general, nameof(eventId));
+        byte dly  = ToByteValidated(delayMs, (int)WssIntLimits.general, nameof(delayMs));
+        byte oc   = ToByteValidated(contactConfigId, (int)WssIntLimits.general, nameof(contactConfigId));
+        byte std  = ToByteValidated(standardShapeId, (int)WssIntLimits.shape, nameof(standardShapeId));
+        byte rech = ToByteValidated(rechargeShapeId, (int)WssIntLimits.shape, nameof(rechargeShapeId));
+
+        // Payload: [eventId][delay][outConfigId][standardShapeId][rechargeShapeId]
+        return SendCmdAsync(WssMessageId.CreateEvent, target, ct, ev, dly, oc, std, rech);
+    }
 
     #endregion
 }
