@@ -416,7 +416,7 @@ public class SerialToWSS
         msg_builder(data, targetWSS);
     }
 
-    //request battery and impedance
+    //request battery and impedance, currently not implemented
     public void request_analog(int targetWSS)
     {
         //TODO add reading flag
@@ -609,7 +609,9 @@ public class SerialToWSS
         msg_builder(data, targetWSS);
     }
 
-    //TODO add how it works
+    //moves and event from one schedule to another witha delay. if the delay
+    // is longer thna the frequency of the schedule it fails and leave event
+    //on its original schedule
     public void move_event_to_schedule(int targetWSS, int eventID, int scheduleID, int delay)
     {
         byte[] data = new byte[] { 0x48, 0x00, BitConverter.GetBytes(eventID)[0], BitConverter.GetBytes(scheduleID)[0], BitConverter.GetBytes(delay)[0] };

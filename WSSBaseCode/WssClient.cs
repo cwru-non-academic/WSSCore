@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 public sealed class WssClient : IDisposable
 {
@@ -20,9 +21,15 @@ public sealed class WssClient : IDisposable
 
     public enum WssIntLimits : int
     {
-        general = 255,
-        shape = 13, 
+        oneByte = 255,
+        shape = 13,
         clearIndex = 3,
+        pulseWidthLong = 5400,
+        //pulseWidthLongLegacy = 1000 TODO
+        state = 2,
+        customWaveformChunks = 3,
+        Frequeny = 10000,//TODO
+        customWaveformMaxAmp = 2000
     }
 
     public enum WssMessageId : byte
@@ -46,7 +53,7 @@ public sealed class WssClient : IDisposable
         ChangeGroupState = 0x4D,
         ChangeScheduleConfig = 0x4E,
         ResetSchedule = 0x4F,
-        CostumeWaveform = 0x9D,
+        CustomWaveform = 0x9D,
         StimulationSwitch = 0x0B,
         BoardCommands = 0x09,
         StreamChangeAll = 0x30,
@@ -58,8 +65,15 @@ public sealed class WssClient : IDisposable
     private readonly ConcurrentDictionary<(byte target, byte msgId), ConcurrentQueue<TaskCompletionSource<byte[]>>> _pending
     = new();
 
+    /// <summary>
+    /// Indicates whether the WSS client connection has been started.
+    /// </summary>
     public bool Started { get; private set; }
 
+    /// <summary>Initializes a new client over the provided transport and frame codec.</summary>
+    /// <param name="transport">Underlying byte transport (e.g., serial, BLE).</param>
+    /// <param name="codec">Frame codec (escape/unescape + checksum).</param>
+    /// <param name="sender">Sender address byte (defaults to 0x00).</param>
     public WssClient(ITransport transport, IFrameCodec codec, byte sender = 0x00)
     {
         _transport = transport;
@@ -68,7 +82,24 @@ public sealed class WssClient : IDisposable
         _transport.BytesReceived += OnBytes;
     }
 
+    /// <summary>
+    /// Establishes a connection to the specified WSS device.
+    /// </summary>
+    /// <param name="ct">The cancellation token to observe.</param>
+    /// <returns>A task representing the asynchronous connection operation.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if already connected to the target.</exception>
+    /// <exception cref="IOException">Thrown if the connection attempt fails.</exception>
+    /// <exception cref="OperationCanceledException">Thrown if the operation is canceled.</exception>
     public Task ConnectAsync(CancellationToken ct = default) => _transport.ConnectAsync(ct);
+
+    /// <summary>
+    /// Closes the active connection to the specified WSS device.
+    /// </summary>
+    /// <param name="ct">The cancellation token to observe.</param>
+    /// <returns>A task representing the asynchronous disconnection operation.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if not connected to the target.</exception>
+    /// <exception cref="IOException">Thrown if the disconnection fails due to a transport error.</exception>
+    /// <exception cref="OperationCanceledException">Thrown if the operation is canceled.</exception>
     public Task DisconnectAsync(CancellationToken ct = default) => _transport.DisconnectAsync(ct);
 
     /// <summary>
@@ -105,7 +136,17 @@ public sealed class WssClient : IDisposable
         return SendAwaitOneAsync(tcs, framed, key, ct);
     }
 
-
+    /// <summary>
+    /// Sends a previously framed command and awaits a single response for the specified (target,msgId) key.
+    /// </summary>
+    /// <param name="tcs">Completion source to complete when a matching frame arrives.</param>
+    /// <param name="framed">Fully framed bytes to send (already includes cmd/len and escaping).</param>
+    /// <param name="key">Key used to correlate the response: (target,msgId).</param>
+    /// <param name="ct">Cancellation token. A 2s internal timeout is also applied.</param>
+    /// <returns>Processed response string.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="framed"/> is null.</exception>
+    /// <exception cref="IOException">Thrown if the underlying connection encounters an error.</exception>
+    /// <exception cref="OperationCanceledException">Thrown if the operation is canceled.</exception>
     private async Task<string> SendAwaitOneAsync(
         TaskCompletionSource<byte[]> tcs,
         byte[] framed,
@@ -123,17 +164,32 @@ public sealed class WssClient : IDisposable
         }
     }
 
-    // Fire-and-forget path: no pending entry, just send the frame.
-    private Task SendFireAndForgetAsync(WssTarget target, byte[] payload, CancellationToken ct = default)
+    /// <summary>
+    /// Fire-and-forget send: builds [cmd][len][data...] and sends without awaiting a reply.
+    /// Use for one-way streaming opcodes (e.g., 0x30..0x33).
+    /// </summary>
+    private Task SendFireAndForgetAsync(WssMessageId msgId, WssTarget target, CancellationToken ct = default, params byte[] dataBytes)
     {
-        if (payload == null || payload.Length < 2)
-            throw new ArgumentException("Payload must include [cmd][lenPlaceholder].", nameof(payload));
+        if (dataBytes == null) dataBytes = Array.Empty<byte>();
+        if (dataBytes.Length > 255)
+            throw new ArgumentException("Payload too long. Max 255 bytes for length field.", nameof(dataBytes));
 
-        payload[1] = (byte)(payload.Length - 2);            // fill length
+        // Construct [cmd][len][data...]
+        var payload = new byte[2 + dataBytes.Length];
+        payload[0] = (byte)msgId;
+        payload[1] = (byte)dataBytes.Length;
+        if (dataBytes.Length > 0)
+            Buffer.BlockCopy(dataBytes, 0, payload, 2, dataBytes.Length);
+
         var framed = _codec.Frame(_sender, (byte)target, payload);
-        return _transport.SendAsync(framed, ct);            // no waiter
+        return _transport.SendAsync(framed, ct);
     }
 
+    /// <summary>
+    /// Handles incoming byte chunks, deframes them into complete frames, and completes the oldest waiter
+    /// in the FIFO queue for the corresponding (target,msgId) key.
+    /// </summary>
+    /// <param name="chunk">Raw bytes received from the transport.</param>
     private void OnBytes(byte[] chunk)
     {
         foreach (var frame in _codec.Deframe(chunk))
@@ -163,12 +219,17 @@ public sealed class WssClient : IDisposable
         }
     }
 
-    private string ProcessFrame(byte[] data)
+    /// <summary>
+    /// Processes a complete frame of data received from the WSS connection.
+    /// Validates and routes the frame to the appropriate handler.
+    /// </summary>
+    /// <param name="frame">The received frame of bytes.</param>
+    private string ProcessFrame(byte[] frame)
     {
-        if (data.Length >= 3 && data[2] == 0x05) // error
+        if (frame.Length >= 3 && frame[2] == 0x05) // error
         {
-            var code = data.ElementAtOrDefault(4);
-            var cmd = data.ElementAtOrDefault(5);
+            var code = frame.ElementAtOrDefault(4);
+            var cmd = frame.ElementAtOrDefault(5);
             var text = code switch
             {
                 0x00 => "No Error",
@@ -202,15 +263,19 @@ public sealed class WssClient : IDisposable
             return $"Error: {text} in Command: {cmd:x}";
         }
 
-        if (data.Length >= 5 && data[2] == 0x0B)
+        if (frame.Length >= 5 && frame[2] == 0x0B)
         {
-            if (data[4] == 0x01) { Started = true; return "Start Acknowledged"; }
-            if (data[4] == 0x00) { Started = false; return "Stop Acknowledged"; }
+            if (frame[4] == 0x01) { Started = true; return "Start Acknowledged"; }
+            if (frame[4] == 0x00) { Started = false; return "Stop Acknowledged"; }
         }
 
-        return BitConverter.ToString(data).Replace("-", " ").ToLowerInvariant();
+        return BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant();
     }
 
+    /// <summary>
+    /// Releases all resources used by the <see cref="WssClient"/>.
+    /// Closes the connection and cleans up internal state.
+    /// </summary>
     public void Dispose()
     {
         _transport.BytesReceived -= OnBytes;
@@ -219,44 +284,77 @@ public sealed class WssClient : IDisposable
 
     // Helper used to extract a byte from an int, ensuring it's within 0-255 range.
     // Throws ArgumentOutOfRangeException if not.
-    private static byte ToByteValidated(int v, int maxRange, string paramName = "value")
+    private static byte ToByteValidated(int v, int maxInclusive, string paramName = "value")
+        => ToByteInRange(v, maxInclusive, paramName);
+
+    // Helper used to extract a byte from an int, ensuring it's within 0-65535 range.
+    // Throws ArgumentOutOfRangeException if not.
+    private static (byte hi, byte lo) ToU16Validated(int v, int maxInclusive, string paramName = "value")
+        => ToU16InRange(v, maxInclusive, paramName);
+
+    // 8-bit path (byte) with max
+    private static byte ToByteInRange(int v, int maxInclusive, string paramName = "value")
     {
-        if (v < 0 || v > maxRange) throw new ArgumentOutOfRangeException(paramName, "Value must be between 0 and 255.");
+        if ((uint)v > (uint)Math.Min(maxInclusive, 255))
+            throw new ArgumentOutOfRangeException(paramName, $"Value must be 0..{Math.Min(maxInclusive, 255)}.");
         return (byte)v;
     }
 
+    // 16-bit big-endian split with max
+    private static (byte hi, byte lo) ToU16InRange(int v, int maxInclusive, string paramName = "value")
+    {
+        if ((uint)v > (uint)Math.Min(maxInclusive, 65535))
+            throw new ArgumentOutOfRangeException(paramName, $"Value must be 0..{Math.Min(maxInclusive, 65535)}.");
+        return ((byte)(v >> 8), (byte)(v & 0xFF));
+    }
+
     #region stimulation_base_methods
+    /// <summary>
+    /// Sends the "start stimulation".
+    /// 0x01 = Start Ack expected.
+    /// Broadcast is acceptable for a system-wide switch.
+    /// </summary>
+    /// <param name="target">Target device (often Broadcast).</param>
+    /// <param name="ct">Cancellation token.</param>
     public Task<string> StartStim(WssTarget target = WssTarget.Broadcast, CancellationToken ct = default)
-    => SendCmdAsync(WssMessageId.StimulationSwitch, target, ct, 0x03);
-
-    public Task<string> StopStim(WssTarget target = WssTarget.Broadcast, CancellationToken ct = default)
-    => SendCmdAsync(WssMessageId.StimulationSwitch, target, ct, 0x04);
-
-    public Task<string> Reset(WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
-    => SendCmdAsync(WssMessageId.Reset, target, ct, 0x04, 0x00);
+        => SendCmdAsync(WssMessageId.StimulationSwitch, target, ct, 0x03);
 
     /// <summary>
-    /// Requests specific data blocks data1 and data2 from the WSS device.
+    /// Sends the "stop stimulation" switch (opcode 0x0B).
+    /// 0x00 = Stop Ack expected.
+    /// Broadcast is acceptable for a system-wide switch.
+    /// </summary>
+    /// <param name="target">Target device (often Broadcast).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> StopStim(WssTarget target = WssTarget.Broadcast, CancellationToken ct = default)
+        => SendCmdAsync(WssMessageId.StimulationSwitch, target, ct, 0x04);
+
+    /// <summary>Resets the microcontroller (0x04).</summary>
+    public Task<string> Reset(WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+        => SendCmdAsync(WssMessageId.Reset, target, ct);
+
+    /// <summary>
+    /// Echo round-trip (0x07). Two opaque data bytes are echoed back.
     /// Untested, and reading from WSS devices is not yet implemented.
     /// </summary>
     public Task<string> Echo(int echoData1, int echoData2, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
     {
         // Validate and convert ints into bytes
-        var b1 = ToByteValidated(echoData1, (int)WssIntLimits.general, nameof(echoData1));
-        var b2 = ToByteValidated(echoData2, (int)WssIntLimits.general, nameof(echoData2));
+        var b1 = ToByteValidated(echoData1, (int)WssIntLimits.oneByte, nameof(echoData1));
+        var b2 = ToByteValidated(echoData2, (int)WssIntLimits.oneByte, nameof(echoData2));
 
         return SendCmdAsync(WssMessageId.Echo, target, ct, b1, b2);
     }
 
     /// <summary>
-    /// Requests specific battery and impednace data from the WSS device.
-    /// Untested, and reading from WSS devices is not yet implemented.
+    /// Requests specific battery and impedance data from the WSS device.
+    /// TODO Not implemented in firmware, and reading from WSS devices is not yet implemented.
     /// </summary>
     public Task<string> RequestAnalog(WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
     => SendCmdAsync(WssMessageId.RequestAnalog, target, ct, 0x01);
 
     /// <summary>
-    /// Requests different configuration depending on the configIndex.
+    /// Clears groups of resources (0x40): 0=All, 1=Events, 2=Schedules, 3=Contacts.
     /// </summary>
     /// <param name="configIndex">Clear events(1), schedules(2), contacts(3), all(0).</param>
     public Task<string> Clear(int configIndex, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
@@ -264,14 +362,14 @@ public sealed class WssClient : IDisposable
         // Validate and convert ints into bytes
         var b1 = ToByteValidated(configIndex, (int)WssIntLimits.clearIndex, nameof(configIndex));
 
-        return SendCmdAsync(WssMessageId.Echo, target, ct, b1);
+        return SendCmdAsync(WssMessageId.Clear, target, ct, b1);
     }
 
     /// <summary>
     /// Sends a request to the WSS target for a specific configuration type.
     /// This is a general-purpose request that can target output configs, events,
     /// schedules, and their various sub-configurations.
-    /// Unstested, and reading from WSS devices is not yet implemented.
+    /// Untested, and reading from WSS devices is not yet implemented.
     /// </summary>
     /// <param name="command">
     /// Integer code that selects which configuration to request:
@@ -307,7 +405,7 @@ public sealed class WssClient : IDisposable
         };
 
         // Convert id safely to a byte with range validation
-        byte validatedId = ToByteValidated(id, (int)WssIntLimits.general, nameof(id));
+        byte validatedId = ToByteValidated(id, (int)WssIntLimits.oneByte, nameof(id));
 
         // SendCmdAsync will build [cmd][len][selectors][id] and handle framing/queue/await
         return SendCmdAsync(WssMessageId.RequestConfig, target, ct, (byte)selectors.Item1, (byte)selectors.Item2, validatedId);
@@ -342,7 +440,7 @@ public sealed class WssClient : IDisposable
             throw new ArgumentException("Recharge setup must be an array of exactly 4 integers.", nameof(rechargeSetup));
 
         // Convert ID safely
-        byte validatedId = ToByteValidated(contactId, (int)WssIntLimits.general, nameof(contactId));
+        byte validatedId = ToByteValidated(contactId, (int)WssIntLimits.oneByte, nameof(contactId));
 
         // Reverse order so index 0 (closest to switch) becomes index 3 internally
         // made so the order matches other methods in which array index 0 is closest to the switch
@@ -396,7 +494,7 @@ public sealed class WssClient : IDisposable
     public Task<string> DeleteContactConfig(int contactId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
     {
         // Convert ID safely to a byte (throws if out of range)
-        byte validatedId = ToByteValidated(contactId, (int)WssIntLimits.general, nameof(contactId));
+        byte validatedId = ToByteValidated(contactId, (int)WssIntLimits.oneByte, nameof(contactId));
         return SendCmdAsync(WssMessageId.DeleteContactConfig, target, ct, validatedId);
     }
 
@@ -409,38 +507,598 @@ public sealed class WssClient : IDisposable
     /// <param name="target">Target WSS device (default: Wss1).</param>
     /// <param name="ct">Optional cancellation token.</param>
     /// <returns>Processed response string from the WSS target.</returns>
-    public Task<string> CreateEventAsync(int eventId, int delayMs, int contactConfigId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    public Task<string> CreateEvent(int eventId, int delayMs, int contactConfigId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
     {
-        byte ev = ToByteValidated(eventId, (int)WssIntLimits.general, nameof(eventId));
-        byte dly = ToByteValidated(delayMs, (int)WssIntLimits.general, nameof(delayMs));
-        byte oc = ToByteValidated(contactConfigId, (int)WssIntLimits.general, nameof(contactConfigId));
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        byte dly = ToByteValidated(delayMs, (int)WssIntLimits.oneByte, nameof(delayMs));
+        byte oc = ToByteValidated(contactConfigId, (int)WssIntLimits.oneByte, nameof(contactConfigId));
 
         // Payload: [eventId][delay][contactConfigId]
         return SendCmdAsync(WssMessageId.CreateEvent, target, ct, ev, dly, oc);
     }
-    
+
     /// <summary>
     /// Creates an event with explicit shape IDs for the standard and recharge phases.
     /// </summary>
     /// <param name="eventId">Event ID (0–255).</param>
     /// <param name="delayMs">Delay from schedule start in milliseconds (0–255 in this command variant).</param>
     /// <param name="contactConfigId">Contact configuration ID (0–255).</param>
-    /// <param name="standardShapeId">Shape ID used during the standard (stim) phase (0–13).</param>
-    /// <param name="rechargeShapeId">Shape ID used during the recharge phase (0–13).</param>
+    /// <param name="standardShapeId">
+    /// Shape ID used during the standard (stim) phase:
+    /// 0=Rectangular (default), 1=Rectangular (DAC), 2=Sine, 3=Gaussian,
+    /// 4=Exponential Increase, 5=Exponential Decrease,
+    /// 6=Linear Increase, 7=Linear Decrease,
+    /// 10=Trapezoid (setup required),
+    /// 11=User Program 1 (setup required),
+    /// 12=User Program 2 (setup required),
+    /// 13=User Program 3 (setup required).
+    /// </param>
+    /// <param name="rechargeShapeId">
+    /// Shape ID used during the recharge phase (same mapping as <paramref name="standardShapeId"/>).
+    /// </param>
     /// <param name="target">Target WSS device (default: Wss1).</param>
     /// <param name="ct">Optional cancellation token.</param>
     /// <returns>Processed response string from the WSS target.</returns>
-    public Task<string> CreateEventAsync(int eventId, int delayMs, int contactConfigId, int standardShapeId, int rechargeShapeId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    public Task<string> CreateEvent(int eventId, int delayMs, int contactConfigId, int standardShapeId, int rechargeShapeId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
     {
-        byte ev   = ToByteValidated(eventId, (int)WssIntLimits.general, nameof(eventId));
-        byte dly  = ToByteValidated(delayMs, (int)WssIntLimits.general, nameof(delayMs));
-        byte oc   = ToByteValidated(contactConfigId, (int)WssIntLimits.general, nameof(contactConfigId));
-        byte std  = ToByteValidated(standardShapeId, (int)WssIntLimits.shape, nameof(standardShapeId));
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        byte dly = ToByteValidated(delayMs, (int)WssIntLimits.oneByte, nameof(delayMs));
+        byte oc = ToByteValidated(contactConfigId, (int)WssIntLimits.oneByte, nameof(contactConfigId));
+        byte std = ToByteValidated(standardShapeId, (int)WssIntLimits.shape, nameof(standardShapeId));
         byte rech = ToByteValidated(rechargeShapeId, (int)WssIntLimits.shape, nameof(rechargeShapeId));
 
         // Payload: [eventId][delay][outConfigId][standardShapeId][rechargeShapeId]
         return SendCmdAsync(WssMessageId.CreateEvent, target, ct, ev, dly, oc, std, rech);
     }
 
+    /// <summary>
+    /// Creates an event with amplitude arrays for standard/recharge phases plus pulse width settings.
+    /// PW fields are sent as 8-bit if all ≤ oneByte; otherwise all three (std, IPD, rech) are encoded as 16-bit big-endian.
+    /// Wire order for PW matches your original: [stdPW, IPD, rechPW].
+    /// </summary>
+    /// <param name="eventId">Event ID (0–255 or your chosen cap).</param>
+    /// <param name="delayMs">Delay from schedule start in milliseconds (0–255 in this variant).</param>
+    /// <param name="contactConfigId">Contact configuration ID (0–255).</param>
+    /// <param name="standardAmp">Four amplitudes for the standard (stim) phase (0–255 each).</param>
+    /// <param name="rechargeAmp">Four amplitudes for the recharge phase (0–255 each).</param>
+    /// <param name="pw">Three PW parameters: [standardPW, rechargePW, IPD] in microseconds.</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> CreateEvent(int eventId, int delayMs, int contactConfigId, int[] standardAmp, int[] rechargeAmp, int[] pw, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        if (standardAmp == null || standardAmp.Length != 4) throw new ArgumentException("standardAmp must have 4 elements.", nameof(standardAmp));
+        if (rechargeAmp == null || rechargeAmp.Length != 4) throw new ArgumentException("rechargeAmp must have 4 elements.", nameof(rechargeAmp));
+        if (pw == null || pw.Length != 3) throw new ArgumentException("pw must be [standardPW, rechargePW, IPD].", nameof(pw));
+
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        byte dly = ToByteValidated(delayMs, (int)WssIntLimits.oneByte, nameof(delayMs));
+        byte oc = ToByteValidated(contactConfigId, (int)WssIntLimits.oneByte, nameof(contactConfigId));
+
+        // Amplitudes (explicit names so exceptions point to the exact slot)
+        var s0 = ToByteValidated(standardAmp[0], (int)WssIntLimits.oneByte, "standardAmp[0]");
+        var s1 = ToByteValidated(standardAmp[1], (int)WssIntLimits.oneByte, "standardAmp[1]");
+        var s2 = ToByteValidated(standardAmp[2], (int)WssIntLimits.oneByte, "standardAmp[2]");
+        var s3 = ToByteValidated(standardAmp[3], (int)WssIntLimits.oneByte, "standardAmp[3]");
+        var r0 = ToByteValidated(rechargeAmp[0], (int)WssIntLimits.oneByte, "rechargeAmp[0]");
+        var r1 = ToByteValidated(rechargeAmp[1], (int)WssIntLimits.oneByte, "rechargeAmp[1]");
+        var r2 = ToByteValidated(rechargeAmp[2], (int)WssIntLimits.oneByte, "rechargeAmp[2]");
+        var r3 = ToByteValidated(rechargeAmp[3], (int)WssIntLimits.oneByte, "rechargeAmp[3]");
+
+        bool wide = pw.Any(v => v > (int)WssIntLimits.oneByte);
+
+        if (wide)
+        {
+            (byte sh, byte sl) = ToU16Validated(pw[0], (int)WssIntLimits.pulseWidthLong, "standardPW");
+            (byte ih, byte il) = ToU16Validated(pw[2], (int)WssIntLimits.pulseWidthLong, "IPD");
+            (byte rh, byte rl) = ToU16Validated(pw[1], (int)WssIntLimits.pulseWidthLong, "rechargePW");
+
+            return SendCmdAsync(WssMessageId.CreateEvent, target, ct, ev, dly, oc, s0, s1, s2, s3, r0, r1, r2, r3, sh, sl, ih, il, rh, rl);
+        }
+        else
+        {
+            byte std8 = ToByteValidated(pw[0], (int)WssIntLimits.oneByte, "standardPW");
+            byte ipd8 = ToByteValidated(pw[2], (int)WssIntLimits.oneByte, "IPD");
+            byte rech8 = ToByteValidated(pw[1], (int)WssIntLimits.oneByte, "rechargePW");
+
+            return SendCmdAsync(WssMessageId.CreateEvent, target, ct, ev, dly, oc, s0, s1, s2, s3, r0, r1, r2, r3, std8, ipd8, rech8);
+        }
+    }
+
+
+    /// <summary>
+    /// Creates an event with explicit shape IDs, amplitude arrays for standard/recharge phases, and pulse width settings.
+    /// PW fields are sent as 8-bit if all ≤ oneByte; otherwise all three (std, IPD, rech) are encoded as 16-bit big-endian.
+    /// Wire order for PW matches your original: [stdPW, IPD, rechPW].
+    /// </summary>
+    /// <param name="eventId">Event ID (0–255 or your chosen cap).</param>
+    /// <param name="delayMs">Delay from schedule start in milliseconds (0–255 in this variant).</param>
+    /// <param name="contactConfigId">Contact configuration ID (0–255).</param>
+    /// <param name="standardShapeId">
+    /// Shape ID used during the standard (stim) phase:
+    /// 0=Rectangular (default), 1=Rectangular (DAC), 2=Sine, 3=Gaussian,
+    /// 4=Exponential Increase, 5=Exponential Decrease,
+    /// 6=Linear Increase, 7=Linear Decrease,
+    /// 10=Trapezoid (setup required),
+    /// 11=User Program 1 (setup required),
+    /// 12=User Program 2 (setup required),
+    /// 13=User Program 3 (setup required).
+    /// </param>
+    /// <param name="rechargeShapeId">
+    /// Shape ID used during the recharge phase (same mapping as <paramref name="standardShapeId"/>).
+    /// </param>
+    /// <param name="standardAmp">Four amplitudes for the standard (stim) phase (0–255 each).</param>
+    /// <param name="rechargeAmp">Four amplitudes for the recharge phase (0–255 each).</param>
+    /// <param name="pw">Three PW parameters: [standardPW, rechargePW, IPD] in microseconds.</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> CreateEvent(int eventId, int delayMs, int contactConfigId, int standardShapeId, int rechargeShapeId, int[] standardAmp, int[] rechargeAmp, int[] pw, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        if (standardAmp == null || standardAmp.Length != 4) throw new ArgumentException("standardAmp must have 4 elements.", nameof(standardAmp));
+        if (rechargeAmp == null || rechargeAmp.Length != 4) throw new ArgumentException("rechargeAmp must have 4 elements.", nameof(rechargeAmp));
+        if (pw == null || pw.Length != 3) throw new ArgumentException("pw must be [standardPW, rechargePW, IPD].", nameof(pw));
+
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        byte dly = ToByteValidated(delayMs, (int)WssIntLimits.oneByte, nameof(delayMs));
+        byte oc = ToByteValidated(contactConfigId, (int)WssIntLimits.oneByte, nameof(contactConfigId));
+        byte stdS = ToByteValidated(standardShapeId, (int)WssIntLimits.shape, nameof(standardShapeId));
+        byte recS = ToByteValidated(rechargeShapeId, (int)WssIntLimits.shape, nameof(rechargeShapeId));
+
+        // Amplitudes
+        var s0 = ToByteValidated(standardAmp[0], (int)WssIntLimits.oneByte, "standardAmp[0]");
+        var s1 = ToByteValidated(standardAmp[1], (int)WssIntLimits.oneByte, "standardAmp[1]");
+        var s2 = ToByteValidated(standardAmp[2], (int)WssIntLimits.oneByte, "standardAmp[2]");
+        var s3 = ToByteValidated(standardAmp[3], (int)WssIntLimits.oneByte, "standardAmp[3]");
+        var r0 = ToByteValidated(rechargeAmp[0], (int)WssIntLimits.oneByte, "rechargeAmp[0]");
+        var r1 = ToByteValidated(rechargeAmp[1], (int)WssIntLimits.oneByte, "rechargeAmp[1]");
+        var r2 = ToByteValidated(rechargeAmp[2], (int)WssIntLimits.oneByte, "rechargeAmp[2]");
+        var r3 = ToByteValidated(rechargeAmp[3], (int)WssIntLimits.oneByte, "rechargeAmp[3]");
+
+        bool wide = pw.Any(v => v > (int)WssIntLimits.oneByte);
+
+        if (wide)
+        {
+            // Big-endian pairs: stdPW, IPD, rechPW
+            (byte sh, byte sl) = ToU16Validated(pw[0], (int)WssIntLimits.pulseWidthLong, "stdPW");
+            (byte ih, byte il) = ToU16Validated(pw[2], (int)WssIntLimits.pulseWidthLong, "IPD");
+            (byte rh, byte rl) = ToU16Validated(pw[1], (int)WssIntLimits.pulseWidthLong, "rechargePW");
+
+            return SendCmdAsync(WssMessageId.CreateEvent, target, ct, ev, dly, oc, s0, s1, s2, s3, r0, r1, r2, r3, sh, sl, ih, il, rh, rl, stdS, recS);
+        }
+        else
+        {
+            // 8-bit fields: stdPW, IPD, rechPW
+            byte std8 = ToByteValidated(pw[0], (int)WssIntLimits.oneByte, "stdPW");
+            byte ipd8 = ToByteValidated(pw[2], (int)WssIntLimits.oneByte, "IPD");
+            byte rech8 = ToByteValidated(pw[1], (int)WssIntLimits.oneByte, "rechargePW");
+
+            return SendCmdAsync(WssMessageId.CreateEvent, target, ct, ev, dly, oc, s0, s1, s2, s3, r0, r1, r2, r3, std8, ipd8, rech8, stdS, recS);
+        }
+    }
+
+    /// <summary>
+    /// Deletes an existing event on the WSS device by its ID.
+    /// </summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="target">Target WSS device (default: Wss1).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> DeleteEvent(int eventId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        return SendCmdAsync(WssMessageId.DeleteEvent, target, ct, ev);
+    }
+
+    /// <summary>
+    /// Adds an event to a schedule.
+    /// </summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="scheduleId">Schedule ID (0–255).</param>
+    /// <param name="target">Target WSS device (default: Wss1).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> AddEventToSchedule(int eventId, int scheduleId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        byte sc = ToByteValidated(scheduleId, (int)WssIntLimits.oneByte, nameof(scheduleId));
+        return SendCmdAsync(WssMessageId.AddEventToSchedule, target, ct, ev, sc);
+    }
+
+    /// <summary>
+    /// Removes an event from its assigned schedule.
+    /// </summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="target">Target WSS device (default: Wss1).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> DeleteEventFromSchedule(int eventId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        return SendCmdAsync(WssMessageId.RemoveEventFromSchedule, target, ct, ev);
+    }
+
+    /// <summary>
+    /// Moves an event to a different schedule with a new delay offset.
+    /// Fails on-device if <paramref name="delayMs"/> exceeds the schedule period.
+    /// </summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="scheduleId">Destination schedule ID (0–255).</param>
+    /// <param name="delayMs">Delay from schedule start in milliseconds (0–255 in this variant).</param>
+    /// <param name="target">Target WSS device (default: Wss1).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> MoveEventToSchedule(int eventId, int scheduleId, int delayMs, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        byte sc = ToByteValidated(scheduleId, (int)WssIntLimits.oneByte, nameof(scheduleId));
+        byte dly = ToByteValidated(delayMs, (int)WssIntLimits.oneByte, nameof(delayMs));
+        return SendCmdAsync(WssMessageId.MoveEventToSchedule, target, ct, ev, sc, dly);
+    }
+
+    /// <summary>
+    /// Changes an event's output/contact configuration by ID.
+    /// </summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="contactConfigId">Output/contact configuration ID (0–255).</param>
+    /// <param name="target">Target WSS device (default: Wss1).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> EditEventContactConfig(int eventId, int contactConfigId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        byte oc = ToByteValidated(contactConfigId, (int)WssIntLimits.oneByte, nameof(contactConfigId));
+        // Payload: [eventId][subcmd for contactConfig=0x01][outConfigId]
+        return SendCmdAsync(WssMessageId.EditEventConfig, target, ct, ev, 0x01, oc);
+    }
+
+    /// <summary>
+    /// Changes an event's pulse widths: [standardPW, rechargePW, IPD] (μs).
+    /// Uses 8-bit fields if all ≤ oneByte; otherwise encodes all three as 16-bit big-endian.
+    /// Wire order matches firmware: [stdPW, IPD, rechPW].
+    /// </summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="pw">Three PW values: [standardPW, rechargePW, IPD] in microseconds.</param>
+    /// <param name="target">Target WSS device (default: Wss1).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> EditEventPw(int eventId, int[] pw, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        if (pw == null || pw.Length != 3) throw new ArgumentException("pw must be [standardPW, rechargePW, IPD].", nameof(pw));
+
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+
+        bool wide = pw.Any(v => v > (int)WssIntLimits.oneByte);
+
+        if (wide)
+        {
+            // Big-endian pairs in order: stdPW, IPD, rechPW
+            (byte sh, byte sl) = ToU16Validated(pw[0], (int)WssIntLimits.pulseWidthLong, "standardPW");
+            (byte ih, byte il) = ToU16Validated(pw[2], (int)WssIntLimits.pulseWidthLong, "IPD");
+            (byte rh, byte rl) = ToU16Validated(pw[1], (int)WssIntLimits.pulseWidthLong, "rechargePW");
+            // Payload: [eventId][subcmd for pw=0x02][stdH stdL][ipdH ipdL][rechH rechL]
+            return SendCmdAsync(WssMessageId.EditEventConfig, target, ct, ev, 0x02, sh, sl, ih, il, rh, rl);
+        }
+        else
+        {
+            // 8-bit fields in order: stdPW, IPD, rechPW
+            byte std8 = ToByteValidated(pw[0], (int)WssIntLimits.oneByte, "standardPW");
+            byte ipd8 = ToByteValidated(pw[2], (int)WssIntLimits.oneByte, "IPD");
+            byte rech8 = ToByteValidated(pw[1], (int)WssIntLimits.oneByte, "rechargePW");
+            // Payload: [eventId][subcmd for pw=0x02][std][ipd][rech]
+            return SendCmdAsync(WssMessageId.EditEventConfig, target, ct, ev, 0x02, std8, ipd8, rech8);
+        }
+    }
+
+    /// <summary>
+    /// Changes an event's amplitude configuration for standard and recharge phases.
+    /// </summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="standardAmp">Four amplitudes for the standard (stim) phase, 0–255 each.</param>
+    /// <param name="rechargeAmp">Four amplitudes for the recharge phase, 0–255 each.</param>
+    /// <param name="target">Target WSS device (default: Wss1).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> EditEventAmp(int eventId, int[] standardAmp, int[] rechargeAmp, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        if (standardAmp == null || standardAmp.Length != 4) throw new ArgumentException("standardAmp must have 4 elements.", nameof(standardAmp));
+        if (rechargeAmp == null || rechargeAmp.Length != 4) throw new ArgumentException("rechargeAmp must have 4 elements.", nameof(rechargeAmp));
+
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+
+        byte s0 = ToByteValidated(standardAmp[0], (int)WssIntLimits.oneByte, "standardAmp[0]");
+        byte s1 = ToByteValidated(standardAmp[1], (int)WssIntLimits.oneByte, "standardAmp[1]");
+        byte s2 = ToByteValidated(standardAmp[2], (int)WssIntLimits.oneByte, "standardAmp[2]");
+        byte s3 = ToByteValidated(standardAmp[3], (int)WssIntLimits.oneByte, "standardAmp[3]");
+        byte r0 = ToByteValidated(rechargeAmp[0], (int)WssIntLimits.oneByte, "rechargeAmp[0]");
+        byte r1 = ToByteValidated(rechargeAmp[1], (int)WssIntLimits.oneByte, "rechargeAmp[1]");
+        byte r2 = ToByteValidated(rechargeAmp[2], (int)WssIntLimits.oneByte, "rechargeAmp[2]");
+        byte r3 = ToByteValidated(rechargeAmp[3], (int)WssIntLimits.oneByte, "rechargeAmp[3]");
+
+        // Payload: [eventId][subcmd for amp=0x04][s0 s1 s2 s3 r0 r1 r2 r3]
+        return SendCmdAsync(WssMessageId.EditEventConfig, target, ct, ev, 0x04, s0, s1, s2, s3, r0, r1, r2, r3);
+    }
+
+    /// <summary>Changes an event's shape configuration.</summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="standardShapeId">
+    /// Shape ID used during the standard (stim) phase:
+    /// 0=Rectangular (default), 1=Rectangular (DAC), 2=Sine, 3=Gaussian,
+    /// 4=Exponential Increase, 5=Exponential Decrease,
+    /// 6=Linear Increase, 7=Linear Decrease,
+    /// 10=Trapezoid (setup required),
+    /// 11=User Program 1 (setup required),
+    /// 12=User Program 2 (setup required),
+    /// 13=User Program 3 (setup required).
+    /// </param>
+    /// <param name="rechargeShapeId">
+    /// Shape ID used during the recharge phase (same mapping as <paramref name="standardShapeId"/>).
+    /// </param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> EditEventShape(int eventId, int standardShapeId, int rechargeShapeId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        byte stdS = ToByteValidated(standardShapeId, (int)WssIntLimits.shape, nameof(standardShapeId));
+        byte recS = ToByteValidated(rechargeShapeId, (int)WssIntLimits.shape, nameof(rechargeShapeId));
+        // Payload: [eventId][subcmd shape=0x05][standardShapeId][rechargeShapeId]
+        return SendCmdAsync(WssMessageId.EditEventConfig, target, ct, ev, 0x05, stdS, recS);
+    }
+
+    /// <summary>Changes an event's delay (ms from schedule start).</summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="delayMs">Delay in milliseconds (0–255 in this variant).</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> EditEventDelay(int eventId, int delayMs, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        byte dly = ToByteValidated(delayMs, (int)WssIntLimits.oneByte, nameof(delayMs));
+        // Payload: [eventId][subcmd delay=0x06][delay]
+        return SendCmdAsync(WssMessageId.EditEventConfig, target, ct, ev, 0x06, dly);
+    }
+
+    /// <summary>Changes an event's ratio (allowed: 1, 2, 4, 8).</summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="ratio">Ratio value (must be one of 1, 2, 4, 8).</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> EditEventRatio(int eventId, int ratio, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        if (ratio != 1 && ratio != 2 && ratio != 4 && ratio != 8)
+            throw new ArgumentOutOfRangeException(nameof(ratio), "Ratio must be one of {1,2,4,8}.");
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        byte ra = ToByteValidated(ratio, (int)WssIntLimits.oneByte, nameof(ratio));
+        // Payload: [eventId][subcmd ratio=0x07][ratio]
+        return SendCmdAsync(WssMessageId.EditEventConfig, target, ct, ev, 0x07, ra);
+    }
+
+    /// <summary>Creates a schedule.</summary>
+    /// <param name="scheduleId">Schedule ID (0–255).</param>
+    /// <param name="durationMs">Duration in milliseconds (16-bit, big-endian on wire).</param>
+    /// <param name="syncSignal">Sync group ID (0–255).</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> CreateSchedule(int scheduleId, int durationMs, int syncSignal, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte sc = ToByteValidated(scheduleId, (int)WssIntLimits.oneByte, nameof(scheduleId));
+        (byte dh, byte dl) = ToU16Validated(durationMs, (int)WssIntLimits.Frequency, nameof(durationMs)); // original used 16-bit BE
+        byte sg = ToByteValidated(syncSignal, (int)WssIntLimits.oneByte, nameof(syncSignal));
+        // Payload: [scheduleId][durationHi][durationLo][syncSignal]
+        return SendCmdAsync(WssMessageId.CreateSchedule, target, ct, sc, dh, dl, sg);
+    }
+
+    /// <summary>Deletes a schedule by ID.</summary>
+    /// <param name="scheduleId">Schedule ID (0–255).</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> DeleteSchedule(int scheduleId, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte sc = ToByteValidated(scheduleId, (int)WssIntLimits.oneByte, nameof(scheduleId));
+        return SendCmdAsync(WssMessageId.DeleteSchedule, target, ct, sc);
+    }
+
+    /// <summary>Sends a sync signal; starts schedules in the group from READY to ACTIVE.</summary>
+    /// <param name="syncSignal">Sync group ID (0–255).</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> SyncGroup(int syncSignal, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte sg = ToByteValidated(syncSignal, (int)WssIntLimits.oneByte, nameof(syncSignal));
+        return SendCmdAsync(WssMessageId.SyncGroup, target, ct, sg);
+    }
+
+    /// <summary>Changes a sync group's state: READY=1, ACTIVE=0, SUSPEND=2.</summary>
+    /// <param name="syncSignal">Sync group ID (0–255).</param>
+    /// <param name="state">State (0=ACTIVE, 1=READY, 2=SUSPEND).</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> ChangeGroupState(int syncSignal, int state, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte sg = ToByteValidated(syncSignal, (int)WssIntLimits.oneByte, nameof(syncSignal));
+        byte st = ToByteValidated(state, (int)WssIntLimits.state, nameof(state));
+        return SendCmdAsync(WssMessageId.ChangeGroupState, target, ct, sg, st);
+    }
+
+    /// <summary>Changes a schedule's state.</summary>
+    /// <param name="scheduleId">Schedule ID (0–255).</param>
+    /// <param name="state">State (0..255, TODO).</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> ChangeScheduleState(int scheduleId, int state, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte sc = ToByteValidated(scheduleId, (int)WssIntLimits.oneByte, nameof(scheduleId));
+        byte st = ToByteValidated(state, (int)WssIntLimits.oneByte, nameof(state));
+        // Command 0x4E subcmd 0x01: [scheduleId][state]
+        return SendCmdAsync(WssMessageId.ChangeScheduleConfig, target, ct, 0x01, sc, st);
+    }
+
+    /// <summary>Changes a schedule's sync group.</summary>
+    /// <param name="scheduleId">Schedule ID (0–255).</param>
+    /// <param name="syncSignal">Sync group ID (0–255).</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> ChangeScheduleGroup(int scheduleId, int syncSignal, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte sc = ToByteValidated(scheduleId, (int)WssIntLimits.oneByte, nameof(scheduleId));
+        byte sg = ToByteValidated(syncSignal, (int)WssIntLimits.oneByte, nameof(syncSignal));
+        // Command 0x4E subcmd 0x02: [scheduleId][syncSignal]
+        return SendCmdAsync(WssMessageId.ChangeScheduleConfig, target, ct, 0x02, sc, sg);
+    }
+
+    /// <summary>Changes a schedule's duration (8-bit variant). For 16-bit, prefer recreating the schedule.</summary>
+    /// <param name="scheduleId">Schedule ID (0–255).</param>
+    /// <param name="durationMs">Duration in milliseconds (0–255 in this subcommand TODO).</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> ChangeScheduleDuration(int scheduleId, int durationMs, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte sc = ToByteValidated(scheduleId, (int)WssIntLimits.oneByte, nameof(scheduleId));
+        byte du = ToByteValidated(durationMs, (int)WssIntLimits.oneByte, nameof(durationMs));
+        // Command 0x4E subcmd 0x03: [scheduleId][duration]
+        return SendCmdAsync(WssMessageId.ChangeScheduleConfig, target, ct, 0x03, sc, du);
+    }
+
+    /// <summary>Resets all schedules.</summary>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> ResetSchedules(WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        return SendCmdAsync(WssMessageId.ResetSchedule, target, ct);
+    }
+
+    /// <summary>
+    /// Uploads a custom waveform chunk (8 samples) into a slot.
+    /// Call this 4 times (msgNumber 0..3) to send all 32 samples.
+    /// Each sample is encoded as 16-bit big-endian.
+    /// </summary>
+    /// <param name="slot">Waveform slot (0–255).</param>
+    /// <param name="waveformChunk8">Exactly 8 sample values for this chunk (0..2000 each).</param>
+    /// <param name="msgNumber">Chunk index (0..3) — send four chunks to fill 32 samples.</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> SetCustomWaveform(int slot, int[] waveformChunk8, int msgNumber, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        if (waveformChunk8 == null || waveformChunk8.Length != 8)
+            throw new ArgumentException("waveformChunk8 must have exactly 8 elements.", nameof(waveformChunk8));
+
+        byte sl = ToByteValidated(slot, (int)WssIntLimits.oneByte, nameof(slot));
+        byte msg = ToByteValidated(msgNumber, (int)WssIntLimits.customWaveformChunks, nameof(msgNumber));
+
+        // Build payload: [slot][msgNumber][s0H s0L][s1H s1L]...[s7H s7L]
+        var bytes = new List<byte>(2 + 8 * 2) { sl, msg };
+        for (int i = 0; i < 8; i++)
+        {
+            (byte hi, byte lo) = ToU16Validated(waveformChunk8[i], WssIntLimits.customWaveformMaxAmp, $"waveformChunk8[{i}]");
+            bytes.Add(hi); bytes.Add(lo);
+        }
+
+        return SendCmdAsync(WssMessageId.CustomWaveform, target, ct, bytes.ToArray());
+    }
+
+    /// <summary>
+    /// Writes a single settings byte at <paramref name="address"/> to <paramref name="value"/>.
+    /// </summary>
+    /// <param name="address">Settings address (0–255).</param>
+    /// <param name="value">Value to write (0–255).</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> EditSettings(int address, int value, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte addr = ToByteValidated(address, (int)WssIntLimits.oneByte, nameof(address));
+        byte val = ToByteValidated(value, (int)WssIntLimits.oneByte, nameof(value));
+        // Command 0x09 subcmd 0x03: [address][value]
+        return SendCmdAsync(WssMessageId.BoardCommands, target, ct, 0x03, addr, val);
+    }
+
+    /// <summary>
+    /// Loads settings from FRAM into the active board settings.
+    /// </summary>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> PopulateBoardSettings(WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+        => SendCmdAsync(WssMessageId.BoardCommands, target, ct, 0x0A);
+
+    /// <summary>
+    /// Saves current board settings into FRAM.
+    /// </summary>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> PopulateFramSettings(WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+        => SendCmdAsync(WssMessageId.BoardCommands, target, ct, 0x0B);
+
+    /// <summary>
+    /// Erases device log data.
+    /// </summary>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> EraseLog(WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+        => SendCmdAsync(WssMessageId.BoardCommands, target, ct, 0x04);
+
+    /// <summary>
+    /// Requests device log data (raw read mode on device side)
+    /// Untested TODO.
+    /// </summary>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> GetLog(WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+        => SendCmdAsync(WssMessageId.BoardCommands, target, ct, 0x05);
+
+    /// <summary>
+    /// Streams changes to PA (amplitude), PW (pulse width), and IPI (period) for up to three schedules in one shot.
+    /// Pass exactly one of the arrays as <c>null</c> to omit that group (protocol supports omitting at most one group).
+    /// Uses opcodes:
+    ///   0x30 = PA+PW+IPI,  0x31 = PA+PW (no IPI),  0x32 = PA+IPI (no PW),  0x33 = PW+IPI (no PA).
+    /// All elements are 0..255 in this streaming variant (one byte each).
+    /// </summary>
+    /// <param name="pa">Three amplitudes (0..255) or null to keep PA unchanged.</param>
+    /// <param name="pw">Three pulse widths (0..255) or null to keep PW unchanged.</param>
+    /// <param name="ipi">Three periods in ms (0..255) or null to keep IPI unchanged.</param>
+    /// <param name="target">Target WSS; streaming commonly uses Broadcast.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task StreamChange(int[] pa, int[] pw, int[] ipi, WssTarget target = WssTarget.Broadcast, CancellationToken ct = default)
+    {
+        int nulls = (pa == null ? 1 : 0) + (pw == null ? 1 : 0) + (ipi == null ? 1 : 0);
+        if (nulls > 1) throw new NotSupportedException("Protocol supports omitting at most one of {PA, PW, IPI}.");
+
+        // Validate non-null arrays are exactly 3 elements and 0..255 each
+        static (byte a0, byte a1, byte a2) V3(int[] arr, string name)
+        {
+            if (arr == null) return (0, 0, 0);
+            if (arr.Length != 3) throw new ArgumentException($"{name} must have exactly 3 elements.", name);
+            return (
+                ToByteValidated(arr[0], (int)WssIntLimits.oneByte, $"{name}[0]"),
+                ToByteValidated(arr[1], (int)WssIntLimits.oneByte, $"{name}[1]"),
+                ToByteValidated(arr[2], (int)WssIntLimits.oneByte, $"{name}[2]")
+            );
+        }
+
+        var (pa0, pa1, pa2) = V3(pa, nameof(pa));
+        var (pw0, pw1, pw2) = V3(pw, nameof(pw));
+        var (i0, i1, i2) = V3(ipi, nameof(ipi));
+
+        // Choose opcode and lay out payload exactly like your originals
+        if (pa == null)
+            // 0x33: [00 00 00][PW0 PW1 PW2][IPI0 IPI1 IPI2]
+            return SendFireAndForgetAsync(WssMessageId.StreamChangeNoPA, target, ct, 0x00, 0x00, 0x00, pw0, pw1, pw2, i0, i1, i2);
+        else if (pw == null)
+            // 0x32: [PA0 PA1 PA2][00 00 00][IPI0 IPI1 IPI2]
+            return SendFireAndForgetAsync(WssMessageId.StreamChangeNoPW, target, ct, pa0, pa1, pa2, 0x00, 0x00, 0x00, i0, i1, i2);
+        else if (ipi == null)
+            // 0x31: [PA0 PA1 PA2][PW0 PW1 PW2][00 00 00]
+            return SendFireAndForgetAsync(WssMessageId.StreamChangeNoIPI, target, ct, pa0, pa1, pa2, pw0, pw1, pw2, 0x00, 0x00, 0x00);
+        else
+            // 0x30: [PA0 PA1 PA2][PW0 PW1 PW2][IPI0 IPI1 IPI2]
+            return SendFireAndForgetAsync(WssMessageId.StreamChangeAll, target, ct, pa0, pa1, pa2, pw0, pw1, pw2, i0, i1, i2);
+    }
+
+    /// <summary>
+    /// Convenience: streams zeros to PA, PW, and IPI (effectively stopping stimulation).
+    /// Uses opcode 0x31 (PA+PW, no IPI) with trailing zeros to match the original layout.
+    /// </summary>
+    /// <param name="target">Target WSS (default Broadcast).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task ZeroOutStim(WssTarget target = WssTarget.Broadcast, CancellationToken ct = default)
+    {
+        // Matches your original: cmd 0x31 and nine zeroes
+        return SendFireAndForgetAsync(WssMessageId.StreamChangeNoIPI, target, ct,
+            0x00, 0x00, 0x00,   // PA0..2
+            0x00, 0x00, 0x00,   // PW0..2
+            0x00, 0x00, 0x00);  // IPI0..2 (placeholders)
+    }
+    //0x9B possibel duplicate of 0x49 with shape cmd
+    //TODO Missing waiting on explanation: 0x9A, 0x9C, 0x9E, 0x3A, 0x3B, 0x3C
+    //not implemented: 0x20, 0x50, 0x51
     #endregion
 }
