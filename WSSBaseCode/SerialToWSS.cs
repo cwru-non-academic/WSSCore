@@ -211,11 +211,11 @@ public class SerialToWSS
             if (data[4]==0x01)//start acknowlege
             {
                 started = true;
-                return "Start Acknowleged";
+                return "Log: Start Acknowleged by WSS " + data[0].ToString("x");
             } else if (data[4] == 0x00) //stop acknowlege
             {
                 started= false;
-                return "Stop Acknowleged";
+                return "Log: Stop Acknowleged by WSS " + data[0].ToString("x");
             }
         }
         return ByteToString(data, length);
@@ -233,9 +233,8 @@ public class SerialToWSS
             {
                 realLenght = incoming.Length;
             }
-            //msgs.Add("rl"+ realLenght.ToString() + incoming[3].ToString());
             //msgs.Add("In " + ByteToString(incoming, realLenght)); //debug to see byte input
-            msgs.Add("In " + processInput(incoming, realLenght));
+            msgs.Add(processInput(incoming, realLenght));
         }
     }
     #endregion
@@ -771,6 +770,13 @@ public class SerialToWSS
         byte[] data = new byte[] { 0x0B, 0x00, 0x03};
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
         msg_builder(data, 0);
+    }
+
+    public void startStim(int targetWSS)
+    {
+        byte[] data = new byte[] { 0x0B, 0x00, 0x03 };
+        data[1] = BitConverter.GetBytes(data.Length - 2)[0];
+        msg_builder(data, targetWSS);
     }
 
     //stop stim

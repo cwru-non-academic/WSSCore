@@ -2,6 +2,7 @@
 using UnityEngine;
 using System;
 using System.Diagnostics;
+using TMPro;
 
 public class Stimulation : MonoBehaviour
 {
@@ -22,6 +23,7 @@ public class Stimulation : MonoBehaviour
     private bool setupRunning = false;
     private bool setup = false;
     private int currentSetupTries = 0;
+    private bool routineRunning = false;
     private Stopwatch timer;
     private SerialToWSS WSS;
     private float[] prevMagnitude;
@@ -85,7 +87,7 @@ public class Stimulation : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if(!testMode)
+        if(!testMode && WSS != null)
         {
             WSS.checkForErrors();
             started = WSS.Started();
@@ -98,14 +100,20 @@ public class Stimulation : MonoBehaviour
                         WSS.msgs.RemoveAt(i);
                         if (setupRunning && currentSetupTries < maxSetupTries)
                         {
-                            UnityEngine.Debug.LogError("Error in setup. Retriying. "+ currentSetupTries.ToString()+" out of "+maxSetupTries.ToString()+" attempts.");
+                            UnityEngine.Debug.LogError("Error in setup. Retrying. "+ currentSetupTries.ToString()+" out of "+maxSetupTries.ToString()+" attempts.");
                             currentSetupTries++;
                             WSS.clearQueue();
                             initialize();
                         }
-                    }else
+                    }
+                    else if (WSS.msgs[i].StartsWith("Log:"))
                     {
                         UnityEngine.Debug.LogError(WSS.msgs[i]);
+                        WSS.msgs.RemoveAt(i);
+                    }
+                    else
+                    {
+                        UnityEngine.Debug.Log(WSS.msgs[i]);
                         WSS.msgs.RemoveAt(i);
                     }
                 }
@@ -133,11 +141,6 @@ public class Stimulation : MonoBehaviour
     void OnDisable()
     {
         releaseRadio();
-    }
-
-    public bool isTestMode()
-    {
-        return testMode;
     }
 
     public void releaseRadio()
@@ -173,8 +176,8 @@ public class Stimulation : MonoBehaviour
     {
         //finger name of the finger (shown in if statements below) or channel name
         //right bool true for right hand false for left (not implemented yet)
-        //PW is pulse width of the stimualtion in the range 4 to 255 us or 0us for no stim
-        //Amp is amplitude of the stimualtion in the rnage of 0 to 83mA (non linear or exact).
+        //PW is pulse width of the stimulation in the range 4 to 255 us or 0us for no stim
+        //Amp is amplitude of the stimulation in the rnage of 0 to 83mA (non linear or exact).
         int channel = 0;
         if (finger == "Index")
         {
@@ -207,7 +210,7 @@ public class Stimulation : MonoBehaviour
                 channel = Int32.Parse(finger.Substring(2));
             } catch (FormatException e)
             { 
-                UnityEngine.Debug.LogError("Stimualtion channel not a number: "+ e.Message);
+                UnityEngine.Debug.LogError("Stimulation channel not a number: "+ e.Message);
                 channel = 0;
             }
         }
@@ -238,7 +241,8 @@ public class Stimulation : MonoBehaviour
 
     IEnumerator UpdateCoroutine()
     {
-        while(running)
+        routineRunning = true;
+        while (running)
         {
             while (started && ready)
             {
@@ -254,6 +258,7 @@ public class Stimulation : MonoBehaviour
             }
             yield return new WaitForSeconds(0.02f);
         }
+        routineRunning = false;
     }
 
     public void StartStimulation()
@@ -262,10 +267,20 @@ public class Stimulation : MonoBehaviour
         {
             return;
         }
-        running = true;
         WSS.startStim();
-        UnityEngine.Debug.Log("sent start stim msg");
-        StartCoroutine(UpdateCoroutine());
+        startStreaming();
+    }
+
+    private void startStreaming()
+    {
+        if (!running)
+        {
+            running = true;
+            if (!routineRunning)
+            {
+                StartCoroutine(UpdateCoroutine());
+            }
+        }
     }
 
     public void StopStimulation()
@@ -437,7 +452,9 @@ public class Stimulation : MonoBehaviour
             WSS.edit_event_ratio(i, 3, 8); //make the wave symetric
             WSS.add_event_to_schedule(i, 3, 3);
             WSS.sync_group(i, 170); //sync schedules with 170 sync signal
+            WSS.startStim(i);
         }
+        startStreaming();
     }
 
     public void Save(int targetWSS)
