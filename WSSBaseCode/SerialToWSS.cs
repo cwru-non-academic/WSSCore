@@ -786,11 +786,18 @@ public class SerialToWSS
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
         msg_builder(data, 0);
     }
+    
+    public void stopStim(int targetWSS)
+    {
+        byte[] data = new byte[] { 0x0B, 0x00, 0x04 };
+        data[1] = BitConverter.GetBytes(data.Length - 2)[0];
+        msg_builder(data, targetWSS);
+    }
 
     //edit setting array
     public void editSettings(int targetWSS, int address, int value)
     {
-        byte[] data = new byte[] { 0x09, 0x00, 0x03, BitConverter.GetBytes(address)[0], BitConverter.GetBytes(value)[0]};
+        byte[] data = new byte[] { 0x09, 0x00, 0x03, BitConverter.GetBytes(address)[0], BitConverter.GetBytes(value)[0] };
         data[1] = BitConverter.GetBytes(data.Length - 2)[0];
         msg_builder(data, targetWSS);
     }

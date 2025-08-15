@@ -28,7 +28,7 @@ public sealed class WssClient : IDisposable
         //pulseWidthLongLegacy = 1000 TODO
         state = 2,
         customWaveformChunks = 3,
-        Frequeny = 10000,//TODO
+        Frequency = 10000,//TODO
         customWaveformMaxAmp = 2000
     }
 
@@ -980,7 +980,7 @@ public sealed class WssClient : IDisposable
         var bytes = new List<byte>(2 + 8 * 2) { sl, msg };
         for (int i = 0; i < 8; i++)
         {
-            (byte hi, byte lo) = ToU16Validated(waveformChunk8[i], WssIntLimits.customWaveformMaxAmp, $"waveformChunk8[{i}]");
+            (byte hi, byte lo) = ToU16Validated(waveformChunk8[i], (int)WssIntLimits.customWaveformMaxAmp, $"waveformChunk8[{i}]");
             bytes.Add(hi); bytes.Add(lo);
         }
 
