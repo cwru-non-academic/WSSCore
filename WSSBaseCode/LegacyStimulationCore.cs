@@ -120,7 +120,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
 
         // fetch / forward any transport errors
         _wss.checkForErrors();
-        if(_wss.msgs.Count > 0)
+        if (_wss.msgs.Count > 0)
         {
             foreach (var msg in _wss.msgs)
             {
@@ -144,8 +144,8 @@ public sealed class LegacyStimulationCore : IStimulationCore
                 {
                     Log.Info(msg);
                 }
-                _wss.msgs.Remove(msg);
             }
+            _wss.msgs.Clear();
         }
 
         // When queue becomes empty during setup, mark ready
@@ -169,7 +169,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
         }
         catch { /* ignore */ }
 
-        if (!_testMode)
+        if (!_testMode && _wss != null)
         {
             _running = false;
             try { _wss.zero_out_stim(); } catch { }
@@ -178,17 +178,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
 
         _ready = false;
         _streamCts?.Cancel();
-    }
-
-    public void ReleaseTransportLayer()
-    {
-        
-    }
-
-    public void ResetTransportLayer()
-    {
-        Shutdown();
-        Initialize();
+        _wss = null;
     }
 
     public void LoadConfigFile()
@@ -200,7 +190,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
 
     // ---- status ----
 
-    public bool Started() => _testMode ? _running : _wss.Started();
+    public bool Started() => _testMode ? _running : (_wss?.Started() ?? false);
     public bool Ready() => _ready;
 
     public bool IsModeValid()
@@ -241,8 +231,11 @@ public sealed class LegacyStimulationCore : IStimulationCore
             StartStreamingInternal();
             return;
         }
-        _wss.startStim(targetWSS);
+        if (_wss != null)
+        {
+            _wss.startStim(targetWSS);
         StartStreamingInternal();
+        }
     }
 
     public void StopStim(int targetWSS = 0)
@@ -379,7 +372,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
         string candidatePath = Path.Combine(_jsonPath, fileName);
         if (!candidatePath.EndsWith("WF.json", StringComparison.OrdinalIgnoreCase))
         {
-            candidatePath = Path.ChangeExtension(fileName + "WF", "json");
+            candidatePath =  Path.Combine(_jsonPath, Path.ChangeExtension(fileName + "WF", "json"));
         }
 
         try
