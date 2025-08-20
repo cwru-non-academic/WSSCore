@@ -50,7 +50,8 @@ public sealed class LegacyStimulationCore : IStimulationCore
     /// <summary>
     /// Uses explicit COM port string.
     /// </summary>
-    public LegacyStimulationCore(string comPort, string JSONpath, bool testMode = false, int maxSetupTries = 5) {
+    public LegacyStimulationCore(string comPort, string JSONpath, bool testMode = false, int maxSetupTries = 5)
+    {
         _comPort = comPort;
         _jsonPath = JSONpath;
         _config = new StimConfigController(_jsonPath);
@@ -73,7 +74,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
 
     public void Initialize()
     {
-        if(_ready || _setupRunning)
+        if (_ready || _setupRunning)
         {
             Shutdown();
         }
@@ -101,7 +102,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
             return;
         }
 
-        if(_comPort != null)
+        if (_comPort != null)
         {
             _wss = new SerialToWSS(_comPort);
         }
@@ -201,11 +202,11 @@ public sealed class LegacyStimulationCore : IStimulationCore
 
     // ---- streaming / control ----
 
-    public void Stream_change(int targetWSS, int[] PA, int[] PW, int[] IPI)
+    public void StreamChange(int[] PA, int[] PW, int[] IPI, WssTarget targetWSS)
     {
         if (_testMode) return;
         _ready = false;
-        _wss.stream_change(targetWSS, PA, PW, IPI);
+        _wss.stream_change(WssTargetToInt(targetWSS), PA, PW, IPI);
     }
 
     public void StimulateAnalog(string finger, bool rawValues, int PW, int amp = 3)
@@ -217,14 +218,14 @@ public sealed class LegacyStimulationCore : IStimulationCore
         _chPWs[channel - 1] = PW;
     }
 
-    public void Zero_out_stim()
+    public void ZeroOutStim(WssTarget targetWSS)
     {
         if (_testMode) return;
         _ready = false;
         _wss.zero_out_stim();
     }
 
-    public void StartStim(int targetWSS = 0)
+    public void StartStim(WssTarget targetWSS)
     {
         if (_testMode)
         {
@@ -233,12 +234,12 @@ public sealed class LegacyStimulationCore : IStimulationCore
         }
         if (_wss != null)
         {
-            _wss.startStim(targetWSS);
-        StartStreamingInternal();
+            _wss.startStim(WssTargetToInt(targetWSS));
+            StartStreamingInternal();
         }
     }
 
-    public void StopStim(int targetWSS = 0)
+    public void StopStim(WssTarget targetWSS)
     {
         if (_testMode)
         {
@@ -247,7 +248,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
             return;
         }
         _ready = false;
-        _wss.stopStim(targetWSS);
+        _wss.stopStim(WssTargetToInt(targetWSS));
         _running = false;
     }
 
@@ -272,15 +273,15 @@ public sealed class LegacyStimulationCore : IStimulationCore
         _config.modifyStimParam($"Ch{channel}Min", min);
     }
 
-    public void UpdateIPD(int targetWSS, int IPD)
+    public void UpdateIPD(int IPD, WssTarget targetWSS)
     {
         if (_testMode) return;
         _ready = false;
         if (IPD > 1000) IPD = 1000;
         _currentIPD = IPD;
-        _wss.edit_event_PW(targetWSS, 1, new int[] { 0, 0, _currentIPD });
-        _wss.edit_event_PW(targetWSS, 2, new int[] { 0, 0, _currentIPD });
-        _wss.edit_event_PW(targetWSS, 3, new int[] { 0, 0, _currentIPD });
+        _wss.edit_event_PW(WssTargetToInt(targetWSS), 1, new int[] { 0, 0, _currentIPD });
+        _wss.edit_event_PW(WssTargetToInt(targetWSS), 2, new int[] { 0, 0, _currentIPD });
+        _wss.edit_event_PW(WssTargetToInt(targetWSS), 3, new int[] { 0, 0, _currentIPD });
     }
 
     public void UpdateIPD(int IPD)
@@ -297,13 +298,13 @@ public sealed class LegacyStimulationCore : IStimulationCore
         }
     }
 
-    public void UpdateFrequency(int targetWSS, int FR)
+    public void UpdateFrequency(int FR, WssTarget targetWSS)
     {
         if (_testMode) return;
         _ready = false;
         if (FR <= 0) throw new ArgumentOutOfRangeException(nameof(FR));
         int periodMs = (int)(1000.0f / FR);
-        _wss.stream_change(targetWSS, null, new int[] { 0, 0, 0 }, new int[] { periodMs, periodMs, periodMs });
+        _wss.stream_change(WssTargetToInt(targetWSS), null, new int[] { 0, 0, 0 }, new int[] { periodMs, periodMs, periodMs });
     }
 
     public void UpdateFrequency(int FR)
@@ -326,12 +327,12 @@ public sealed class LegacyStimulationCore : IStimulationCore
         WaveformSetup(stimShape, eventID);
     }
 
-    public void UpdateWaveform(int targetWSS, int[] waveform, int eventID)
+    public void UpdateWaveform(int[] waveform, int eventID, WssTarget targetWSS)
     {
         if (_testMode) return;
         _ready = false;
         WaveformBuilder stimShape = new WaveformBuilder(waveform);
-        WaveformSetup(targetWSS, stimShape, eventID);
+        WaveformSetup(stimShape, eventID, targetWSS);
     }
 
     public void UpdateWaveform(int cathodicWaveform, int anodicWaveform, int eventID)
@@ -344,11 +345,11 @@ public sealed class LegacyStimulationCore : IStimulationCore
         }
     }
 
-    public void UpdateWaveform(int targetWSS, int cathodicWaveform, int anodicWaveform, int eventID)
+    public void UpdateWaveform(int cathodicWaveform, int anodicWaveform, int eventID, WssTarget targetWSS)
     {
         if (_testMode) return;
         _ready = false;
-        _wss.edit_event_shape(targetWSS, eventID, cathodicWaveform, anodicWaveform);
+        _wss.edit_event_shape(WssTargetToInt(targetWSS), eventID, cathodicWaveform, anodicWaveform);
     }
 
     public void UpdateWaveform(WaveformBuilder waveform, int eventID)
@@ -358,11 +359,11 @@ public sealed class LegacyStimulationCore : IStimulationCore
         WaveformSetup(waveform, eventID);
     }
 
-    public void UpdateWaveform(int targetWSS, WaveformBuilder waveform, int eventID)
+    public void UpdateWaveform(WaveformBuilder waveform, int eventID, WssTarget targetWSS)
     {
         if (_testMode) return;
         _ready = false;
-        WaveformSetup(targetWSS, waveform, eventID);
+        WaveformSetup(waveform, eventID, targetWSS);
     }
 
     public void LoadWaveform(string fileName, int eventID)
@@ -372,7 +373,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
         string candidatePath = Path.Combine(_jsonPath, fileName);
         if (!candidatePath.EndsWith("WF.json", StringComparison.OrdinalIgnoreCase))
         {
-            candidatePath =  Path.Combine(_jsonPath, Path.ChangeExtension(fileName + "WF", "json"));
+            candidatePath = Path.Combine(_jsonPath, Path.ChangeExtension(fileName + "WF", "json"));
         }
 
         try
@@ -406,34 +407,34 @@ public sealed class LegacyStimulationCore : IStimulationCore
         }
     }
 
-    public void WaveformSetup(int targetWSS, WaveformBuilder wave, int eventID)
+    public void WaveformSetup(WaveformBuilder wave, int eventID, WssTarget targetWSS)
     {
         if (_testMode) return;
-        _wss.set_costume_waveform(targetWSS, 0, wave.getCatShapeArray()[0..^24], 0);
-        _wss.set_costume_waveform(targetWSS, 0, wave.getCatShapeArray()[8..^16], 1);
-        _wss.set_costume_waveform(targetWSS, 0, wave.getCatShapeArray()[16..^8], 2);
-        _wss.set_costume_waveform(targetWSS, 0, wave.getCatShapeArray()[24..^0], 3);
-        _wss.set_costume_waveform(targetWSS, 1, wave.getAnodicShapeArray()[0..^24], 0);
-        _wss.set_costume_waveform(targetWSS, 1, wave.getAnodicShapeArray()[8..^16], 1);
-        _wss.set_costume_waveform(targetWSS, 1, wave.getAnodicShapeArray()[16..^8], 2);
-        _wss.set_costume_waveform(targetWSS, 1, wave.getAnodicShapeArray()[24..^0], 3);
-        _wss.edit_event_shape(targetWSS, eventID, 11, 12);
+        _wss.set_costume_waveform(WssTargetToInt(targetWSS), 0, wave.getCatShapeArray()[0..^24], 0);
+        _wss.set_costume_waveform(WssTargetToInt(targetWSS), 0, wave.getCatShapeArray()[8..^16], 1);
+        _wss.set_costume_waveform(WssTargetToInt(targetWSS), 0, wave.getCatShapeArray()[16..^8], 2);
+        _wss.set_costume_waveform(WssTargetToInt(targetWSS), 0, wave.getCatShapeArray()[24..^0], 3);
+        _wss.set_costume_waveform(WssTargetToInt(targetWSS), 1, wave.getAnodicShapeArray()[0..^24], 0);
+        _wss.set_costume_waveform(WssTargetToInt(targetWSS), 1, wave.getAnodicShapeArray()[8..^16], 1);
+        _wss.set_costume_waveform(WssTargetToInt(targetWSS), 1, wave.getAnodicShapeArray()[16..^8], 2);
+        _wss.set_costume_waveform(WssTargetToInt(targetWSS), 1, wave.getAnodicShapeArray()[24..^0], 3);
+        _wss.edit_event_shape(WssTargetToInt(targetWSS), eventID, 11, 12);
     }
 
     // ---- setup & edits ----
 
-    public void Save(int targetWSS)
+    public void Save(WssTarget targetWSS)
     {
         if (_testMode) return;
         _ready = false;
-        _wss.populateFRAMSettings(targetWSS);
+        _wss.populateFRAMSettings(WssTargetToInt(targetWSS));
     }
 
-    public void Load(int targetWSS)
+    public void Load(WssTarget targetWSS)
     {
         if (_testMode) return;
         _ready = false;
-        _wss.populateBoardSettings(targetWSS);
+        _wss.populateBoardSettings(WssTargetToInt(targetWSS));
     }
 
     public void Load()
@@ -446,11 +447,11 @@ public sealed class LegacyStimulationCore : IStimulationCore
         }
     }
 
-    public void Request_Configs(int targetWSS, int command, int id)
+    public void Request_Configs(int command, int id, WssTarget targetWSS)
     {
         if (_testMode) return;
         _ready = false;
-        _wss.request_configs(targetWSS, command, id);
+        _wss.request_configs(WssTargetToInt(targetWSS), command, id);
     }
 
     // ---- helpers & internals ----
@@ -655,4 +656,17 @@ public sealed class LegacyStimulationCore : IStimulationCore
             }
         }
     }
+
+    private int WssTargetToInt(WssTarget wssTarget)
+    {
+        switch (wssTarget)
+        {
+            case WssTarget.Broadcast: return 0;
+            case WssTarget.Wss1: return 1;
+            case WssTarget.Wss2: return 2;
+            case WssTarget.Wss3: return 3;
+            default: return 1;
+        }
+    }
+    
 }

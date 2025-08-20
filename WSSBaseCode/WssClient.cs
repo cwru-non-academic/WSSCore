@@ -11,14 +11,6 @@ public sealed class WssClient : IDisposable
     private readonly IFrameCodec _codec;
     private readonly byte _sender;
 
-    public enum WssTarget : byte
-    {
-        Broadcast = 0x8F,
-        Wss1 = 0x81,
-        Wss2 = 0x82,
-        Wss3 = 0x83,
-    }
-
     public enum WssIntLimits : int
     {
         oneByte = 255,

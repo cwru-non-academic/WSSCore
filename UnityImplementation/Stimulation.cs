@@ -20,7 +20,8 @@ public class Stimulation : MonoBehaviour
         if (forcePort)
         {
             WSS = new LegacyStimulationCore(comPort, Application.streamingAssetsPath, testMode, maxSetupTries);
-        } else
+        }
+        else
         {
             WSS = new LegacyStimulationCore(Application.streamingAssetsPath, testMode, maxSetupTries);
         }
@@ -45,7 +46,7 @@ public class Stimulation : MonoBehaviour
 
     void OnDestroy()
     {
-        
+
     }
 
     void OnDisable()
@@ -76,12 +77,12 @@ public class Stimulation : MonoBehaviour
 
     public void StartStimulation()
     {
-        WSS.StartStim();
+        WSS.StartStim(WssTarget.Broadcast);
     }
 
     public void StopStimulation()
     {
-        WSS.StopStim();
+        WSS.StopStim(WssTarget.Broadcast);
     }
 
     public void StimWithMode(string finger, float magnitude)
@@ -96,81 +97,81 @@ public class Stimulation : MonoBehaviour
 
     public void Save(int targetWSS)
     {
-        WSS.Save(targetWSS);
+        WSS.Save(IntToWssTarget(targetWSS));
     }
 
     public void Save()
     {
-        WSS.Save(0);
+        WSS.Save(WssTarget.Broadcast);
     }
 
     public void load(int targetWSS)
     {
-        WSS.Load(targetWSS);
+        WSS.Load(IntToWssTarget(targetWSS));
     }
 
     public void load()
     {
-        WSS.Load();
+        WSS.Load(WssTarget.Broadcast);
     }
 
 
     public void request_Configs(int targetWSS, int command, int id)
     {
-        WSS.Request_Configs(targetWSS, command, id);
+        WSS.Request_Configs(command, id, IntToWssTarget(targetWSS));
     }
 
     public void UpdateIPD(int targetWSS, int IPD) // in us (0 to 1000us)
     {
-        WSS.UpdateIPD(targetWSS, IPD);
+        WSS.UpdateIPD(IPD, IntToWssTarget(targetWSS));
     }
 
     public void UpdateIPD(int IPD) // in us (0 to 1000us)
     {
-        WSS.UpdateIPD(IPD);
+        WSS.UpdateIPD(IPD, WssTarget.Broadcast);
     }
 
     public void UpdateFrequency(int targetWSS, int FR) //in Hz (1-1000Hz) might be further limited by PW duration
     {
-        WSS.UpdateFrequency(targetWSS, FR);
+        WSS.UpdateFrequency(FR, IntToWssTarget(targetWSS));
     } //max 1000ms for pw IPD
 
     public void UpdateFrequency(int FR) //in Hz (1-1000Hz) might be further limited by PW duration
     {
-        WSS.UpdateFrequency(FR);
+        WSS.UpdateFrequency(FR, WssTarget.Broadcast);
     } //max 1000ms for pw IPD
 
-    public void updateWaveform(int[] waveform, int eventID) 
+    public void updateWaveform(int[] waveform, int eventID)
     {
-       WSS.UpdateWaveform(waveform, eventID);
+        WSS.UpdateWaveform(waveform, eventID, WssTarget.Broadcast);
     }
 
     public void updateWaveform(int targetWSS, int[] waveform, int eventID)
     {
-        WSS.UpdateWaveform(targetWSS, waveform, eventID);
+        WSS.UpdateWaveform(waveform, eventID, IntToWssTarget(targetWSS));
     }
 
     public void updateWaveform(int cathodicWaveform, int anodicWaveform, int eventID) //overload to just select from waveforms in memory 
     //slots 0 to 10 are predefined waveforms and slots 11 to 13 are custom defined waveforms
     {
-        WSS.UpdateWaveform(cathodicWaveform, anodicWaveform, eventID);
+        WSS.UpdateWaveform(cathodicWaveform, anodicWaveform, eventID, WssTarget.Broadcast);
     }
 
     public void updateWaveform(int targetWSS, int cathodicWaveform, int anodicWaveform, int eventID) //overload to just select from waveforms in memory 
     //slots 0 to 10 are predefined waveforms and slots 11 to 13 are custom defined waveforms
     {
-        WSS.UpdateWaveform(targetWSS, cathodicWaveform, anodicWaveform, eventID);
+        WSS.UpdateWaveform(cathodicWaveform, anodicWaveform, eventID, IntToWssTarget(targetWSS));
     }
 
     //overload for loading from json functionality
-    public void updateWaveform(WaveformBuilder waveform, int eventID) 
+    public void updateWaveform(WaveformBuilder waveform, int eventID)
     {
-        WSS.UpdateWaveform(waveform, eventID);
+        WSS.UpdateWaveform(waveform, eventID, WssTarget.Broadcast);
     }
 
     public void updateWaveform(int targetWSS, WaveformBuilder waveform, int eventID)
     {
-        WSS.UpdateWaveform(targetWSS, waveform, eventID);
+        WSS.UpdateWaveform(waveform, eventID, IntToWssTarget(targetWSS));
     }
 
     public void loadWaveform(string fileName, int eventID)
@@ -181,12 +182,12 @@ public class Stimulation : MonoBehaviour
 
     public void WaveformSetup(WaveformBuilder wave, int eventID)//custom waveform slots 0 to 2 are attached to shape slots 11 to 13
     {
-        WSS.WaveformSetup(wave, eventID);
+        WSS.WaveformSetup(wave, eventID, WssTarget.Broadcast);
     }
 
     public void WaveformSetup(int targetWSS, WaveformBuilder wave, int eventID)//custom waveform slots 0 to 2 are attached to shape slots 11 to 13
     {
-        WSS.WaveformSetup(targetWSS, wave, eventID);
+        WSS.WaveformSetup(wave, eventID, IntToWssTarget(targetWSS));
     }
     #endregion
 
@@ -201,4 +202,16 @@ public class Stimulation : MonoBehaviour
         return WSS.IsModeValid();
     }
     #endregion
+    
+    private WssTarget IntToWssTarget(int i)
+    {
+        switch (i)
+        {
+            case 0: return WssTarget.Broadcast;
+            case 1: return WssTarget.Wss1;
+            case 2: return WssTarget.Wss2;
+            case 3: return WssTarget.Wss3;
+            default: return WssTarget.Wss1;
+        }
+    }
 }
