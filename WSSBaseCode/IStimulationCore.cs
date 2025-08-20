@@ -12,7 +12,6 @@ public interface IStimulationCore : IDisposable
     bool Started();
     bool Ready();
     bool IsModeValid();
-    void ResetTransportLayer();
 
     // streaming / control
     void Stream_change(int targetWSS, int[] PA, int[] PW, int[] IPI);

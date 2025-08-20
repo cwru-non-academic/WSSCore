@@ -2,6 +2,7 @@ using System;
 using System.IO.Ports;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Linq;
 
 /// <summary>
 /// Serial-port implementation of <see cref="ITransport"/> for WSS communications.
@@ -37,6 +38,23 @@ public sealed class SerialPortTransport : ITransport
                                int dataBits = 8, StopBits stopBits = StopBits.One, int readTimeoutMs = 10)
     {
         _port = new SerialPort(portName, baud, parity, dataBits, stopBits) { ReadTimeout = readTimeoutMs };
+    }
+
+    /// <summary>
+    /// Creates a serial transport bound to the given parameters. Th port name is automatically selected as the firts port in the list.
+    /// </summary>
+    /// <param name="baud">Baud rate. Default is 115200.</param>
+    /// <param name="parity">Parity setting. Default is <see cref="Parity.None"/>.</param>
+    /// <param name="dataBits">Data bits. Default is 8.</param>
+    /// <param name="stopBits">Stop bits. Default is <see cref="StopBits.One"/>.</param>
+    /// <param name="readTimeoutMs">
+    /// Synchronous read timeout in milliseconds (used by <see cref="SerialPort.Read(byte[], int, int)"/>).
+    /// Typical value is small (e.g., 10ms). Timeouts are caught and ignored in the read loop.
+    /// </param>
+    public SerialPortTransport(int baud = 115200, Parity parity = Parity.None,
+                               int dataBits = 8, StopBits stopBits = StopBits.One, int readTimeoutMs = 10)
+    {
+        _port = new SerialPort(GetComPort(), baud, parity, dataBits, stopBits) { ReadTimeout = readTimeoutMs };
     }
 
     /// <summary>
@@ -159,5 +177,52 @@ public sealed class SerialPortTransport : ITransport
     {
         try { _cts?.Cancel(); } catch { /* ignored */ }
         _port?.Dispose();
+    }
+
+
+    /// <summary>
+    /// Picks a serial COM port. Prefers <paramref name="preferredPort"/> if present;
+    /// otherwise chooses the lowest COM number (natural sort).
+    /// </summary>
+    /// <param name="preferredPort">Exact port name to prefer (e.g., "COM11"). Optional.</param>
+    /// <returns>The selected COM port name (e.g., "COM3").</returns>
+    /// <exception cref="InvalidOperationException">Thrown if no serial ports are found.</exception>
+    private static string GetComPort(string preferredPort = null)
+    {
+        var ports = SerialPort.GetPortNames();
+        if (ports.Length == 0)
+            throw new InvalidOperationException("No serial ports found.");
+
+        // Natural sort: COM2, COM10, COM11 ... (not lexicographic)
+        Array.Sort(ports, (a, b) =>
+        {
+            int na = TryParseComNum(a, out var ia) ? ia : int.MaxValue;
+            int nb = TryParseComNum(b, out var ib) ? ib : int.MaxValue;
+            int cmp = na.CompareTo(nb);
+            return cmp != 0 ? cmp : string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+        });
+
+        if (!string.IsNullOrWhiteSpace(preferredPort))
+        {
+            var match = ports.FirstOrDefault(p => string.Equals(p, preferredPort, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                Log.Info($"Using preferred port: {match}");
+                return match;
+            }
+            Log.Warn($"Preferred port '{preferredPort}' not found.");
+        }
+
+        if (ports.Length > 1)
+            Log.Warn($"Multiple ports detected: {string.Join(", ", ports)}. Using {ports[0]}.");
+
+        return ports[0];
+
+        static bool TryParseComNum(string s, out int n)
+        {
+            n = 0;
+            return s.StartsWith("COM", StringComparison.OrdinalIgnoreCase) &&
+                int.TryParse(s.Substring(3), out n);
+        }
     }
 }

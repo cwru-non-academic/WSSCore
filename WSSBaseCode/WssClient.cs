@@ -16,7 +16,7 @@ public sealed class WssClient : IDisposable
         Broadcast = 0x8F,
         Wss1 = 0x81,
         Wss2 = 0x82,
-        Wss3 = 0x83
+        Wss3 = 0x83,
     }
 
     public enum WssIntLimits : int
@@ -29,7 +29,8 @@ public sealed class WssClient : IDisposable
         state = 2,
         customWaveformChunks = 3,
         Frequency = 10000,//TODO
-        customWaveformMaxAmp = 2000
+        customWaveformMaxAmp = 2000,
+        IPD = 1000,
     }
 
     public enum WssMessageId : byte
@@ -287,7 +288,7 @@ public sealed class WssClient : IDisposable
     private static byte ToByteValidated(int v, int maxInclusive, string paramName = "value")
         => ToByteInRange(v, maxInclusive, paramName);
 
-    // Helper used to extract a byte from an int, ensuring it's within 0-65535 range.
+    // Helper used to extract a byte from an int, ensuring itaithin 0-65535 range.
     // Throws ArgumentOutOfRangeException if not.
     private static (byte hi, byte lo) ToU16Validated(int v, int maxInclusive, string paramName = "value")
         => ToU16InRange(v, maxInclusive, paramName);
@@ -766,7 +767,7 @@ public sealed class WssClient : IDisposable
         {
             // Big-endian pairs in order: stdPW, IPD, rechPW
             (byte sh, byte sl) = ToU16Validated(pw[0], (int)WssIntLimits.pulseWidthLong, "standardPW");
-            (byte ih, byte il) = ToU16Validated(pw[2], (int)WssIntLimits.pulseWidthLong, "IPD");
+            (byte ih, byte il) = ToU16Validated(pw[2], (int)WssIntLimits.IPD, "IPD");
             (byte rh, byte rl) = ToU16Validated(pw[1], (int)WssIntLimits.pulseWidthLong, "rechargePW");
             // Payload: [eventId][subcmd for pw=0x02][stdH stdL][ipdH ipdL][rechH rechL]
             return SendCmdAsync(WssMessageId.EditEventConfig, target, ct, ev, 0x02, sh, sl, ih, il, rh, rl);
