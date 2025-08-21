@@ -24,7 +24,7 @@ public interface IStimulationCore : IDisposable
     void UpdateIPD(int IPD, WssTarget wssTarget);
     void UpdateFrequency(int FR, WssTarget wssTarget);
     void UpdateWaveform(int[] waveform, int eventID, WssTarget wssTarget);
-    void UpdateWaveform(int cathodicWaveform, int anodicWaveform, int eventID, WssTarget wssTarget);
+    void UpdateEventShape(int cathodicWaveform, int anodicWaveform, int eventID, WssTarget wssTarget);
     void UpdateWaveform(WaveformBuilder waveform, int eventID, WssTarget wssTarget);
     void LoadWaveform(string fileName, int eventID);
     void WaveformSetup(WaveformBuilder wave, int eventID, WssTarget wssTarget);

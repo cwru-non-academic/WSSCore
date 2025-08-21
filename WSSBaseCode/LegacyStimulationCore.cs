@@ -335,7 +335,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
         WaveformSetup(stimShape, eventID, targetWSS);
     }
 
-    public void UpdateWaveform(int cathodicWaveform, int anodicWaveform, int eventID)
+    public void UpdateEventShape(int cathodicWaveform, int anodicWaveform, int eventID)
     {
         if (_testMode) return;
         _ready = false;
@@ -345,7 +345,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
         }
     }
 
-    public void UpdateWaveform(int cathodicWaveform, int anodicWaveform, int eventID, WssTarget targetWSS)
+    public void UpdateEventShape(int cathodicWaveform, int anodicWaveform, int eventID, WssTarget targetWSS)
     {
         if (_testMode) return;
         _ready = false;

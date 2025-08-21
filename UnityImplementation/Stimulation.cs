@@ -154,13 +154,13 @@ public class Stimulation : MonoBehaviour
     public void updateWaveform(int cathodicWaveform, int anodicWaveform, int eventID) //overload to just select from waveforms in memory 
     //slots 0 to 10 are predefined waveforms and slots 11 to 13 are custom defined waveforms
     {
-        WSS.UpdateWaveform(cathodicWaveform, anodicWaveform, eventID, WssTarget.Broadcast);
+        WSS.UpdateEventShape(cathodicWaveform, anodicWaveform, eventID, WssTarget.Broadcast);
     }
 
     public void updateWaveform(int targetWSS, int cathodicWaveform, int anodicWaveform, int eventID) //overload to just select from waveforms in memory 
     //slots 0 to 10 are predefined waveforms and slots 11 to 13 are custom defined waveforms
     {
-        WSS.UpdateWaveform(cathodicWaveform, anodicWaveform, eventID, IntToWssTarget(targetWSS));
+        WSS.UpdateEventShape(cathodicWaveform, anodicWaveform, eventID, IntToWssTarget(targetWSS));
     }
 
     //overload for loading from json functionality
