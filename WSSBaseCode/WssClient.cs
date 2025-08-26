@@ -23,6 +23,8 @@ public sealed class WssClient : IDisposable
         Frequency = 10000,//TODO
         customWaveformMaxAmp = 2000,
         IPD = 1000,
+        LEDs = 3,
+        enable = 1,
     }
 
     public enum WssMessageId : byte
@@ -373,8 +375,9 @@ public sealed class WssClient : IDisposable
     /// 4 = Event output configuration
     /// 5 = Event stimulation configuration
     /// 6 = Event shape configuration
-    /// 7 = Schedule basic configuration
-    /// 8 = Schedule listing
+    /// 7 = Event burst configuration
+    /// 8 = Schedule basic configuration
+    /// 9 = Schedule listing
     /// </param>
     /// <param name="id">ID associated with the requested configuration (0–255).</param>
     /// <param name="target">Target WSS device to query (default: Wss1).</param>
@@ -392,8 +395,9 @@ public sealed class WssClient : IDisposable
             4 => (0x01, 0x02), // Event output configuration
             5 => (0x01, 0x03), // Event stimulation configuration
             6 => (0x01, 0x04), // Event shape configuration
-            7 => (0x02, 0x00), // Schedule basic configuration
-            8 => (0x02, 0x01), // Schedule listing
+            7 => (0x01, 0x05), // Event burst configuration
+            8 => (0x02, 0x00), // Schedule basic configuration
+            9 => (0x02, 0x01), // Schedule listing
             _ => (0x00, 0x00), // Default: Output Configuration List
         };
 
@@ -421,10 +425,14 @@ public sealed class WssClient : IDisposable
     /// the recharge phase for each output on the stimulator.  
     /// Index 0 = closest to switch, index 3 = farthest from switch.
     /// </param>
+    /// /// <param name="LEDs">
+    /// Int representing LED locations to light during stimulation
+    /// Index 0 = closest to switch, index 3 = farthest from switch.
+    /// </param>
     /// <param name="target">The WSS target device to send the configuration to.</param>
     /// <param name="ct">Optional cancellation token.</param>
     /// <returns>Processed response string from the WSS target.</returns>
-    public Task<string> CreateContactConfig(int contactId, int[] stimSetup, int[] rechargeSetup, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    public Task<string> CreateContactConfig(int contactId, int[] stimSetup, int[] rechargeSetup, int LEDs, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
     {
         if (stimSetup == null || stimSetup.Length != 4)
             throw new ArgumentException("Stim setup must be an array of exactly 4 integers.", nameof(stimSetup));
@@ -444,7 +452,10 @@ public sealed class WssClient : IDisposable
         byte stimByte = EncodeContactSetup(stimReversed);
         byte rechargeByte = EncodeContactSetup(rechargeReversed);
 
-        return SendCmdAsync(WssMessageId.CreateContactConfig, target, ct, validatedId, stimByte, rechargeByte);
+        // Validate and convert LEDs int into a byte
+        byte ledByte = ToByteValidated(LEDs, (int)WssIntLimits.LEDs, nameof(LEDs));
+
+        return SendCmdAsync(WssMessageId.CreateContactConfig, target, ct, validatedId, stimByte, rechargeByte, ledByte);
     }
 
     /// <summary>
@@ -857,6 +868,19 @@ public sealed class WssClient : IDisposable
         return SendCmdAsync(WssMessageId.EditEventConfig, target, ct, ev, 0x07, ra);
     }
 
+    /// <summary>Changes an event's ratio (allowed: 1, 2, 4, 8).</summary>
+    /// <param name="eventId">Event ID (0–255).</param>
+    /// <param name="enable">enable bit (0 or 1).</param>
+    /// <param name="target">Target WSS device.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<string> EditEventEnableBit(int eventId, int enable, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
+    {
+        byte ev = ToByteValidated(eventId, (int)WssIntLimits.oneByte, nameof(eventId));
+        byte en = ToByteValidated(enable, (int)WssIntLimits.enable, nameof(enable));
+        // Payload: [eventId][subcmd ratio=0x07][ratio]
+        return SendCmdAsync(WssMessageId.EditEventConfig, target, ct, ev, 0x08, en);
+    }
+
     /// <summary>Creates a schedule.</summary>
     /// <param name="scheduleId">Schedule ID (0–255).</param>
     /// <param name="durationMs">Duration in milliseconds (16-bit, big-endian on wire).</param>
@@ -906,13 +930,13 @@ public sealed class WssClient : IDisposable
 
     /// <summary>Changes a schedule's state.</summary>
     /// <param name="scheduleId">Schedule ID (0–255).</param>
-    /// <param name="state">State (0..255, TODO).</param>
+    /// <param name="state">State (0=ACTIVE, 1=READY, 2=SUSPEND).</param>
     /// <param name="target">Target WSS device.</param>
     /// <param name="ct">Cancellation token.</param>
     public Task<string> ChangeScheduleState(int scheduleId, int state, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
     {
         byte sc = ToByteValidated(scheduleId, (int)WssIntLimits.oneByte, nameof(scheduleId));
-        byte st = ToByteValidated(state, (int)WssIntLimits.oneByte, nameof(state));
+        byte st = ToByteValidated(state, (int)WssIntLimits.state, nameof(state));
         // Command 0x4E subcmd 0x01: [scheduleId][state]
         return SendCmdAsync(WssMessageId.ChangeScheduleConfig, target, ct, 0x01, sc, st);
     }
@@ -1091,7 +1115,8 @@ public sealed class WssClient : IDisposable
             0x00, 0x00, 0x00);  // IPI0..2 (placeholders)
     }
     //0x9B possibel duplicate of 0x49 with shape cmd
-    //TODO Missing waiting on explanation: 0x9A, 0x9C, 0x9E, 0x3A, 0x3B, 0x3C
+    //TODO 0x9C, 0x9E, 0xE0, 0xE1, 0x64, 0xE65, 0x66, 0x6A, 0x6B, 0x6C, 0x60, 0x61, 0x62, 0x66, 0x6D, 0x01
+    //TODO Missing waiting on explanation: 0x9A, 0x3A, 0x3B, 0x3C, 0xFF, 0x01
     //not implemented: 0x20, 0x50, 0x51
     #endregion
 }

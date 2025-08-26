@@ -41,7 +41,7 @@ public sealed class WssStimulationCore : IStimulationCore
     private Task _setupRunner;
 
     // ---- channels & controller state ----
-    private int[] _chAmps;  // mA (mapped to 0..255 for device)
+    private float[] _chAmps;  // mA (mapped to 0..255 for device)
     private int[] _chPWs;   // us
     private int _currentIPD = 50; // us
     private float[] _prevMagnitude;
@@ -230,10 +230,9 @@ public sealed class WssStimulationCore : IStimulationCore
     /// analog mapping. No device I/O occurs here; the streaming loop will pick it up.
     /// </summary>
     /// <param name="finger">Finger name (e.g., "Thumb", "Index") or "ch#".</param>
-    /// <param name="rawValues">Reserved (unused in this core).</param>
     /// <param name="PW">Pulse width to cache.</param>
     /// <param name="amp">Amplitude (mA domain, will be mapped to device scale during streaming).</param>
-    public void StimulateAnalog(string finger, bool rawValues, int PW, int amp = 3)
+    public void StimulateAnalog(string finger, int PW, float amp)
     {
         int channel = FingerToChannel(finger);
         if (channel <= 0 || channel > _maxWSS * 3) return;
@@ -319,7 +318,7 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="max">Max PW used by the controller mapping.</param>
     /// <param name="min">Min PW used by the controller mapping.</param>
     /// <param name="amp">Amplitude (mA domain) cached for streaming.</param>
-    public void UpdateChannelParams(string finger, int max, int min, int amp)
+    public void UpdateChannelParams(string finger, int max, int min, float amp)
     {
         int channel = FingerToChannel(finger);
         if (channel <= 0 || channel > _maxWSS * 3) return;
@@ -347,26 +346,50 @@ public sealed class WssStimulationCore : IStimulationCore
         );
     }
 
-    /// <summary>Apply frequency (Hz) by editing period on events 1..3 via setup queue.</summary>
-    public void UpdateFrequency(int FR, WssTarget targetWSS = WssTarget.Broadcast)
+    /// <summary>
+    /// Applies a target stimulation <em>frequency</em> (in Hertz) to a single logical channel
+    /// by converting it to a period in milliseconds and delegating to <see cref="UpdatePeriod(string,int,WssTarget)"/>.
+    /// </summary>
+    /// <param name="finger">
+    /// Logical channel selector. Accepts named fingers (e.g., <c>"Thumb"</c>, <c>"Index"</c>, …)
+    /// or a direct channel token like <c>"ch1"</c>. The mapping is resolved by <see cref="FingerToChannel(string)"/>.
+    /// </param>
+    /// <param name="FR">
+    /// Frequency in Hertz. Must be greater than zero. The method computes
+    /// <c>periodMs = (int)(1000.0 / FR)</c> (integer truncation toward zero).
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="FR"/> is less than or equal to zero.
+    /// </exception>
+    public void UpdateFrequency(string finger, int FR)
     {
         if (_testMode) return;
         if (FR <= 0) throw new ArgumentOutOfRangeException(nameof(FR));
         int periodMs = (int)(1000.0f / FR);
-        UpdatePeriod(periodMs, targetWSS);
+        UpdatePeriod(finger, periodMs);
     }
 
-    /// <summary>Apply period (ms) on events 1..3 via setup queue.</summary>
-    public void UpdatePeriod(int periodMs, WssTarget targetWSS = WssTarget.Broadcast)
+    /// <summary>
+    /// Applies a target stimulation <em>period</em> (inter-pulse interval, IPI, in milliseconds)
+    /// to a single logical channel by persisting the value to the loaded JSON-backed configuration.
+    /// </summary>
+    /// <param name="finger">
+    /// Logical channel selector. Accepts named fingers (e.g., <c>"Thumb"</c>, <c>"Index"</c>, …)
+    /// or a direct channel token like <c>"ch1"</c>. The mapping is resolved by <see cref="FingerToChannel(string)"/>.
+    /// </param>
+    /// <param name="periodMs">
+    /// Desired period (IPI) in milliseconds. Must be greater than zero.
+    /// </param>
+    public void UpdatePeriod(string finger, int periodMs)
     {
         if (_testMode) return;
-        if (_state == CoreState.Streaming)
-        {
-            StopStreamingInternal();
-            _state = CoreState.SettingUp;
-        }
         if (periodMs <= 0) throw new ArgumentOutOfRangeException(nameof(periodMs));
-        _wss.StreamChange(null, new int[] { 0, 0, 0 }, new int[] { periodMs, periodMs, periodMs }, targetWSS);
+        int channel = FingerToChannel(finger);
+        int total = _maxWSS * 3;
+        if ((uint)channel <= 0 || (uint)channel > (uint)total) return;   // fast bounds check
+
+        _config.modifyStimParam($"Ch{channel}IPI", periodMs);
+        //_wss.StreamChange(null, new int[] { 0, 0, 0 }, new int[] { periodMs, periodMs, periodMs }, targetWSS); TODO
     }
 
     /// <summary>
@@ -494,8 +517,8 @@ public sealed class WssStimulationCore : IStimulationCore
                 () => StepLogger(_wss.Clear(0, t), $"Clear[{t}]"),
 
                 // Schedule 1 (Ch1)
-                () => StepLogger(_wss.CreateSchedule(1, 13, 170, t), $"CreateSchedule#1[{t}]"),
-                () => StepLogger(_wss.CreateContactConfig(1, new[]{0,0,2,1}, new[]{0,0,1,2}, t), $"CreateContactConfig#1[{t}]"),
+                () => StepLogger(_wss.CreateSchedule(1, 13, 170, t), $"CreateSchedule#1[{t}]"), //TODO frequewncy from config
+                () => StepLogger(_wss.CreateContactConfig(1, new[]{0,0,2,1}, new[]{0,0,1,2}, 1, t), $"CreateContactConfig#1[{t}]"),
                 () => StepLogger(_wss.CreateEvent(1, 0, 1, 11, 11,
                         new[]{11,11,0,0}, new[]{11,11,0,0}, new[]{0,0,_currentIPD}, t),
                         $"CreateEvent#1[{t}]"),
@@ -504,7 +527,7 @@ public sealed class WssStimulationCore : IStimulationCore
 
                 // Schedule 2 (Ch2)
                 () => StepLogger(_wss.CreateSchedule(2, 13, 170, t), $"CreateSchedule#2[{t}]"),
-                () => StepLogger(_wss.CreateContactConfig(2, new[]{0,2,0,1}, new[]{0,1,0,2}, t), $"CreateContactConfig#2[{t}]"),
+                () => StepLogger(_wss.CreateContactConfig(2, new[]{0,2,0,1}, new[]{0,1,0,2}, 2, t), $"CreateContactConfig#2[{t}]"),
                 () => StepLogger(_wss.CreateEvent(2, 2, 2, 11, 11,
                         new[]{11,0,11,0}, new[]{11,0,11,0}, new[]{0,0,_currentIPD}, t),
                         $"CreateEvent#2[{t}]"),
@@ -513,7 +536,7 @@ public sealed class WssStimulationCore : IStimulationCore
 
                 // Schedule 3 (Ch3)
                 () => StepLogger(_wss.CreateSchedule(3, 13, 170, t), $"CreateSchedule#3[{t}]"),
-                () => StepLogger(_wss.CreateContactConfig(3, new[]{2,0,0,1}, new[]{1,0,0,2}, t), $"CreateContactConfig#3[{t}]"),
+                () => StepLogger(_wss.CreateContactConfig(3, new[]{2,0,0,1}, new[]{1,0,0,2}, 3, t), $"CreateContactConfig#3[{t}]"),
                 () => StepLogger(_wss.CreateEvent(3, 4, 3, 11, 11,
                         new[]{11,0,0,11}, new[]{11,0,0,11}, new[]{0,0,_currentIPD}, t),
                         $"CreateEvent#3[{t}]"),
@@ -599,7 +622,8 @@ public sealed class WssStimulationCore : IStimulationCore
                         _ = _wss.StreamChange(
                             new[] { AmpTo255Convention(_chAmps[baseIdx + 0]), AmpTo255Convention(_chAmps[baseIdx + 1]), AmpTo255Convention(_chAmps[baseIdx + 2]) },
                             new[] { _chPWs[baseIdx + 0], _chPWs[baseIdx + 1], _chPWs[baseIdx + 2] },
-                            null, IntToWssTarget(w));
+                            new[] { (int)_config.getStimParam($"Ch{baseIdx + 0}IPI"), (int)_config.getStimParam($"Ch{baseIdx + 1}IPI"), (int)_config.getStimParam($"Ch{baseIdx + 2}IPI") },
+                            IntToWssTarget(w));
                     }
                     await Task.Delay(_delayMsBetweenPackets, tk);
                 }
@@ -741,7 +765,7 @@ public sealed class WssStimulationCore : IStimulationCore
     private void InitStimArrays()
     {
         int n = _maxWSS * 3;
-        _chAmps = new int[n];
+        _chAmps = new float[n];
         _chPWs = new int[n];
         _prevMagnitude = new float[n];
         _currentMag = new float[n];
@@ -750,7 +774,7 @@ public sealed class WssStimulationCore : IStimulationCore
 
         for (int i = 0; i < n; i++)
         {
-            _chAmps[i] = 0;
+            _chAmps[i] = 0f;
             _chPWs[i] = 0;
             _prevMagnitude[i] = 0f;
             _dt[i] = _timer.ElapsedMilliseconds / 1000.0f;
@@ -812,7 +836,7 @@ public sealed class WssStimulationCore : IStimulationCore
     }
 
     /// <summary> hanndles the  non-linear conversion of an amplitude in mA to bytes depending on WSS capabilities </summary>
-    private int AmpTo255Convention(int amp)
+    private int AmpTo255Convention(float amp)
     {
         if (amp < 4)
         {

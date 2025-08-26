@@ -15,14 +15,15 @@ public interface IStimulationCore : IDisposable
 
     // streaming / control
     void StreamChange(int[] PA, int[] PW, int[] IPI, WssTarget wssTarget);
-    void StimulateAnalog(string finger, bool rawValues, int PW, int amp = 3);
+    void StimulateAnalog(string finger, int PW, float amp);
     void ZeroOutStim(WssTarget wssTarget);
     void StartStim(WssTarget wssTarget);
     void StopStim(WssTarget wssTarget);
     void StimWithMode(string finger, float magnitude);
-    void UpdateChannelParams(string finger, int max, int min, int amp);
+    void UpdateChannelParams(string finger, int max, int min, float amp);
     void UpdateIPD(int IPD, WssTarget wssTarget);
-    void UpdateFrequency(int FR, WssTarget wssTarget);
+    void UpdateFrequency(string finger, int FR);
+    void UpdatePeriod(string finger, int periodMs);
     void UpdateWaveform(int[] waveform, int eventID, WssTarget wssTarget);
     void UpdateEventShape(int cathodicWaveform, int anodicWaveform, int eventID, WssTarget wssTarget);
     void UpdateWaveform(WaveformBuilder waveform, int eventID, WssTarget wssTarget);

@@ -37,7 +37,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
     private Task _streamTask;
 
     // ---- channels & controller state ----
-    private int[] _chAmps;  // mA (domain-specific nonlinear mapping to 0..255)
+    private float[] _chAmps;  // mA (domain-specific nonlinear mapping to 0..255)
     private int[] _chPWs;   // us (0..255 or per device spec)
     private int _currentIPD = 50; // us
     private float[] _prevMagnitude;
@@ -209,7 +209,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
         _wss.stream_change(WssTargetToInt(targetWSS), PA, PW, IPI);
     }
 
-    public void StimulateAnalog(string finger, bool rawValues, int PW, int amp = 3)
+    public void StimulateAnalog(string finger, int PW, float amp = 3)
     {
         int channel = FingerToChannel(finger);
         if (channel <= 0 || channel > _maxWSS * 3) return;
@@ -263,7 +263,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
             _config.getStimParam($"Ch{channel}Min"));
     }
 
-    public void UpdateChannelParams(string finger, int max, int min, int amp)
+    public void UpdateChannelParams(string finger, int max, int min, float amp)
     {
         int channel = FingerToChannel(finger);
         if (channel <= 0 || channel > _maxWSS * 3) return;
@@ -298,25 +298,23 @@ public sealed class LegacyStimulationCore : IStimulationCore
         }
     }
 
-    public void UpdateFrequency(int FR, WssTarget targetWSS)
+    public void UpdateFrequency(string finger, int FR)
     {
         if (_testMode) return;
-        _ready = false;
         if (FR <= 0) throw new ArgumentOutOfRangeException(nameof(FR));
         int periodMs = (int)(1000.0f / FR);
-        _wss.stream_change(WssTargetToInt(targetWSS), null, new int[] { 0, 0, 0 }, new int[] { periodMs, periodMs, periodMs });
+        UpdatePeriod(finger, periodMs);
     }
 
-    public void UpdateFrequency(int FR)
+    public void UpdatePeriod(string finger, int periodMs)
     {
         if (_testMode) return;
-        _ready = false;
-        if (FR <= 0) throw new ArgumentOutOfRangeException(nameof(FR));
-        int periodMs = (int)(1000.0f / FR);
-        for (int i = 1; i < _maxWSS + 1; i++)
-        {
-            _wss.stream_change(i, null, new int[] { 0, 0, 0 }, new int[] { periodMs, periodMs, periodMs });
-        }
+        if (periodMs <= 0) throw new ArgumentOutOfRangeException(nameof(periodMs));
+        int channel = FingerToChannel(finger);
+        int total = _maxWSS * 3;
+        if ((uint)channel <= 0 || (uint)channel > (uint)total) return;   // fast bounds check
+
+        _config.modifyStimParam($"Ch{channel}IPI", periodMs);
     }
 
     public void UpdateWaveform(int[] waveform, int eventID)
@@ -473,7 +471,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
     private void InitStimArrays()
     {
         int n = _maxWSS * 3;
-        _chAmps = new int[n];
+        _chAmps = new float[n];
         _chPWs = new int[n];
         _prevMagnitude = new float[n];
         _currentMag = new float[n];
@@ -546,7 +544,7 @@ public sealed class LegacyStimulationCore : IStimulationCore
         return (int)output;
     }
 
-    private int AmpTo255Convention(int amp)
+    private int AmpTo255Convention(float amp)
     {
         // mirrors Unity code but uses System.Math (float math is OK here)
         if (amp < 4)
@@ -587,7 +585,8 @@ public sealed class LegacyStimulationCore : IStimulationCore
                             _wss.stream_change(w,
                                 new int[] { AmpTo255Convention(_chAmps[baseIdx + 0]), AmpTo255Convention(_chAmps[baseIdx + 1]), AmpTo255Convention(_chAmps[baseIdx + 2]) },
                                 new int[] { _chPWs[baseIdx + 0], _chPWs[baseIdx + 1], _chPWs[baseIdx + 2] },
-                                null);
+                                new[] { (int)_config.getStimParam($"Ch{baseIdx + 0}IPI"), (int)_config.getStimParam($"Ch{baseIdx + 1}IPI"), (int)_config.getStimParam($"Ch{baseIdx + 2}IPI") }
+                                );
                         }
                         await Task.Delay(_delayMsBetweenPackets, token);
                     }

@@ -125,37 +125,46 @@ public sealed class StimConfigController
         addStimParam("Ch1Max", 0);
         addStimParam("Ch1Min", 0);
         addStimParam("Ch1Amp", 3.0f);
+        addStimParam("Ch1IPI", 10.0f);
 
         addStimParam("Ch2Max", 0);
         addStimParam("Ch2Min", 0);
         addStimParam("Ch2Amp", 3.0f);
+        addStimParam("Ch2IPI", 10.0f);
 
         addStimParam("Ch3Max", 0);
         addStimParam("Ch3Min", 0);
         addStimParam("Ch3Amp", 3.0f);
+        addStimParam("Ch3IPI", 10.0f);
 
         addStimParam("Ch4Max", 0);
         addStimParam("Ch4Min", 0);
         addStimParam("Ch4Amp", 3.0f);
+        addStimParam("Ch4IPI", 10.0f);
 
         addStimParam("Ch5Max", 0);
         addStimParam("Ch5Min", 0);
         addStimParam("Ch5Amp", 3.0f);
+        addStimParam("Ch5IPI", 10.0f);
 
         addStimParam("Ch6Max", 0);
         addStimParam("Ch6Min", 0);
         addStimParam("Ch6Amp", 3.0f);
+        addStimParam("Ch6IPI", 10.0f);
 
         addStimParam("Ch7Max", 0);
         addStimParam("Ch7Min", 0);
         addStimParam("Ch7Amp", 3.0f);
+        addStimParam("Ch7IPI", 10.0f);
 
         addStimParam("Ch8Max", 0);
         addStimParam("Ch8Min", 0);
         addStimParam("Ch8Amp", 3.0f);
+        addStimParam("Ch8IPI", 10.0f);
 
         addStimParam("Ch9Max", 0);
         addStimParam("Ch9Min", 0);
         addStimParam("Ch9Amp", 3.0f);
+        addStimParam("Ch9IPI", 10.0f);
     }
 }

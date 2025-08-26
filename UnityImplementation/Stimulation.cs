@@ -69,9 +69,9 @@ public class Stimulation : MonoBehaviour
     //current functions are design to be called by a discrete sensor  
     // like the bubble. For an analog sensor I suggets you only use the 
     //function below and disregard the rest
-    public void StimulateAnalog(string finger, bool rawValues, int PW, int amp = 3)
+    public void StimulateAnalog(string finger, int PW, int amp = 3)
     {
-        WSS.StimulateAnalog(finger, rawValues, PW, amp);
+        WSS.StimulateAnalog(finger, PW, amp);
     }
 
 
@@ -130,16 +130,6 @@ public class Stimulation : MonoBehaviour
     {
         WSS.UpdateIPD(IPD, WssTarget.Broadcast);
     }
-
-    public void UpdateFrequency(int targetWSS, int FR) //in Hz (1-1000Hz) might be further limited by PW duration
-    {
-        WSS.UpdateFrequency(FR, IntToWssTarget(targetWSS));
-    } //max 1000ms for pw IPD
-
-    public void UpdateFrequency(int FR) //in Hz (1-1000Hz) might be further limited by PW duration
-    {
-        WSS.UpdateFrequency(FR, WssTarget.Broadcast);
-    } //max 1000ms for pw IPD
 
     public void updateWaveform(int[] waveform, int eventID)
     {
