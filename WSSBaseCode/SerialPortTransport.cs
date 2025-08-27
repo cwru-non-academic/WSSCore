@@ -165,7 +165,7 @@ public sealed class SerialPortTransport : ITransport
             catch (TimeoutException) { /* normal with short read timeouts */ }
             catch (Exception)
             {
-                // TODO(YourName, yyyy-mm-dd): Consider surfacing an OnError event or logging this exception.
+                // TODO Consider surfacing an OnError event or logging this exception.
                 break;
             }
         }
