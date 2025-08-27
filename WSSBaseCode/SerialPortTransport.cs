@@ -3,6 +3,7 @@ using System.IO.Ports;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Management;
 
 /// <summary>
 /// Serial-port implementation of <see cref="ITransport"/> for WSS communications.
@@ -181,19 +182,26 @@ public sealed class SerialPortTransport : ITransport
 
 
     /// <summary>
-    /// Picks a serial COM port. Prefers <paramref name="preferredPort"/> if present;
-    /// otherwise chooses the lowest COM number (natural sort).
+    /// Selects a serial COM port. If <paramref name="preferredPort"/> is provided,
+    /// that port is used. Otherwise, prefers ports whose PNPDeviceID contains
+    /// <c>VID_0403&PID_6001</c> (FTDI FT232R). If none match, returns the lowest
+    /// COM port by natural sort (COM2, COM10, …).
     /// </summary>
-    /// <param name="preferredPort">Exact port name to prefer (e.g., "COM11"). Optional.</param>
-    /// <returns>The selected COM port name (e.g., "COM3").</returns>
-    /// <exception cref="InvalidOperationException">Thrown if no serial ports are found.</exception>
+    /// <param name="preferredPort">Exact port name to use, e.g., <c>COM11</c>. Optional.</param>
+    /// <returns>The selected COM port name, e.g., <c>COM3</c>.</returns>
+    /// <exception cref="InvalidOperationException">No serial ports found.</exception>
+    /// <remarks>
+    /// Uses WMI (<c>Win32_SerialPort</c>) to read <c>PNPDeviceID</c>. On .NET Core/5+,
+    /// add the <c>System.Management</c> package. If the VID/PID probe fails, the method
+    /// falls back to the lowest COM by natural sort.
+    /// </remarks>
     private static string GetComPort(string preferredPort = null)
     {
         var ports = SerialPort.GetPortNames();
         if (ports.Length == 0)
             throw new InvalidOperationException("No serial ports found.");
 
-        // Natural sort: COM2, COM10, COM11 ... (not lexicographic)
+        // Natural sort: COM2 < COM10
         Array.Sort(ports, (a, b) =>
         {
             int na = TryParseComNum(a, out var ia) ? ia : int.MaxValue;
@@ -213,6 +221,38 @@ public sealed class SerialPortTransport : ITransport
             Log.Warn($"Preferred port '{preferredPort}' not found.");
         }
 
+        // Try to find FTDI FT232R (VID_0403&PID_6001)
+        string[] ftdiMatches = Array.Empty<string>();
+        /* try
+        {
+            using var searcher = new ManagementObjectSearcher("SELECT DeviceID,PNPDeviceID FROM Win32_SerialPort");
+            var map = searcher.Get()
+                .OfType<ManagementObject>()
+                .Select(mo => (Dev: (string)mo["DeviceID"], Pnp: (string)mo["PNPDeviceID"]))
+                .Where(t => !string.IsNullOrEmpty(t.Dev) && !string.IsNullOrEmpty(t.Pnp))
+                .ToDictionary(t => t.Dev, t => t.Pnp, StringComparer.OrdinalIgnoreCase);
+
+            ftdiMatches = ports
+                .Where(p => map.TryGetValue(p, out var pnp) &&
+                            pnp.IndexOf("VID_0403&PID_6001", StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToArray();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"WMI probe failed: {ex.Message}. Skipping VID/PID filter.");
+        } */
+
+        if (ftdiMatches.Length == 1)
+        {
+            Log.Info($"Detected FTDI FT232R on {ftdiMatches[0]}");
+            return ftdiMatches[0];
+        }
+        if (ftdiMatches.Length > 1)
+        {
+            Log.Warn($"Multiple FTDI FT232R ports: {string.Join(", ", ftdiMatches)}. Using {ftdiMatches[0]}.");
+            return ftdiMatches[0];
+        }
+
         if (ports.Length > 1)
             Log.Warn($"Multiple ports detected: {string.Join(", ", ports)}. Using {ports[0]}.");
 
@@ -225,4 +265,5 @@ public sealed class SerialPortTransport : ITransport
                 int.TryParse(s.Substring(3), out n);
         }
     }
+
 }
