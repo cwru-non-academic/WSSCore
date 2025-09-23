@@ -35,5 +35,6 @@ public interface IStimulationCore : IDisposable
     void Load(WssTarget wssTarget);
     void Request_Configs(int command, int id, WssTarget wssTarget);
     void LoadConfigFile();
+    StimConfigController GetStimConfigController();
 }
 

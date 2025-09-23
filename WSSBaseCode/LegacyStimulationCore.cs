@@ -419,6 +419,11 @@ public sealed class LegacyStimulationCore : IStimulationCore
         _wss.edit_event_shape(WssTargetToInt(targetWSS), eventID, 11, 12);
     }
 
+    public StimConfigController GetStimConfigController()
+    {
+        return _config;
+    }
+
     // ---- setup & edits ----
 
     public void Save(WssTarget targetWSS)

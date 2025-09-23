@@ -95,11 +95,12 @@ public sealed class WssStimulationCore : IStimulationCore
         InitStimArrays();
         VerifyStimMode();
 
-        if (_testMode) return;
-
-        _wss = _comPort != null
-            ? new WssClient(new SerialPortTransport(_comPort), new WssFrameCodec())
-            : new WssClient(new SerialPortTransport(), new WssFrameCodec());
+        //if test mode use fake transport, otheriwse use a serial transport with port if given or auto method if not given.
+        _wss = _testMode
+            ? new WssClient(new TestModeTransport(), new WssFrameCodec())
+            : (_comPort != null
+                ? new WssClient(new SerialPortTransport(_comPort), new WssFrameCodec())
+                : new WssClient(new SerialPortTransport(),      new WssFrameCodec()));
 
         _state = CoreState.Connecting;
         _connectTask = _wss.ConnectAsync();
@@ -114,7 +115,6 @@ public sealed class WssStimulationCore : IStimulationCore
         switch (_state)
         {
             case CoreState.Connecting:
-                if (_testMode) return;
                 if (_connectTask == null) _connectTask = _wss.ConnectAsync();
                 else if (_connectTask.IsFaulted)
                 {
@@ -168,7 +168,7 @@ public sealed class WssStimulationCore : IStimulationCore
     public void Shutdown()
     {
         StopStreamingInternal();
-        if (!_testMode && _wss != null)
+        if (_wss != null)
         {
             try { _wss.ZeroOutStim(); } catch { }
             SafeDisconnect();
@@ -191,7 +191,7 @@ public sealed class WssStimulationCore : IStimulationCore
 
     #region ========== Status ==========
     /// <summary>True when device transport is started (or streaming in test mode).</summary>
-    public bool Started() => _testMode ? _state == CoreState.Streaming : (_wss?.Started ?? false);
+    public bool Started() => _wss?.Started ?? false;
 
     /// <summary>
     /// True when the core is Ready or Streaming. Use this to decide when it’s safe to send
@@ -221,7 +221,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="target">Which WSS to address (or Broadcast).</param>
     public void StreamChange(int[] PA, int[] PW, int[] IPI, WssTarget target)
     {
-        if (_testMode) return;
         _ = _wss.StreamChange(PA, PW, IPI, target); // discard task intentionally
     }
 
@@ -266,7 +265,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="wsstarget">Target device or Broadcast.</param>
     public void ZeroOutStim(WssTarget wsstarget = WssTarget.Broadcast)
     {
-        if (_testMode) return;
         _ = _wss.ZeroOutStim(wsstarget);
     }
 
@@ -280,7 +278,7 @@ public sealed class WssStimulationCore : IStimulationCore
         if (_wss == null) return;
         if (_state == CoreState.Ready)
         {
-            if (!_testMode) _ = _wss.StartStim(targetWSS);
+            _ = _wss.StartStim(targetWSS);
             _currentSetupTries = 0;
             StartStreamingInternal();
             _state = CoreState.Streaming; // ensure state reflects started
@@ -300,10 +298,10 @@ public sealed class WssStimulationCore : IStimulationCore
         {
             case CoreState.SettingUp:
             case CoreState.Ready:
-                if (!_testMode) _ = _wss.StopStim(targetWSS);
+                _ = _wss.StopStim(targetWSS);
                 break;
             case CoreState.Streaming:
-                if (!_testMode) _ = _wss.StopStim(targetWSS);
+                _ = _wss.StopStim(targetWSS);
                 StopStreamingInternal();
                 _state = CoreState.Ready;
                 break;
@@ -336,7 +334,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="targetWSS">Target device or Broadcast.</param>
     public void UpdateIPD(int IPD, WssTarget targetWSS = WssTarget.Broadcast)
     {
-        if (_testMode) return;
         _currentIPD = Math.Clamp(IPD, 1, 1000);
 
         _ = ScheduleSetupChangeAsync(targetWSS,
@@ -363,7 +360,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// </exception>
     public void UpdateFrequency(string finger, int FR)
     {
-        if (_testMode) return;
         if (FR <= 0) throw new ArgumentOutOfRangeException(nameof(FR));
         int periodMs = (int)(1000.0f / FR);
         UpdatePeriod(finger, periodMs);
@@ -382,7 +378,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// </param>
     public void UpdatePeriod(string finger, int periodMs)
     {
-        if (_testMode) return;
         if (periodMs <= 0) throw new ArgumentOutOfRangeException(nameof(periodMs));
         int channel = FingerToChannel(finger);
         int total = _maxWSS * 3;
@@ -401,7 +396,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="targetWSS">Target device or Broadcast.</param>
     public void UpdateWaveform(int[] waveform, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
     {
-        if (_testMode) return;
         WaveformSetup(new WaveformBuilder(waveform), eventID, targetWSS);
     }
 
@@ -414,7 +408,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="targetWSS">Target device or Broadcast.</param>
     public void UpdateWaveform(WaveformBuilder waveform, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
     {
-        if (_testMode) return;
         WaveformSetup(waveform, eventID, targetWSS);
     }
 
@@ -428,7 +421,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="targetWSS">Target device or Broadcast.</param>
     public void UpdateEventShape(int cathodicWaveform, int anodicWaveform, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
     {
-        if (_testMode) return;
         _ = ScheduleSetupChangeAsync(targetWSS,
             () => _wss.EditEventShape(eventID, cathodicWaveform, anodicWaveform, targetWSS)
         );
@@ -469,7 +461,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="targetWSS">Target device or Broadcast.</param>
     public void Save(WssTarget targetWSS = WssTarget.Broadcast)
     {
-        if (_testMode) return;
         _ = ScheduleSetupChangeAsync(targetWSS, () => _wss.PopulateFramSettings(targetWSS));
     }
 
@@ -480,7 +471,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="targetWSS">Target device or Broadcast.</param>
     public void Load(WssTarget targetWSS = WssTarget.Broadcast)
     {
-        if (_testMode) return;
         _ = ScheduleSetupChangeAsync(targetWSS, () => _wss.PopulateBoardSettings(targetWSS));
     }
 
@@ -493,8 +483,12 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="targetWSS">Target device or Broadcast.</param>
     public void Request_Configs(int command, int id, WssTarget targetWSS = WssTarget.Broadcast)
     {
-        if (_testMode) return;
         _ = ScheduleSetupChangeAsync(targetWSS, () => _wss.RequestConfigs(command, id, targetWSS));
+    }
+
+    public StimConfigController GetStimConfigController()
+    {
+        return _config;
     }
     #endregion
 
@@ -563,7 +557,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="targetWSS">Target device or Broadcast.</param>
     public void WaveformSetup(WaveformBuilder wave, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
     {
-        if (_testMode) return;
         var cat = wave.getCatShapeArray();
         var ano = wave.getAnodicShapeArray();
 
@@ -617,14 +610,11 @@ public sealed class WssStimulationCore : IStimulationCore
                 for (int w = 1; w <= _maxWSS; w++)
                 {
                     int baseIdx = (w - 1) * 3;
-                    if (!_testMode)
-                    {
-                        _ = _wss.StreamChange(
-                            new[] { AmpTo255Convention(_chAmps[baseIdx + 0]), AmpTo255Convention(_chAmps[baseIdx + 1]), AmpTo255Convention(_chAmps[baseIdx + 2]) },
-                            new[] { _chPWs[baseIdx + 0], _chPWs[baseIdx + 1], _chPWs[baseIdx + 2] },
-                            new[] { (int)_config.getStimParam($"Ch{baseIdx + 0}IPI"), (int)_config.getStimParam($"Ch{baseIdx + 1}IPI"), (int)_config.getStimParam($"Ch{baseIdx + 2}IPI") },
-                            IntToWssTarget(w));
-                    }
+                    _ = _wss.StreamChange(
+                        new[] { AmpTo255Convention(_chAmps[baseIdx + 0]), AmpTo255Convention(_chAmps[baseIdx + 1]), AmpTo255Convention(_chAmps[baseIdx + 2]) },
+                        new[] { _chPWs[baseIdx + 0], _chPWs[baseIdx + 1], _chPWs[baseIdx + 2] },
+                        new[] { (int)_config.getStimParam($"Ch{baseIdx + 0}IPI"), (int)_config.getStimParam($"Ch{baseIdx + 1}IPI"), (int)_config.getStimParam($"Ch{baseIdx + 2}IPI") },
+                        IntToWssTarget(w));
                     await Task.Delay(_delayMsBetweenPackets, tk);
                 }
             }

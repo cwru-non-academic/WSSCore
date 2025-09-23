@@ -191,7 +191,7 @@ public sealed class WssClient : IDisposable
         {
             if (frame == null || frame.Length < 3) continue;
 
-            var key = ((byte)frame[1], (byte)frame[2]);
+            var key = ((byte)frame[0], (byte)frame[2]); //uses the sender and the msgID. the sender is the WSS
 
             if (_pending.TryGetValue(key, out var q))
             {

@@ -33,6 +33,7 @@ public sealed class TestModeTransport : ITransport
 
     private volatile bool _connected;
     private volatile bool _disposed;
+    private readonly WssFrameCodec _codec = new WssFrameCodec();
     private CancellationTokenSource _lifetimeCts;
 
     /// <inheritdoc/>
@@ -156,43 +157,45 @@ public sealed class TestModeTransport : ITransport
     // --- private default auto-responder ---
     private Task<byte[]> DefaultResponderAsync(byte[] req)
     {
-        if (req == null || req.Length < 4) return Task.FromResult(req);
+        // Expect wire bytes incl. END. Deframe first.
+        if (req == null || req.Length < 5) return Task.FromResult(Array.Empty<byte>());
 
-        // Suppress responses for streaming commands (IDs 0x30–0x33 at payload[0])
-        if (IsFireAndForget(req))
+        // Strip trailing END (0xC0) if present
+        int endIdx = req[^1] == 0xC0 ? req.Length - 1 : req.Length;
+        var preEscaped = req.AsSpan(0, endIdx);
+
+        // Unescape and validate: frame = [S][T][payload...][CKS]
+        if (!WssFrameCodec.TryUnescapeAndValidate(preEscaped, out var frame))
+            return Task.FromResult(Array.Empty<byte>()); // drop malformed input
+
+        if (frame.Length < 5) return Task.FromResult(Array.Empty<byte>());
+
+        byte sender = frame[0];
+        byte target = frame[1];
+        var payload = frame.AsSpan(2, frame.Length - 3); // exclude [S][T] and trailing [CKS]
+
+        // Fire-and-forget IDs 0x30..0x33 at payload[0]
+        byte id = payload[0];
+        if (id >= 0x30 && id <= 0x33)
             return Task.FromResult(Array.Empty<byte>());
 
-        int endIdx = req.Length - 1;
-        int cksIdx = req.Length - 2;
-        byte endMarker = req[endIdx];
+        // If checksum was valid, echo with sender/target flipped and same payload
+        // (checksum and escaping handled by codec)
+        byte[] outPayload;
 
-        byte inCks = req[cksIdx];
-        byte recomputed = ComputeChecksum(req.AsSpan(0, cksIdx));
-        bool ok = inCks == recomputed;
+        // Validity already checked by TryUnescapeAndValidate, so "ok" here.
+        // For your "invalid checksum" branch you wanted a fallback.
+        // Since codec validated OK, only echo path runs.
+        // If you still want a forced-fallback mode, add a flag and build below.
 
-        if (ok)
-        {
-            var resp = new byte[req.Length];
-            Buffer.BlockCopy(req, 0, resp, 0, req.Length);
-            (resp[0], resp[1]) = (resp[1], resp[0]);
-            resp[cksIdx] = ComputeChecksum(resp.AsSpan(0, cksIdx));
-            resp[endIdx] = endMarker;
-            return Task.FromResult(resp);
-        }
-        else
-        {
-            int payloadLen = FallbackPayload?.Length ?? 0;
-            var resp = new byte[2 + payloadLen + 2];
-            resp[0] = req.Length >= 2 ? req[1] : (byte)0;
-            resp[1] = req.Length >= 1 ? req[0] : (byte)0;
-            if (payloadLen > 0) Buffer.BlockCopy(FallbackPayload, 0, resp, 2, payloadLen);
-            int respCksIdx = resp.Length - 2;
-            int respEndIdx = resp.Length - 1;
-            resp[respCksIdx] = ComputeChecksum(resp.AsSpan(0, respCksIdx));
-            resp[respEndIdx] = endMarker;
-            return Task.FromResult(resp);
-        }
+        outPayload = payload.ToArray();
+
+        // Build and return escaped reply: [target][sender][payload...][CKS][END]
+        var reply = _codec.Frame(target, sender, outPayload);
+        return Task.FromResult(reply);
     }
+
+
 
 
     // --- helpers ---
@@ -258,6 +261,6 @@ public sealed class TestModeTransport : ITransport
 
     private void ThrowIfDisposed()
     {
-        if (_disposed) throw new ObjectDisposedException(nameof(DebugTransport));
+        if (_disposed) throw new ObjectDisposedException(nameof(TestModeTransport));
     }
 }

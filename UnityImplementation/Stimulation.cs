@@ -10,20 +10,21 @@ public class Stimulation : MonoBehaviour
     [SerializeField] private bool testMode = true;
     [SerializeField] private int maxSetupTries = 5;
     [SerializeField] public string comPort = "COM7";
-    [SerializeField] private StimConfigController config;
 
     private IStimulationCore WSS;
     public bool started = false;
     // Start is called before the first frame update
-    public void Start()
+    public void Awake()
     {
         if (forcePort)
         {
-            WSS = new LegacyStimulationCore(comPort, Application.streamingAssetsPath, testMode, maxSetupTries);
+            //WSS = new LegacyStimulationCore(comPort, Application.streamingAssetsPath, testMode, maxSetupTries);
+            WSS = new WssStimulationCore(Application.streamingAssetsPath, testMode, maxSetupTries);
         }
         else
         {
-            WSS = new LegacyStimulationCore(Application.streamingAssetsPath, testMode, maxSetupTries);
+            //WSS = new LegacyStimulationCore(Application.streamingAssetsPath, testMode, maxSetupTries);
+            WSS = new WssStimulationCore(comPort, Application.streamingAssetsPath, testMode, maxSetupTries);
         }
     }
 
@@ -191,8 +192,13 @@ public class Stimulation : MonoBehaviour
     {
         return WSS.IsModeValid();
     }
+
+    public StimConfigController GetStimConfigCTRL()
+    {
+        return WSS.GetStimConfigController();
+    }
     #endregion
-    
+
     private WssTarget IntToWssTarget(int i)
     {
         switch (i)
