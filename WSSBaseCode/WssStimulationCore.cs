@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEditor.PackageManager.Requests;
 
 /// <summary>
 /// Unity-agnostic WSS stimulation core that manages connection, setup (via a queued step runner),
@@ -49,7 +50,7 @@ public sealed class WssStimulationCore : IStimulationCore
     private float[] _d_dt;
     private float[] _dt;
 
-    private enum CoreState { Disconnected, Connecting, SettingUp, Ready, Streaming, Error }
+    private enum CoreState { Disconnected, Connecting, SettingUp, Ready, Started, Streaming, Error }
     #endregion
 
     #region ========== Construction ==========
@@ -146,6 +147,13 @@ public sealed class WssStimulationCore : IStimulationCore
                 break;
 
             case CoreState.Ready:
+                if (_wss.Started)
+                {
+                    _state = CoreState.Started;
+                }
+                break;
+
+            case CoreState.Started:
                 StartStreamingInternal();
                 _state = CoreState.Streaming;
                 break;
@@ -190,14 +198,14 @@ public sealed class WssStimulationCore : IStimulationCore
     #endregion
 
     #region ========== Status ==========
-    /// <summary>True when device transport is started (or streaming in test mode).</summary>
-    public bool Started() => _wss?.Started ?? false;
+    /// <summary>True when device transport is started or streaming.</summary>
+    public bool Started() => _state is CoreState.Started or CoreState.Streaming;
 
     /// <summary>
-    /// True when the core is Ready or Streaming. Use this to decide when it’s safe to send
-    /// stream changes or start stimulation.
+    /// True when the core is Ready. Use this to decide when it’s safe to send
+    /// start stimulation.
     /// </summary>
-    public bool Ready() => _state is CoreState.Ready or CoreState.Streaming;
+    public bool Ready() => _state is CoreState.Ready;
 
     /// <summary>
     /// Validates the current sensation controller mode from config (P or PD).
@@ -276,12 +284,35 @@ public sealed class WssStimulationCore : IStimulationCore
     public void StartStim(WssTarget targetWSS = WssTarget.Broadcast)
     {
         if (_wss == null) return;
-        if (_state == CoreState.Ready)
+        switch (_state)
         {
-            _ = _wss.StartStim(targetWSS);
-            _currentSetupTries = 0;
-            StartStreamingInternal();
-            _state = CoreState.Streaming; // ensure state reflects started
+            case CoreState.Ready:
+                _ = ScheduleSetupChangeAsync(targetWSS,
+                    () => StepLogger(_wss.StartStim(targetWSS),      $"StartStim[{targetWSS}]")
+                );
+                _currentSetupTries = 0;
+                break;
+            case CoreState.Started:
+            case CoreState.Streaming:
+                if (Started())
+                {
+                    Log.Info("WSS already started, to force restart call reset radio, or stop stim and start again.");
+                } else {
+                    Log.Error("Stim is not started, but it originally passed the started test. Reseting radio now");
+                    Shutdown();
+                    Initialize();
+                }
+                break;
+            case CoreState.Connecting:
+            case CoreState.SettingUp:
+                Log.Warn("State must be " + CoreState.Ready.ToString() + " and it is currently " + _state.ToString());
+                break;
+            case CoreState.Disconnected:
+            case CoreState.Error:
+                Log.Warn("Wss is disconeted or error out. Trying to stablish connection");
+                Shutdown();
+                Initialize();
+                break;
         }
     }
 
@@ -298,12 +329,16 @@ public sealed class WssStimulationCore : IStimulationCore
         {
             case CoreState.SettingUp:
             case CoreState.Ready:
-                _ = _wss.StopStim(targetWSS);
+            case CoreState.Started:
+                _ = ScheduleSetupChangeAsync(targetWSS,
+                    () => StepLogger(_wss.StopStim(targetWSS),      $"StopStim[{targetWSS}]")
+                );
                 break;
             case CoreState.Streaming:
-                _ = _wss.StopStim(targetWSS);
+                _ = ScheduleSetupChangeAsync(targetWSS,
+                    () => StepLogger(_wss.StopStim(targetWSS),      $"StopStim[{targetWSS}]")
+                );
                 StopStreamingInternal();
-                _state = CoreState.Ready;
                 break;
         }
     }
@@ -337,9 +372,9 @@ public sealed class WssStimulationCore : IStimulationCore
         _currentIPD = Math.Clamp(IPD, 1, 1000);
 
         _ = ScheduleSetupChangeAsync(targetWSS,
-            () => _wss.EditEventPw(1, new[] { 0, 0, _currentIPD }, targetWSS),
-            () => _wss.EditEventPw(2, new[] { 0, 0, _currentIPD }, targetWSS),
-            () => _wss.EditEventPw(3, new[] { 0, 0, _currentIPD }, targetWSS)
+            () => StepLogger(_wss.EditEventPw(1, new[] { 0, 0, _currentIPD }, targetWSS),      $"UpdateIPD[{targetWSS}], Event[1]"),
+            () => StepLogger(_wss.EditEventPw(2, new[] { 0, 0, _currentIPD }, targetWSS),      $"UpdateIPD[{targetWSS}], Event[2]"),
+            () => StepLogger(_wss.EditEventPw(3, new[] { 0, 0, _currentIPD }, targetWSS),      $"UpdateIPD[{targetWSS}], Event[3]")
         );
     }
 
@@ -422,7 +457,7 @@ public sealed class WssStimulationCore : IStimulationCore
     public void UpdateEventShape(int cathodicWaveform, int anodicWaveform, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
     {
         _ = ScheduleSetupChangeAsync(targetWSS,
-            () => _wss.EditEventShape(eventID, cathodicWaveform, anodicWaveform, targetWSS)
+            () => StepLogger(_wss.EditEventShape(eventID, cathodicWaveform, anodicWaveform, targetWSS),      $"UpdateShape[{targetWSS}], Event[{eventID}]")
         );
     }
 
@@ -461,7 +496,7 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="targetWSS">Target device or Broadcast.</param>
     public void Save(WssTarget targetWSS = WssTarget.Broadcast)
     {
-        _ = ScheduleSetupChangeAsync(targetWSS, () => _wss.PopulateFramSettings(targetWSS));
+        _ = ScheduleSetupChangeAsync(targetWSS, () => StepLogger(_wss.PopulateFramSettings(targetWSS), $"SaveChanges[{targetWSS}]"));
     }
 
     /// <summary>
@@ -471,7 +506,7 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="targetWSS">Target device or Broadcast.</param>
     public void Load(WssTarget targetWSS = WssTarget.Broadcast)
     {
-        _ = ScheduleSetupChangeAsync(targetWSS, () => _wss.PopulateBoardSettings(targetWSS));
+        _ = ScheduleSetupChangeAsync(targetWSS, () => StepLogger(_wss.PopulateBoardSettings(targetWSS), $"Load[{targetWSS}]"));
     }
 
     /// <summary>
@@ -483,9 +518,20 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="targetWSS">Target device or Broadcast.</param>
     public void Request_Configs(int command, int id, WssTarget targetWSS = WssTarget.Broadcast)
     {
-        _ = ScheduleSetupChangeAsync(targetWSS, () => _wss.RequestConfigs(command, id, targetWSS));
+        _ = ScheduleSetupChangeAsync(targetWSS, () => StepLogger(_wss.RequestConfigs(command, id, targetWSS), $"RequestConfig[{command}, {id}]"));
     }
 
+    /// <summary>
+    /// Gets the JSON-backed stimulation configuration controller currently used by this core.
+    /// </summary>
+    /// <returns>
+    /// The active <see cref="StimConfigController"/> instance that provides read/write access
+    /// to stimulation parameters and constants loaded from the configuration file.
+    /// </returns>
+    /// <remarks>
+    /// Returned reference is live, not a copy. Callers should avoid mutating it from multiple
+    /// threads without external synchronization.
+    /// </remarks>
     public StimConfigController GetStimConfigController()
     {
         return _config;
