@@ -19,12 +19,12 @@ public class Stimulation : MonoBehaviour
         if (forcePort)
         {
             //WSS = new LegacyStimulationCore(comPort, Application.streamingAssetsPath, testMode, maxSetupTries);
-            WSS = new WssStimulationCore(Application.streamingAssetsPath, testMode, maxSetupTries);
+            WSS = new WssStimulationCore(comPort, Application.streamingAssetsPath, testMode, maxSetupTries);
         }
         else
         {
             //WSS = new LegacyStimulationCore(Application.streamingAssetsPath, testMode, maxSetupTries);
-            WSS = new WssStimulationCore(comPort, Application.streamingAssetsPath, testMode, maxSetupTries);
+            WSS = new WssStimulationCore(Application.streamingAssetsPath, testMode, maxSetupTries);
         }
     }
 

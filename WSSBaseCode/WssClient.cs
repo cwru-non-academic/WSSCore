@@ -148,6 +148,7 @@ public sealed class WssClient : IDisposable
         (byte target, byte msgId) key,
         CancellationToken ct)
     {
+        Log.Info(ByteToString(framed, framed.Length));
         await _transport.SendAsync(framed, ct).ConfigureAwait(false);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -191,28 +192,38 @@ public sealed class WssClient : IDisposable
         {
             if (frame == null || frame.Length < 3) continue;
 
-            var key = ((byte)frame[0], (byte)frame[2]); //uses the sender and the msgID. the sender is the WSS
-
-            if (_pending.TryGetValue(key, out var q))
+            // 1) Errors first: route by offending command
+            if (frame[2] == 0x05 && frame.Length >= 6)
             {
-                // Pop until we find a waiter we can complete (skip any that timed out/canceled)
-                while (q.TryDequeue(out var waiter))
+                var key = (frame[0], frame[5]); // sender, offendingCmd
+                if (_pending.TryGetValue(key, out var q))
                 {
-                    if (waiter.TrySetResult(frame))
-                        break; // matched the oldest pending request
-                    // else it was canceled already; keep dequeuing
+                    while (q.TryDequeue(out var waiter))
+                        if (waiter.TrySetResult(frame)) break;
+                    if (q.IsEmpty) _pending.TryRemove(key, out _);
                 }
+                else
+                {
+                    Log.Warn("Unpaired error: " + ByteToString(frame, frame.Length));
+                }
+                continue;
+            }
 
-                // Optional: if queue is empty now, prune the dictionary entry
-                if (q.IsEmpty)
-                    _pending.TryRemove(key, out _);
+            // 2) Normal replies: route by msgId
+            var normalKey = (frame[0], frame[2]); // sender, msgId
+            if (_pending.TryGetValue(normalKey, out var nq))
+            {
+                while (nq.TryDequeue(out var waiter))
+                    if (waiter.TrySetResult(frame)) break;
+                if (nq.IsEmpty) _pending.TryRemove(normalKey, out _);
             }
             else
             {
-                // TODO: unsolicited/late frame; consider logging or metrics
+                Log.Info("Unpaired reply: " + ByteToString(frame, frame.Length));
             }
         }
     }
+
 
     /// <summary>
     /// Processes a complete frame of data received from the WSS connection.
@@ -258,13 +269,26 @@ public sealed class WssClient : IDisposable
             return $"Error: {text} in Command: {cmd:x}";
         }
 
-        if (frame.Length >= 5 && frame[2] == 0x0B)
-        {
-            if (frame[4] == 0x01) { Started = true; return "Start Acknowledged"; }
-            if (frame[4] == 0x00) { Started = false; return "Stop Acknowledged"; }
-        }
+        //if (frame.Length >= 5 && frame[2] == 0x0B)
+        //{
+            //if (frame[4] == 0x01) { Started = true; return "Start Acknowledged"; }
+            //if (frame[4] == 0x00) { Started = false; return "Stop Acknowledged"; }
+        //}
 
         return BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Helper used to translate a byte array into a plain redable string while keeping byte format
+    /// </summary>
+    private string ByteToString(byte[] data, int lenght)
+    {
+        string str = "";
+        for (int i = 0; i < lenght; i++)
+        {
+            str += data[i].ToString("x") + " ";
+        }
+        return str;
     }
 
     /// <summary>

@@ -178,12 +178,29 @@ public sealed class TestModeTransport : ITransport
         byte id = payload[0];
         if (id >= 0x30 && id <= 0x33)
             return Task.FromResult(Array.Empty<byte>());
-        //handle start and stop replies
-        else if (id == (byte)WssClient.WssMessageId.StimulationSwitch) {
-            if (payload[2] == 0x03) {//start
-                payload[2] = 0x01; 
-            } else if (payload[2] == 0x04) {//stop
-                payload[2] = 0x00; 
+        //handle non mirror replies
+        else {
+            switch (id)
+            {
+                case (byte)WssClient.WssMessageId.StimulationSwitch:
+                    if (payload[2] == 0x03)
+                    {//start
+                        payload[2] = 0x01;
+                    }
+                    else if (payload[2] == 0x04)
+                    {//stop
+                        payload[2] = 0x00;
+                    }
+                    break;
+                case (byte)WssClient.WssMessageId.CreateContactConfig:
+                case (byte)WssClient.WssMessageId.CreateEvent:
+                case (byte)WssClient.WssMessageId.CreateSchedule:
+                case (byte)WssClient.WssMessageId.EditEventConfig:
+                case (byte)WssClient.WssMessageId.AddEventToSchedule:
+                    byte eventID = payload[2];
+                    byte msgID = payload[0];
+                    payload = new byte[] { msgID, 0x01, eventID };
+                    break;
             }
         }
 

@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor.PackageManager.Requests;
 
 /// <summary>
 /// Unity-agnostic WSS stimulation core that manages connection, setup (via a queued step runner),
@@ -68,6 +67,7 @@ public sealed class WssStimulationCore : IStimulationCore
     public WssStimulationCore(string JSONpath, bool testMode = false, int maxSetupTries = 5)
     {
         _jsonPath = JSONpath;
+        _comPort = null;
         _config = new StimConfigController(_jsonPath);
         _testMode = testMode;
         _maxSetupTries = maxSetupTries;
@@ -97,12 +97,17 @@ public sealed class WssStimulationCore : IStimulationCore
         VerifyStimMode();
 
         //if test mode use fake transport, otheriwse use a serial transport with port if given or auto method if not given.
-        _wss = _testMode
-            ? new WssClient(new TestModeTransport(), new WssFrameCodec())
-            : (_comPort != null
-                ? new WssClient(new SerialPortTransport(_comPort), new WssFrameCodec())
-                : new WssClient(new SerialPortTransport(),      new WssFrameCodec()));
-
+        if (_testMode)
+        {
+            _wss = new WssClient(new TestModeTransport(), new WssFrameCodec());
+        } else {
+            if (_comPort != null)
+            {
+                _wss = new WssClient(new SerialPortTransport(_comPort), new WssFrameCodec());
+            } else {
+                _wss = new WssClient(new SerialPortTransport(),      new WssFrameCodec());
+            }
+        }
         _state = CoreState.Connecting;
         _connectTask = _wss.ConnectAsync();
     }
