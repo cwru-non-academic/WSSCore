@@ -10,6 +10,7 @@ public sealed class WssClient : IDisposable
     private readonly ITransport _transport;
     private readonly IFrameCodec _codec;
     private readonly byte _sender;
+    private readonly WSSVersionHandler _versionHandler;
 
     private readonly ConcurrentDictionary<(byte target, byte msgId), ConcurrentQueue<TaskCompletionSource<byte[]>>> _pending
     = new();
@@ -23,10 +24,11 @@ public sealed class WssClient : IDisposable
     /// <param name="transport">Underlying byte transport (e.g., serial, BLE).</param>
     /// <param name="codec">Frame codec (escape/unescape + checksum).</param>
     /// <param name="sender">Sender address byte (defaults to 0x00).</param>
-    public WssClient(ITransport transport, IFrameCodec codec, byte sender = 0x00)
+    public WssClient(ITransport transport, IFrameCodec codec, WSSVersionHandler versionHandler, byte sender = 0x00)
     {
         _transport = transport;
         _codec = codec;
+        _versionHandler = versionHandler;
         _sender = sender;
         _transport.BytesReceived += OnBytes;
     }
@@ -406,8 +408,10 @@ public sealed class WssClient : IDisposable
     /// Index 0 = closest to switch, index 3 = farthest from switch.
     /// </param>
     /// /// <param name="LEDs">
-    /// Int representing LED locations to light during stimulation
+    /// Optional int representing LED locations to light during stimulation
     /// Index 0 = closest to switch, index 3 = farthest from switch.
+    /// Ignored if not supported by firmware.
+    /// Pass -1 to indicate no LED configuration.
     /// </param>
     /// <param name="target">The WSS target device to send the configuration to.</param>
     /// <param name="ct">Optional cancellation token.</param>
@@ -432,10 +436,21 @@ public sealed class WssClient : IDisposable
         byte stimByte = EncodeContactSetup(stimReversed);
         byte rechargeByte = EncodeContactSetup(rechargeReversed);
 
-        // Validate and convert LEDs int into a byte
-        byte ledByte = ToByteValidated(LEDs, (int)WSSLimits.LEDs, nameof(LEDs));
+        if (LEDs >= 0)
+        {
+            if (_versionHandler.IsLEDSettingsAvailable())
+            {
+                // Validate and convert LEDs int into a byte
+                byte ledByte = ToByteValidated(LEDs, (int)WSSLimits.LEDs, nameof(LEDs));
+                return SendCmdAsync(WSSMessageIDs.CreateContactConfig, target, ct, validatedId, stimByte, rechargeByte, ledByte);
+            }
+            else
+            {
+                Log.Warn($"Firmware version does not support LEDs. Ignoring LED value {LEDs}.");
+            }
+        }
 
-        return SendCmdAsync(WSSMessageIDs.CreateContactConfig, target, ct, validatedId, stimByte, rechargeByte, ledByte);
+        return SendCmdAsync(WSSMessageIDs.CreateContactConfig, target, ct, validatedId, stimByte, rechargeByte);
     }
 
     /// <summary>

@@ -31,7 +31,6 @@ public sealed class WssStimulationCore : IStimulationCore
     private readonly Dictionary<WssTarget, int> _cursor = new(); // per-target step index
     private readonly Dictionary<WssTarget, List<Func<Task<string>>>> _steps = new();
     private int _maxWSS = 1;
-    private WSSVersionHandler _WssVersionHandler;
     private readonly Stopwatch _timer = new Stopwatch();
     private readonly SemaphoreSlim _setupGate = new(1, 1);
 
@@ -88,9 +87,8 @@ public sealed class WssStimulationCore : IStimulationCore
         _validMode = false;
 
         // (re)load app config
-        _config.LoadJSON();
-        _maxWSS = _config._config.maxWSS;
-        _WssVersionHandler = new WSSVersionHandler(_config._config.WSSFirmwareVersion);
+        _config.LoadJson();
+        _maxWSS = _config.MaxWSS;
 
         _timer.Reset();
         _timer.Start();
@@ -101,13 +99,13 @@ public sealed class WssStimulationCore : IStimulationCore
         //if test mode use fake transport, otheriwse use a serial transport with port if given or auto method if not given.
         if (_testMode)
         {
-            _wss = new WssClient(new TestModeTransport(), new WssFrameCodec());
+            _wss = new WssClient(new TestModeTransport(), new WssFrameCodec(), new WSSVersionHandler(_config.WSSFirmwareVersion));
         } else {
             if (_comPort != null)
             {
-                _wss = new WssClient(new SerialPortTransport(_comPort), new WssFrameCodec());
+                _wss = new WssClient(new SerialPortTransport(_comPort), new WssFrameCodec(), new WSSVersionHandler(_config.WSSFirmwareVersion));
             } else {
-                _wss = new WssClient(new SerialPortTransport(),      new WssFrameCodec());
+                _wss = new WssClient(new SerialPortTransport(), new WssFrameCodec(), new WSSVersionHandler(_config.WSSFirmwareVersion));
             }
         }
         _state = CoreState.Connecting;
@@ -198,7 +196,7 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <summary>
     /// Reloads the stimulation JSON configuration from disk into memory.
     /// </summary>
-    public void LoadConfigFile() => _config.LoadJSON();
+    public void LoadConfigFile() => _config.LoadJson();
 
     /// <summary>Disposes the core by calling <see cref="Shutdown"/>.</summary>
     public void Dispose() => Shutdown();
@@ -268,10 +266,16 @@ public sealed class WssStimulationCore : IStimulationCore
         int total = _maxWSS * 3;
         if ((uint)channel <= 0 || (uint)channel > (uint)total) return;   // fast bounds check
 
-        _chAmps[channel - 1] = (int)_config.getStimParam($"Ch{channel}Amp");
-        _chPWs[channel - 1] = CalculateStim(channel, magnitude,
-                                            _config.getStimParam($"Ch{channel}Max"),
-                                            _config.getStimParam($"Ch{channel}Min"));
+        if (!_config.TryGetStimParam($"Ch{channel}Amp", out float amp))
+            amp = 3.0f; // default fallback
+        _chAmps[channel - 1] = (int)amp;
+
+        if (!_config.TryGetStimParam($"Ch{channel}Max", out float max))
+            max = 0f;
+        if (!_config.TryGetStimParam($"Ch{channel}Min", out float min))
+            min = 0f;
+
+        _chPWs[channel - 1] = CalculateStim(channel, magnitude, max, min);
     }
 
     /// <summary>
@@ -363,9 +367,9 @@ public sealed class WssStimulationCore : IStimulationCore
         int channel = FingerToChannel(finger);
         if (channel <= 0 || channel > _maxWSS * 3) return;
 
-        _config.modifyStimParam($"Ch{channel}Amp", amp);
-        _config.modifyStimParam($"Ch{channel}Max", max);
-        _config.modifyStimParam($"Ch{channel}Min", min);
+        _config.AddOrUpdateStimParam($"Ch{channel}Amp", amp);
+        _config.AddOrUpdateStimParam($"Ch{channel}Max", max);
+        _config.AddOrUpdateStimParam($"Ch{channel}Min", min);
     }
 
     /// <summary>
@@ -425,7 +429,7 @@ public sealed class WssStimulationCore : IStimulationCore
         int total = _maxWSS * 3;
         if ((uint)channel <= 0 || (uint)channel > (uint)total) return;   // fast bounds check
 
-        _config.modifyStimParam($"Ch{channel}IPI", periodMs);
+        _config.AddOrUpdateStimParam($"Ch{channel}IPI", periodMs);
         //_wss.StreamChange(null, new int[] { 0, 0, 0 }, new int[] { periodMs, periodMs, periodMs }, targetWSS); TODO
     }
 
@@ -666,7 +670,7 @@ public sealed class WssStimulationCore : IStimulationCore
                     _ = _wss.StreamChange(
                         new[] { AmpTo255Convention(_chAmps[baseIdx + 0]), AmpTo255Convention(_chAmps[baseIdx + 1]), AmpTo255Convention(_chAmps[baseIdx + 2]) },
                         new[] { _chPWs[baseIdx + 0], _chPWs[baseIdx + 1], _chPWs[baseIdx + 2] },
-                        new[] { (int)_config.getStimParam($"Ch{baseIdx + 0}IPI"), (int)_config.getStimParam($"Ch{baseIdx + 1}IPI"), (int)_config.getStimParam($"Ch{baseIdx + 2}IPI") },
+                        new[] { (int)_config.GetStimParam($"Ch{baseIdx + 0}IPI"), (int)_config.GetStimParam($"Ch{baseIdx + 1}IPI"), (int)_config.GetStimParam($"Ch{baseIdx + 2}IPI") },
                         IntToWssTarget(w));
                     await Task.Delay(_delayMsBetweenPackets, tk);
                 }
@@ -795,7 +799,7 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <summary> Verifies if the stim mode in the config file is one that has been implemented in the stimWithMode</summary>
     private void VerifyStimMode()
     {
-        string mode = _config._config.sensationController;
+        string mode = _config.SensationController;
         if (mode == "P" || mode == "PD") _validMode = true;
         else
         {
@@ -842,41 +846,63 @@ public sealed class WssStimulationCore : IStimulationCore
     }
 
     /// <summary>
-    /// Compute PW (us) using supported controller. Note: uses 0-based arrays, so channel is adjusted internally.
+    /// Compute PW (µs) using supported controller. 
+    /// Falls back to defaults if constants are missing and logs a warning.
+    /// Note: uses 0-based arrays, so channel is adjusted internally.
     /// </summary>
     private int CalculateStim(int channel, float magnitude, float max, float min)
-    {        
-        if ((uint)channel >= (uint)_currentMag.Length) return 0;      
-        float output = 0;
+    {
+        if ((uint)channel >= (uint)_currentMag.Length) return 0;
+
         _currentMag[channel] = magnitude;
 
         float currentTime = _timer.ElapsedMilliseconds / 1000.0f;
-        float denom = (currentTime - _dt[channel]);
-        _d_dt[channel] = denom > 1e-5f ? (_currentMag[channel] - _prevMagnitude[channel]) / denom : 0f;
+        float denom = currentTime - _dt[channel];
+        _d_dt[channel] = denom > 1e-5f
+            ? (_currentMag[channel] - _prevMagnitude[channel]) / denom
+            : 0f;
         _dt[channel] = currentTime;
         _prevMagnitude[channel] = _currentMag[channel];
 
-        string mode = _config._config.sensationController;
+        string mode = _config.SensationController;
+
+        // Pull constants safely
+        float GetConst(string key, float fallback)
+        {
+            if (!_config.TryGetConstant(key, out float val))
+            {
+                Log.Error($"[StimConfigController] Missing constant \"{key}\". Using default {fallback}.");
+                return fallback;
+            }
+            return val;
+        }
+
+        float output;
         if (mode == "P")
         {
-            output = magnitude * _config.getConstant("PModeProportional") + _config.getConstant("PModeOffsset");
+            output = magnitude * GetConst("PModeProportional", 1.0f) +
+                    GetConst("PModeOffset", 0.0f);
         }
         else if (mode == "PD")
         {
-            output = (_d_dt[channel] * _config.getConstant("PDModeDerivative")) +
-                     (magnitude * _config.getConstant("PDModeProportional")) +
-                      _config.getConstant("PDModeOffsset");
+            output = (_d_dt[channel] * GetConst("PDModeDerivative", 0.2f)) +
+                    (magnitude * GetConst("PDModeProportional", 0.5f)) +
+                    GetConst("PDModeOffset", 0.0f);
         }
         else
         {
-            output = magnitude * _config.getConstant("PModeProportional") + _config.getConstant("PModeOffsset");
+            // fallback to P mode
+            output = magnitude * GetConst("PModeProportional", 1.0f) +
+                    GetConst("PModeOffset", 0.0f);
         }
 
         // clamp 0..1, then scale to [min, max]
         output = Math.Clamp(output, 0f, 1f);
         output = output > 0f ? (output * (max - min)) + min : 0f;
+
         return (int)output;
     }
+
 
     /// <summary> hanndles the  non-linear conversion of an amplitude in mA to bytes depending on WSS capabilities </summary>
     private int AmpTo255Convention(float amp)
