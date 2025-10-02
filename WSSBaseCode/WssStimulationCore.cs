@@ -31,6 +31,7 @@ public sealed class WssStimulationCore : IStimulationCore
     private readonly Dictionary<WssTarget, int> _cursor = new(); // per-target step index
     private readonly Dictionary<WssTarget, List<Func<Task<string>>>> _steps = new();
     private int _maxWSS = 1;
+    private WSSVersionHandler _WssVersionHandler;
     private readonly Stopwatch _timer = new Stopwatch();
     private readonly SemaphoreSlim _setupGate = new(1, 1);
 
@@ -89,6 +90,7 @@ public sealed class WssStimulationCore : IStimulationCore
         // (re)load app config
         _config.LoadJSON();
         _maxWSS = _config._config.maxWSS;
+        _WssVersionHandler = new WSSVersionHandler(_config._config.WSSFirmwareVersion);
 
         _timer.Reset();
         _timer.Start();

@@ -5,7 +5,7 @@ using System.Collections.Generic;
 public class StimConfig
 {
     public int maxWSS = 1;
-    public string WSSFirmwareVersion = "03H";//oldest suported version is 03H
+    public string WSSFirmwareVersion = "H03";//oldest suported version is 03H
     public string sensationController = "P";
     public Dictionary<string, float> constants = new Dictionary<string, float>();
     public Dictionary<string, float> stimParams = new Dictionary<string, float>();
