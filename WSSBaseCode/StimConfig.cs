@@ -5,13 +5,15 @@ using System.Collections.Generic;
 public class StimConfig
 {
     public int maxWSS = 1;
+    public string WSSFirmwareVersion = "03H";//oldest suported version is 03H
     public string sensationController = "P";
     public Dictionary<string, float> constants = new Dictionary<string, float>();
     public Dictionary<string, float> stimParams = new Dictionary<string, float>();
 
-    public StimConfig(int maxWSS, string sensationController, Dictionary<string, float> constants, Dictionary<string, float> stimParams)
+    public StimConfig(int maxWSS, string WSSFirmwareVersion, string sensationController, Dictionary<string, float> constants, Dictionary<string, float> stimParams)
     {
         this.maxWSS = maxWSS;
+        this.WSSFirmwareVersion = WSSFirmwareVersion;
         this.sensationController = sensationController;
         this.constants = constants;
         this.stimParams = stimParams;
@@ -23,9 +25,10 @@ public class StimConfig
         this.stimParams = new Dictionary<string, float>();
     }
 
-    public StimConfig(int maxWSS, string sensationController)
+    public StimConfig(int maxWSS, string WSSFirmwareVersion, string sensationController)
     {
         this.maxWSS = maxWSS;
+        this.WSSFirmwareVersion = WSSFirmwareVersion;
         this.sensationController = sensationController;
         this.constants = new Dictionary<string, float>();
         this.stimParams = new Dictionary<string, float>();

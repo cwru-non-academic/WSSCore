@@ -116,6 +116,7 @@ public sealed class TestModeTransport : ITransport
         {
             try
             {
+                Log.Info("Out: "+BitConverter.ToString(data).Replace("-", " ").ToLowerInvariant());
                 var responder = AutoResponderAsync ?? DefaultResponderAsync;
                 var reply = await responder(data).ConfigureAwait(false);
                 if (reply is { Length: > 0 })
@@ -180,9 +181,10 @@ public sealed class TestModeTransport : ITransport
             return Task.FromResult(Array.Empty<byte>());
         //handle non mirror replies
         else {
+            byte msgID;
             switch (id)
             {
-                case (byte)WssClient.WssMessageId.StimulationSwitch:
+                case (byte)WSSMessageIDs.StimulationSwitch:
                     if (payload[2] == 0x03)
                     {//start
                         payload[2] = 0x01;
@@ -192,14 +194,18 @@ public sealed class TestModeTransport : ITransport
                         payload[2] = 0x00;
                     }
                     break;
-                case (byte)WssClient.WssMessageId.CreateContactConfig:
-                case (byte)WssClient.WssMessageId.CreateEvent:
-                case (byte)WssClient.WssMessageId.CreateSchedule:
-                case (byte)WssClient.WssMessageId.EditEventConfig:
-                case (byte)WssClient.WssMessageId.AddEventToSchedule:
+                case (byte)WSSMessageIDs.CreateContactConfig:
+                case (byte)WSSMessageIDs.CreateEvent:
+                case (byte)WSSMessageIDs.CreateSchedule:
+                case (byte)WSSMessageIDs.EditEventConfig:
+                case (byte)WSSMessageIDs.AddEventToSchedule:
                     byte eventID = payload[2];
-                    byte msgID = payload[0];
+                    msgID = payload[0];
                     payload = new byte[] { msgID, 0x01, eventID };
+                    break;
+                case (byte)WSSMessageIDs.ModuleQuery:
+                    msgID = payload[0];
+                    payload = new byte[] { msgID, 0x01, 0x02 };
                     break;
             }
         }
