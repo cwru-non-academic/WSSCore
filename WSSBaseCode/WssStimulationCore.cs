@@ -43,6 +43,7 @@ public sealed class WssStimulationCore : IStimulationCore
     // ---- channels & controller state ----
     private float[] _chAmps;  // mA (mapped to 0..255 for device)
     private int[] _chPWs;   // us
+    private int[] _chIPIs;   // ms
     private int _currentIPD = 50; // us
     private float[] _prevMagnitude;
     private float[] _currentMag;
@@ -225,32 +226,21 @@ public sealed class WssStimulationCore : IStimulationCore
 
     #region ========== Public control API (non-blocking) ==========
     /// <summary>
-    /// Sends a streaming change packet (PA/PW/IPI). Fire-and-forget; no reply is expected.
-    /// Does not pause streaming or setup.
-    /// </summary>
-    /// <param name="PA">Per-channel amplitudes (device 0–255 mapping) or null to leave unchanged.</param>
-    /// <param name="PW">Per-channel pulse widths (device units) or null to leave unchanged.</param>
-    /// <param name="IPI">Per-channel periods (ms) or null to leave unchanged.</param>
-    /// <param name="target">Which WSS to address (or Broadcast).</param>
-    public void StreamChange(int[] PA, int[] PW, int[] IPI, WssTarget target)
-    {
-        _ = _wss.StreamChange(PA, PW, IPI, target); // discard task intentionally
-    }
-
-    /// <summary>
     /// Updates the cached amplitude and PW for a logical finger/channel, using your
     /// analog mapping. No device I/O occurs here; the streaming loop will pick it up.
     /// </summary>
     /// <param name="finger">Finger name (e.g., "Thumb", "Index") or "ch#".</param>
     /// <param name="PW">Pulse width to cache.</param>
     /// <param name="amp">Amplitude (mA domain, will be mapped to device scale during streaming).</param>
-    public void StimulateAnalog(string finger, int PW, float amp)
+    /// <param name="IPI">Period (ms domain, from start of cathode to start of cathode).</param>
+    public void StimulateAnalog(string finger, int PW, float amp, int IPI)
     {
         int channel = FingerToChannel(finger);
         if (channel <= 0 || channel > _maxWSS * 3) return;
 
         _chAmps[channel - 1] = amp;
         _chPWs[channel - 1] = PW;
+        _chIPIs[channel - 1] = IPI;
     }
 
     /// <summary>
@@ -814,6 +804,7 @@ public sealed class WssStimulationCore : IStimulationCore
         int n = _maxWSS * 3;
         _chAmps = new float[n];
         _chPWs = new int[n];
+        _chIPIs = new int[n];
         _prevMagnitude = new float[n];
         _currentMag = new float[n];
         _d_dt = new float[n];
@@ -823,6 +814,7 @@ public sealed class WssStimulationCore : IStimulationCore
         {
             _chAmps[i] = 0f;
             _chPWs[i] = 0;
+            _chIPIs[i] = 0;
             _prevMagnitude[i] = 0f;
             _dt[i] = _timer.ElapsedMilliseconds / 1000.0f;
         }

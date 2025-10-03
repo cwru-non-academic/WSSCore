@@ -14,8 +14,7 @@ public interface IStimulationCore : IDisposable
     bool IsModeValid();
 
     // streaming / control
-    void StreamChange(int[] PA, int[] PW, int[] IPI, WssTarget wssTarget);
-    void StimulateAnalog(string finger, int PW, float amp);
+    void StimulateAnalog(string finger, int PW, float amp, int IPI);
     void ZeroOutStim(WssTarget wssTarget);
     void StartStim(WssTarget wssTarget);
     void StopStim(WssTarget wssTarget);
