@@ -11,27 +11,25 @@ using System.Linq;
 /// Unity-agnostic WSS stimulation core that manages connection, setup (via a queued step runner),
 /// and a background streaming loop. Public mutator methods enqueue device edits and return immediately.
 /// </summary>
-public sealed class WssStimulationCore : IStimulationCore
+public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
 {
     #region ========== Fields & nested types ==========
     // ---- transport & config ----
-    private readonly StimConfigController _config;
+    private readonly CoreConfigController _coreConfig;
     private readonly bool _testMode;
     private readonly string _comPort = null;
     private readonly string _jsonPath;
     private readonly int _maxSetupTries;
-    private readonly int _delayMsBetweenPackets = 12; // radio throttling
+    private readonly int _delayMsBetweenPackets = 10; // radio throttling
     private WssClient _wss;
     private bool _resumeStreamingAfter;
 
     // ---- runtime state ----
     private CoreState _state = CoreState.Disconnected;
     private int _currentSetupTries;
-    private bool _validMode;
     private readonly Dictionary<WssTarget, int> _cursor = new(); // per-target step index
     private readonly Dictionary<WssTarget, List<Func<Task<string>>>> _steps = new();
     private int _maxWSS = 1;
-    private readonly Stopwatch _timer = new Stopwatch();
     private readonly SemaphoreSlim _setupGate = new(1, 1);
 
     // ---- background tasks ----
@@ -45,10 +43,6 @@ public sealed class WssStimulationCore : IStimulationCore
     private int[] _chPWs;   // us
     private int[] _chIPIs;   // ms
     private int _currentIPD = 50; // us
-    private float[] _prevMagnitude;
-    private float[] _currentMag;
-    private float[] _d_dt;
-    private float[] _dt;
 
     private enum CoreState { Disconnected, Connecting, SettingUp, Ready, Started, Streaming, Error }
     #endregion
@@ -59,7 +53,7 @@ public sealed class WssStimulationCore : IStimulationCore
     {
         _comPort = comPort;
         _jsonPath = JSONpath;
-        _config = new StimConfigController(_jsonPath);
+        _coreConfig = new CoreConfigController(_jsonPath);
         _testMode = testMode;
         _maxSetupTries = maxSetupTries;
     }
@@ -69,7 +63,7 @@ public sealed class WssStimulationCore : IStimulationCore
     {
         _jsonPath = JSONpath;
         _comPort = null;
-        _config = new StimConfigController(_jsonPath);
+        _coreConfig = new CoreConfigController(_jsonPath);
         _testMode = testMode;
         _maxSetupTries = maxSetupTries;
     }
@@ -85,28 +79,23 @@ public sealed class WssStimulationCore : IStimulationCore
         if (_state is CoreState.Ready or CoreState.SettingUp) Shutdown();
 
         _currentSetupTries = 0;
-        _validMode = false;
 
         // (re)load app config
-        _config.LoadJson();
-        _maxWSS = _config.MaxWSS;
-
-        _timer.Reset();
-        _timer.Start();
+        _coreConfig.LoadJson();
+        _maxWSS = _coreConfig.MaxWss;
 
         InitStimArrays();
-        VerifyStimMode();
 
         //if test mode use fake transport, otheriwse use a serial transport with port if given or auto method if not given.
         if (_testMode)
         {
-            _wss = new WssClient(new TestModeTransport(), new WssFrameCodec(), new WSSVersionHandler(_config.WSSFirmwareVersion));
+            _wss = new WssClient(new TestModeTransport(), new WssFrameCodec(), new WSSVersionHandler(_coreConfig.Firmware));
         } else {
             if (_comPort != null)
             {
-                _wss = new WssClient(new SerialPortTransport(_comPort), new WssFrameCodec(), new WSSVersionHandler(_config.WSSFirmwareVersion));
+                _wss = new WssClient(new SerialPortTransport(_comPort), new WssFrameCodec(), new WSSVersionHandler(_coreConfig.Firmware));
             } else {
-                _wss = new WssClient(new SerialPortTransport(), new WssFrameCodec(), new WSSVersionHandler(_config.WSSFirmwareVersion));
+                _wss = new WssClient(new SerialPortTransport(), new WssFrameCodec(), new WSSVersionHandler(_coreConfig.Firmware));
             }
         }
         _state = CoreState.Connecting;
@@ -197,7 +186,7 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <summary>
     /// Reloads the stimulation JSON configuration from disk into memory.
     /// </summary>
-    public void LoadConfigFile() => _config.LoadJson();
+    public void LoadConfigFile() => _coreConfig.LoadJson();
 
     /// <summary>Disposes the core by calling <see cref="Shutdown"/>.</summary>
     public void Dispose() => Shutdown();
@@ -212,16 +201,6 @@ public sealed class WssStimulationCore : IStimulationCore
     /// start stimulation.
     /// </summary>
     public bool Ready() => _state is CoreState.Ready;
-
-    /// <summary>
-    /// Validates the current sensation controller mode from config (P or PD).
-    /// </summary>
-    /// <returns>True if the mode is supported; otherwise false.</returns>
-    public bool IsModeValid()
-    {
-        VerifyStimMode();
-        return _validMode;
-    }
     #endregion
 
     #region ========== Public control API (non-blocking) ==========
@@ -233,39 +212,13 @@ public sealed class WssStimulationCore : IStimulationCore
     /// <param name="PW">Pulse width to cache.</param>
     /// <param name="amp">Amplitude (mA domain, will be mapped to device scale during streaming).</param>
     /// <param name="IPI">Period (ms domain, from start of cathode to start of cathode).</param>
-    public void StimulateAnalog(string finger, int PW, float amp, int IPI)
+    public void StimulateAnalog(int channel, int PW, float amp, int IPI)
     {
-        int channel = FingerToChannel(finger);
         if (channel <= 0 || channel > _maxWSS * 3) return;
 
         _chAmps[channel - 1] = amp;
         _chPWs[channel - 1] = PW;
         _chIPIs[channel - 1] = IPI;
-    }
-
-    /// <summary>
-    /// Computes a PW from the given magnitude using the configured controller (P/PD)
-    /// and updates the cached amp/PW for the addressed channel.
-    /// </summary>
-    /// <param name="finger">Finger name (or "ch#"). Note: <c>FingerToChannel</c> returns 1-based (Thumb is Ch1);
-    /// arrays use <c>channel-1</c>.</param>
-    /// <param name="magnitude">Normalized input (typically 0..1) used by the controller.</param>
-    public void StimWithMode(string finger, float magnitude)
-    {
-        int channel = FingerToChannel(finger);
-        int total = _maxWSS * 3;
-        if ((uint)channel <= 0 || (uint)channel > (uint)total) return;   // fast bounds check
-
-        if (!_config.TryGetStimParam($"Ch{channel}Amp", out float amp))
-            amp = 3.0f; // default fallback
-        _chAmps[channel - 1] = (int)amp;
-
-        if (!_config.TryGetStimParam($"Ch{channel}Max", out float max))
-            max = 0f;
-        if (!_config.TryGetStimParam($"Ch{channel}Min", out float min))
-            min = 0f;
-
-        _chPWs[channel - 1] = CalculateStim(channel, magnitude, max, min);
     }
 
     /// <summary>
@@ -345,24 +298,6 @@ public sealed class WssStimulationCore : IStimulationCore
     }
 
     /// <summary>
-    /// Updates the in-memory channel parameters (Max/Min/Amp) in the JSON-backed config.
-    /// Does not push changes to the device.
-    /// </summary>
-    /// <param name="finger">Finger name (or "ch#").</param>
-    /// <param name="max">Max PW used by the controller mapping.</param>
-    /// <param name="min">Min PW used by the controller mapping.</param>
-    /// <param name="amp">Amplitude (mA domain) cached for streaming.</param>
-    public void UpdateChannelParams(string finger, int max, int min, float amp)
-    {
-        int channel = FingerToChannel(finger);
-        if (channel <= 0 || channel > _maxWSS * 3) return;
-
-        _config.AddOrUpdateStimParam($"Ch{channel}Amp", amp);
-        _config.AddOrUpdateStimParam($"Ch{channel}Max", max);
-        _config.AddOrUpdateStimParam($"Ch{channel}Min", min);
-    }
-
-    /// <summary>
     /// Updates inter-phase delay (IPD) for events 1–3 via setup commands (with replies).
     /// If currently Streaming, the core pauses streaming, sends edits, and resumes when done.
     /// </summary>
@@ -377,50 +312,6 @@ public sealed class WssStimulationCore : IStimulationCore
             () => StepLogger(_wss.EditEventPw(2, new[] { 0, 0, _currentIPD }, targetWSS),      $"UpdateIPD[{targetWSS}], Event[2]"),
             () => StepLogger(_wss.EditEventPw(3, new[] { 0, 0, _currentIPD }, targetWSS),      $"UpdateIPD[{targetWSS}], Event[3]")
         );
-    }
-
-    /// <summary>
-    /// Applies a target stimulation <em>frequency</em> (in Hertz) to a single logical channel
-    /// by converting it to a period in milliseconds and delegating to <see cref="UpdatePeriod(string,int,WssTarget)"/>.
-    /// </summary>
-    /// <param name="finger">
-    /// Logical channel selector. Accepts named fingers (e.g., <c>"Thumb"</c>, <c>"Index"</c>, …)
-    /// or a direct channel token like <c>"ch1"</c>. The mapping is resolved by <see cref="FingerToChannel(string)"/>.
-    /// </param>
-    /// <param name="FR">
-    /// Frequency in Hertz. Must be greater than zero. The method computes
-    /// <c>periodMs = (int)(1000.0 / FR)</c> (integer truncation toward zero).
-    /// </param>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <paramref name="FR"/> is less than or equal to zero.
-    /// </exception>
-    public void UpdateFrequency(string finger, int FR)
-    {
-        if (FR <= 0) throw new ArgumentOutOfRangeException(nameof(FR));
-        int periodMs = (int)(1000.0f / FR);
-        UpdatePeriod(finger, periodMs);
-    }
-
-    /// <summary>
-    /// Applies a target stimulation <em>period</em> (inter-pulse interval, IPI, in milliseconds)
-    /// to a single logical channel by persisting the value to the loaded JSON-backed configuration.
-    /// </summary>
-    /// <param name="finger">
-    /// Logical channel selector. Accepts named fingers (e.g., <c>"Thumb"</c>, <c>"Index"</c>, …)
-    /// or a direct channel token like <c>"ch1"</c>. The mapping is resolved by <see cref="FingerToChannel(string)"/>.
-    /// </param>
-    /// <param name="periodMs">
-    /// Desired period (IPI) in milliseconds. Must be greater than zero.
-    /// </param>
-    public void UpdatePeriod(string finger, int periodMs)
-    {
-        if (periodMs <= 0) throw new ArgumentOutOfRangeException(nameof(periodMs));
-        int channel = FingerToChannel(finger);
-        int total = _maxWSS * 3;
-        if ((uint)channel <= 0 || (uint)channel > (uint)total) return;   // fast bounds check
-
-        _config.AddOrUpdateStimParam($"Ch{channel}IPI", periodMs);
-        //_wss.StreamChange(null, new int[] { 0, 0, 0 }, new int[] { periodMs, periodMs, periodMs }, targetWSS); TODO
     }
 
     /// <summary>
@@ -526,16 +417,15 @@ public sealed class WssStimulationCore : IStimulationCore
     /// Gets the JSON-backed stimulation configuration controller currently used by this core.
     /// </summary>
     /// <returns>
-    /// The active <see cref="StimConfigController"/> instance that provides read/write access
+    /// The active <see cref="CoreConfigController"/> instance that provides read/write access
     /// to stimulation parameters and constants loaded from the configuration file.
     /// </returns>
     /// <remarks>
-    /// Returned reference is live, not a copy. Callers should avoid mutating it from multiple
-    /// threads without external synchronization.
+    /// Returned reference is live, not a copy and thread safe.
     /// </remarks>
-    public StimConfigController GetStimConfigController()
+    public CoreConfigController GetCoreConfigController()
     {
-        return _config;
+        return _coreConfig;
     }
     #endregion
 
@@ -660,7 +550,7 @@ public sealed class WssStimulationCore : IStimulationCore
                     _ = _wss.StreamChange(
                         new[] { AmpTo255Convention(_chAmps[baseIdx + 0]), AmpTo255Convention(_chAmps[baseIdx + 1]), AmpTo255Convention(_chAmps[baseIdx + 2]) },
                         new[] { _chPWs[baseIdx + 0], _chPWs[baseIdx + 1], _chPWs[baseIdx + 2] },
-                        new[] { (int)_config.GetStimParam($"Ch{baseIdx + 0}IPI"), (int)_config.GetStimParam($"Ch{baseIdx + 1}IPI"), (int)_config.GetStimParam($"Ch{baseIdx + 2}IPI") },
+                        new[] { _chIPIs[baseIdx + 0], _chIPIs[baseIdx + 1], _chIPIs[baseIdx + 2] },
                         IntToWssTarget(w));
                     await Task.Delay(_delayMsBetweenPackets, tk);
                 }
@@ -786,18 +676,6 @@ public sealed class WssStimulationCore : IStimulationCore
     #endregion
 
     #region ========== Helpers ==========
-    /// <summary> Verifies if the stim mode in the config file is one that has been implemented in the stimWithMode</summary>
-    private void VerifyStimMode()
-    {
-        string mode = _config.SensationController;
-        if (mode == "P" || mode == "PD") _validMode = true;
-        else
-        {
-            Log.Error("[WssStimulationCore] Unrecognized mode, defaulting to proportional mode.");
-            _validMode = false;
-        }
-    }
-
     /// <summary> Initializes arrays to hold values neccessary for streaming</summary>
     private void InitStimArrays()
     {
@@ -805,97 +683,15 @@ public sealed class WssStimulationCore : IStimulationCore
         _chAmps = new float[n];
         _chPWs = new int[n];
         _chIPIs = new int[n];
-        _prevMagnitude = new float[n];
-        _currentMag = new float[n];
-        _d_dt = new float[n];
-        _dt = new float[n];
 
         for (int i = 0; i < n; i++)
         {
             _chAmps[i] = 0f;
             _chPWs[i] = 0;
             _chIPIs[i] = 0;
-            _prevMagnitude[i] = 0f;
-            _dt[i] = _timer.ElapsedMilliseconds / 1000.0f;
         }
     }
-
-    /// <summary> Given a string like "Thumb" or "Ch1" it will return the correct channel as an int</summary>
-    private int FingerToChannel(string finger)
-    {
-        if (string.IsNullOrEmpty(finger)) return 0;
-        return finger switch
-        {
-            "Thumb" => 1,
-            "Index" => 2,
-            "Middle" => 3,
-            "Ring" => 4,
-            "Pinky" => 5,
-            "Palm" => 6,
-            _ => finger.StartsWith("ch", StringComparison.OrdinalIgnoreCase)
-                    && int.TryParse(finger.Substring(2), out int ch) ? ch : 0
-        };
-    }
-
-    /// <summary>
-    /// Compute PW (µs) using supported controller. 
-    /// Falls back to defaults if constants are missing and logs a warning.
-    /// Note: uses 0-based arrays, so channel is adjusted internally.
-    /// </summary>
-    private int CalculateStim(int channel, float magnitude, float max, float min)
-    {
-        if ((uint)channel >= (uint)_currentMag.Length) return 0;
-
-        _currentMag[channel] = magnitude;
-
-        float currentTime = _timer.ElapsedMilliseconds / 1000.0f;
-        float denom = currentTime - _dt[channel];
-        _d_dt[channel] = denom > 1e-5f
-            ? (_currentMag[channel] - _prevMagnitude[channel]) / denom
-            : 0f;
-        _dt[channel] = currentTime;
-        _prevMagnitude[channel] = _currentMag[channel];
-
-        string mode = _config.SensationController;
-
-        // Pull constants safely
-        float GetConst(string key, float fallback)
-        {
-            if (!_config.TryGetConstant(key, out float val))
-            {
-                Log.Error($"[StimConfigController] Missing constant \"{key}\". Using default {fallback}.");
-                return fallback;
-            }
-            return val;
-        }
-
-        float output;
-        if (mode == "P")
-        {
-            output = magnitude * GetConst("PModeProportional", 1.0f) +
-                    GetConst("PModeOffset", 0.0f);
-        }
-        else if (mode == "PD")
-        {
-            output = (_d_dt[channel] * GetConst("PDModeDerivative", 0.2f)) +
-                    (magnitude * GetConst("PDModeProportional", 0.5f)) +
-                    GetConst("PDModeOffset", 0.0f);
-        }
-        else
-        {
-            // fallback to P mode
-            output = magnitude * GetConst("PModeProportional", 1.0f) +
-                    GetConst("PModeOffset", 0.0f);
-        }
-
-        // clamp 0..1, then scale to [min, max]
-        output = Math.Clamp(output, 0f, 1f);
-        output = output > 0f ? (output * (max - min)) + min : 0f;
-
-        return (int)output;
-    }
-
-
+    
     /// <summary> hanndles the  non-linear conversion of an amplitude in mA to bytes depending on WSS capabilities </summary>
     private int AmpTo255Convention(float amp)
     {

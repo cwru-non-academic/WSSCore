@@ -45,6 +45,27 @@ public class WSSVersionHandler
     }
 
     /// <summary>
+    /// Determines whether the specified firmware version string is supported by this application.
+    /// </summary>
+    /// <param name="strVersion">
+    /// Firmware version identifier to check (for example, <c>"H03"</c> or <c>"J03"</c>).
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> if the supplied version is recognized and supported; 
+    /// otherwise, <see langword="false"/>.
+    /// </returns>
+    public bool isVersionSupported(string strVersion)
+    {
+        bool supported = strVersion switch
+        {
+            "J03" => true,
+            "H03" => true,
+            _ => false
+        };
+        return supported;
+    }
+
+    /// <summary>
     /// Gets the current firmware version as a named enum.
     /// </summary>
     /// <returns>The current <see cref="SupportedVersions"/> enum value.</returns>

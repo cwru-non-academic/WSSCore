@@ -1,15 +1,15 @@
-﻿using UnityEngine;
+using UnityEngine;
 using System.Collections.Generic;
 using System;
 
-public class Stimulation : MonoBehaviour
+public class StimulationParams : MonoBehaviour
 {
     [SerializeField] public bool forcePort = false;
     [SerializeField] private bool testMode = true;
     [SerializeField] private int maxSetupTries = 5;
     [SerializeField] public string comPort = "COM7";
 
-    private IModelParamsCore WSS;
+    private IStimParamsCore WSS;
     private IBasicStimulation basicWSS;
     public bool started = false;
     private bool basicSupported = false;
@@ -19,14 +19,15 @@ public class Stimulation : MonoBehaviour
         IStimulationCore WSScore;
         if (forcePort)
         {
+            //WSS = new LegacyStimulationCore(comPort, Application.streamingAssetsPath, testMode, maxSetupTries);
             WSScore = new WssStimulationCore(comPort, Application.streamingAssetsPath, testMode, maxSetupTries);
         }
         else
         {
+            //WSS = new LegacyStimulationCore(Application.streamingAssetsPath, testMode, maxSetupTries);
             WSScore = new WssStimulationCore(Application.streamingAssetsPath, testMode, maxSetupTries);
         }
-        IStimParamsCore paramsWSS = new StimParamsLayer(WSScore, Application.streamingAssetsPath);
-        WSS = new ModelParamsLayer(paramsWSS, Application.streamingAssetsPath);
+        WSS = new StimParamsLayer(WSScore, Application.streamingAssetsPath);
         WSS.TryGetBasic(out basicWSS);
         basicSupported = (basicWSS != null);
     }
@@ -130,6 +131,7 @@ public class Stimulation : MonoBehaviour
         basicWSS.Load(WssTarget.Broadcast);
     }
 
+
     public void request_Configs(int targetWSS, int command, int id)
     {
         if (!basicSupported)
@@ -213,6 +215,7 @@ public class Stimulation : MonoBehaviour
         basicWSS.LoadWaveform(fileName, eventID);
     }
 
+
     public void WaveformSetup(WaveformBuilder wave, int eventID)//custom waveform slots 0 to 2 are attached to shape slots 11 to 13
     {
         if (!basicSupported)
@@ -247,6 +250,19 @@ public class Stimulation : MonoBehaviour
         return (int)WSS.GetStimIntensity(channel);
     }
 
+    public void UpdateChannelParams(string finger, int max, int min, int amp)
+    {
+        int ch = FingerToChannel(finger);
+        if (!WSS.IsChannelInRange(ch))
+            throw new ArgumentOutOfRangeException(nameof(finger), $"Channel {ch} is not valid for current config.");
+
+        // build dotted keys and update values
+        string baseKey = $"stim.ch.{ch}";
+        WSS.AddOrUpdateStimParam($"{baseKey}.maxPW", max);
+        WSS.AddOrUpdateStimParam($"{baseKey}.minPW", min);
+        WSS.AddOrUpdateStimParam($"{baseKey}.amp", amp);
+    }
+
     // Persist/Load the params JSON
     public void SaveParamsJson() => WSS.SaveParamsJson();
     public void LoadParamsJson() => WSS.LoadParamsJson();
@@ -270,6 +286,8 @@ public class Stimulation : MonoBehaviour
     public int GetChannelIPI(int ch) => WSS.GetChannelIPI(ch);
 
     public bool IsChannelInRange(int ch) => WSS.IsChannelInRange(ch);
+
+
     #endregion
 
     #region getSets
@@ -295,34 +313,6 @@ public class Stimulation : MonoBehaviour
             default: return WssTarget.Wss1;
         }
     }
-
-    public void StimWithMode(string finger, float magnitude)
-    {
-        WSS.StimWithMode(FingerToChannel(finger), magnitude);
-    }
-
-    public ModelConfigController GetModelConfigCTRL()
-    {
-        return WSS.GetModelConfigController();
-    }
-
-    public void UpdateChannelParams(string finger, int max, int min, int amp)
-    {
-        int ch = FingerToChannel(finger);
-        if (!WSS.IsChannelInRange(ch))
-            throw new ArgumentOutOfRangeException(nameof(finger), $"Channel {ch} is not valid for current config.");
-
-        // build dotted keys and update values
-        string baseKey = $"stim.ch.{ch}";
-        WSS.AddOrUpdateStimParam($"{baseKey}.maxPW", max);
-        WSS.AddOrUpdateStimParam($"{baseKey}.minPW", min);
-        WSS.AddOrUpdateStimParam($"{baseKey}.amp", amp);
-    }
-
-    public bool isModeValid()
-    {
-        return WSS.IsModeValid();
-    }
     
     private int FingerToChannel(string fingerOrAlias)
     {
@@ -342,5 +332,4 @@ public class Stimulation : MonoBehaviour
             _ => 0
         };
     }
-
 }
