@@ -278,6 +278,11 @@ public class Stimulation : MonoBehaviour
         return WSS.Ready();
     }
 
+    public bool Started()
+    {
+        return WSS.Started();
+    }
+
     public CoreConfigController GetCoreConfigCTRL()
     {
         return WSS.GetCoreConfigController();

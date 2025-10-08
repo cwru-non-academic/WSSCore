@@ -4,8 +4,23 @@ using Newtonsoft.Json.Linq;
 public sealed class ModelConfig : DictConfigBase
 {
     public ModelConfig(string path)
-        : base(path, defaults: new JObject
-        { ["calib"] = new JObject { ["mode"] = "P" } }) { }
+    : base(path, defaults: new JObject
+    {
+        ["calib"] = new JObject
+        {
+            ["mode"] = "P"
+        },
+        ["constants"] = new JObject
+        {
+            ["PModeProportional"]  = 1.0,
+            ["PModeOffset"]        = 0.0,
+            ["PDModeProportional"] = 0.5,
+            ["PDModeDerivative"]   = 0.2,
+            ["PDModeOffset"]       = 0.0
+        }
+    })
+    { }
+
 
     // The only guaranteed key
     public string GetModeRequired() => GetRequired<string>("calib.mode");
