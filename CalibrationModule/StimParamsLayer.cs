@@ -1,4 +1,3 @@
-// StimParamsLayer.cs
 using System;
 using System.Collections.Generic;
 
@@ -36,10 +35,7 @@ public sealed class StimParamsLayer : IStimParamsCore
 
     // ---- IStimParamsCore ----
 
-    /// <summary>
-    /// Computes a pulse width from a normalized value in [0,1] using channel params
-    /// and sends it to the wrapped core via <see cref="IStimulationCore.StimulateAnalog(string,int,float,int)"/>.
-    /// </summary>
+    /// <inheritdoc/>
     public void StimulateNormalized(int channel, float value01)
     {
         if (channel < 1 || channel > _totalChannels)
@@ -59,10 +55,7 @@ public sealed class StimParamsLayer : IStimParamsCore
         _core.StimulateAnalog(channel, _lastPw[channel - 1], amp, (int)ipi);
     }
 
-    /// <summary>
-    /// Gets the most recently computed pulse width for the channel
-    /// (the value last sent by <see cref="StimulateNormalized(int,float)"/>).
-    /// </summary>
+    /// <inheritdoc/>
     public float GetStimIntensity(int channel)
     {
         if (channel < 1 || channel > _totalChannels)
@@ -70,6 +63,7 @@ public sealed class StimParamsLayer : IStimParamsCore
         return _lastPw[channel - 1];
     }
 
+    /// <inheritdoc/>
     public StimParamsConfigController GetStimParamsConfigController()
     {
         return _ctrl;
@@ -123,9 +117,7 @@ public sealed class StimParamsLayer : IStimParamsCore
     /// <inheritdoc cref="StimParamsController.IsChannelInRange(int)"/>
     public bool IsChannelInRange(int ch) => _ctrl.IsChannelInRange(ch);
 
-    /// <summary>
-    /// Exposes the optional BASIC capability if available from the wrapped core.
-    /// </summary>
+    /// <inheritdoc/>
     public bool TryGetBasic(out IBasicStimulation basic)
     {
         if (_basic != null)

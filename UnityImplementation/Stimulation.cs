@@ -2,341 +2,398 @@
 using System.Collections.Generic;
 using System;
 
+/// <summary>
+/// High-level Unity wrapper for the full stimulation model layer.
+/// Extends <c>StimParamsLayer</c> with proportional and derivative control modes,
+/// calibration constants, and model-based drive computation.
+/// This is the top-level interface that user code should normally interact with.
+/// </summary>
 public class Stimulation : MonoBehaviour
 {
+    #region ==== Serialized Fields ====
+
+    /// <summary>
+    /// Forces connection to a specific COM port instead of auto-detecting.
+    /// </summary>
     [SerializeField] public bool forcePort = false;
+
+    /// <summary>
+    /// Enables simulated test mode without real hardware communication.
+    /// </summary>
     [SerializeField] private bool testMode = true;
+
+    /// <summary>
+    /// Maximum number of setup retries before failing initialization.
+    /// </summary>
     [SerializeField] private int maxSetupTries = 5;
+
+    /// <summary>
+    /// Target COM port to use when <see cref="forcePort"/> is enabled.
+    /// </summary>
     [SerializeField] public string comPort = "COM7";
+
+    #endregion
 
     private IModelParamsCore WSS;
     private IBasicStimulation basicWSS;
+    /// <summary>True after <see cref="StartStimulation"/> succeeds.</summary>
     public bool started = false;
+    /// <summary>True if the underlying core exposes basic-stimulation APIs.</summary>
     private bool basicSupported = false;
-    // Start is called before the first frame update
+
+    #region ==== Unity Lifecycle ====
+
+    /// <summary>
+    /// Creates the full stimulation stack: core → params layer → model layer.
+    /// Detects hardware if <see cref="forcePort"/> is false.
+    /// </summary>
     public void Awake()
     {
-        IStimulationCore WSScore;
-        if (forcePort)
-        {
-            WSScore = new WssStimulationCore(comPort, Application.streamingAssetsPath, testMode, maxSetupTries);
-        }
-        else
-        {
-            WSScore = new WssStimulationCore(Application.streamingAssetsPath, testMode, maxSetupTries);
-        }
+        IStimulationCore WSScore =
+            forcePort
+            ? new WssStimulationCore(comPort, Application.streamingAssetsPath, testMode, maxSetupTries)
+            : new WssStimulationCore(Application.streamingAssetsPath, testMode, maxSetupTries);
+
         IStimParamsCore paramsWSS = new StimParamsLayer(WSScore, Application.streamingAssetsPath);
         WSS = new ModelParamsLayer(paramsWSS, Application.streamingAssetsPath);
         WSS.TryGetBasic(out basicWSS);
         basicSupported = (basicWSS != null);
     }
 
+    /// <summary>Initializes the WSS device connection when the component becomes active.</summary>
+    void OnEnable() => WSS.Initialize();
 
-    void OnEnable()
-    {
-        WSS.Initialize();
-    }
-
-    // Update is called once per frame
+    /// <summary>
+    /// Advances communication tick and listens for debug input.
+    /// Press <c>A</c> to reload configuration file manually.
+    /// </summary>
     void Update()
     {
         WSS.Tick();
-        //manual load config file trigger for testing
         if (Input.GetKeyDown(KeyCode.A))
-        {
             WSS.LoadConfigFile();
-        }
     }
 
-    void OnDestroy()
-    {
+    /// <summary>Ensures clean shutdown when the component is disabled.</summary>
+    void OnDisable() => WSS.Shutdown();
 
-    }
+    #endregion
 
-    void OnDisable()
-    {
-        WSS.Shutdown();
-    }
+    #region ==== Connection Management ====
 
-    public void releaseRadio()
-    {
-        WSS.Shutdown();
-    }
+    /// <summary>Explicitly closes the radio connection.</summary>
+    public void releaseRadio() => WSS.Shutdown();
 
+    /// <summary>Resets the radio by shutting down and reinitializing the device.</summary>
     public void resetRadio()
     {
         WSS.Shutdown();
         WSS.Initialize();
     }
 
-    #region "Stimulation methods basic and core"
-    //current functions are design to be called by a discrete sensor  
-    // like the bubble. For an analog sensor I suggets you only use the 
-    //function below and disregard the rest
+    #endregion
+
+    #region ==== Stimulation methods: basic and core ====
+
+    /// <summary>
+    /// Direct analog stimulation using raw parameters.
+    /// Recommended only for discrete-sensor triggers.
+    /// </summary>
+    /// <param name="finger">Finger label or alias (e.g., "index" or "ch2").</param>
+    /// <param name="PW">Pulse width in microseconds.</param>
+    /// <param name="amp">Amplitude in milliamps (default = 3).</param>
+    /// <param name="IPI">Inter-pulse interval in milliseconds (default = 10).</param>
     public void StimulateAnalog(string finger, int PW, int amp = 3, int IPI = 10)
     {
         int channel = FingerToChannel(finger);
         WSS.StimulateAnalog(channel, PW, amp, IPI);
     }
 
+    /// <summary>Broadcasts start stimulation command to all connected WSS units.</summary>
+    public void StartStimulation() => WSS.StartStim(WssTarget.Broadcast);
 
-    public void StartStimulation()
-    {
-        WSS.StartStim(WssTarget.Broadcast);
-    }
+    /// <summary>Broadcasts stop stimulation command to all connected WSS units.</summary>
+    public void StopStimulation() => WSS.StopStim(WssTarget.Broadcast);
 
-    public void StopStimulation()
-    {
-        WSS.StopStim(WssTarget.Broadcast);
-    }
-
+    /// <summary>Saves the current device configuration to a specific WSS unit.</summary>
     public void Save(int targetWSS)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.Save(IntToWssTarget(targetWSS));
     }
 
+    /// <summary>Saves the current device configuration to all connected units.</summary>
     public void Save()
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.Save(WssTarget.Broadcast);
     }
 
+    /// <summary>Loads a saved configuration from a specific WSS unit.</summary>
     public void load(int targetWSS)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.Load(IntToWssTarget(targetWSS));
     }
 
+    /// <summary>Loads configuration from all connected WSS units.</summary>
     public void load()
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.Load(WssTarget.Broadcast);
     }
 
+    /// <summary>Requests configuration data from a specific WSS unit.</summary>
     public void request_Configs(int targetWSS, int command, int id)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.Request_Configs(command, id, IntToWssTarget(targetWSS));
     }
 
+    /// <summary>Uploads a waveform array for a given event ID to all units.</summary>
     public void updateWaveform(int[] waveform, int eventID)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.UpdateWaveform(waveform, eventID, WssTarget.Broadcast);
     }
 
+    /// <summary>Uploads a waveform array to a specific WSS unit.</summary>
     public void updateWaveform(int targetWSS, int[] waveform, int eventID)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.UpdateWaveform(waveform, eventID, IntToWssTarget(targetWSS));
     }
 
-    public void updateWaveform(int cathodicWaveform, int anodicWaveform, int eventID) //overload to just select from waveforms in memory 
-    //slots 0 to 10 are predefined waveforms and slots 11 to 13 are custom defined waveforms
+    /// <summary>
+    /// Selects predefined or custom waveform shapes for a given event ID.
+    /// Slots 0–10 are predefined, 11–13 are custom.
+    /// </summary>
+    public void updateWaveform(int cathodicWaveform, int anodicWaveform, int eventID)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.UpdateEventShape(cathodicWaveform, anodicWaveform, eventID, WssTarget.Broadcast);
     }
 
-    public void updateWaveform(int targetWSS, int cathodicWaveform, int anodicWaveform, int eventID) //overload to just select from waveforms in memory 
-    //slots 0 to 10 are predefined waveforms and slots 11 to 13 are custom defined waveforms
+    /// <summary>
+    /// Selects predefined or custom waveform shapes for a specific WSS target.
+    /// </summary>
+    public void updateWaveform(int targetWSS, int cathodicWaveform, int anodicWaveform, int eventID)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.UpdateEventShape(cathodicWaveform, anodicWaveform, eventID, IntToWssTarget(targetWSS));
     }
 
-    //overload for loading from json functionality
+    /// <summary>Loads a waveform definition from JSON for all units.</summary>
     public void updateWaveform(WaveformBuilder waveform, int eventID)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.UpdateWaveform(waveform, eventID, WssTarget.Broadcast);
     }
 
+    /// <summary>Loads a waveform definition from JSON for a target unit.</summary>
     public void updateWaveform(int targetWSS, WaveformBuilder waveform, int eventID)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.UpdateWaveform(waveform, eventID, IntToWssTarget(targetWSS));
     }
 
+    /// <summary>Loads a waveform file into memory.</summary>
     public void loadWaveform(string fileName, int eventID)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.LoadWaveform(fileName, eventID);
     }
 
-    public void WaveformSetup(WaveformBuilder wave, int eventID)//custom waveform slots 0 to 2 are attached to shape slots 11 to 13
+    /// <summary>Defines a custom waveform for an event slot on all units.</summary>
+    public void WaveformSetup(WaveformBuilder wave, int eventID)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.WaveformSetup(wave, eventID, WssTarget.Broadcast);
     }
 
-    public void WaveformSetup(int targetWSS, WaveformBuilder wave, int eventID)//custom waveform slots 0 to 2 are attached to shape slots 11 to 13
+    /// <summary>Defines a custom waveform for an event slot on a specific unit.</summary>
+    public void WaveformSetup(int targetWSS, WaveformBuilder wave, int eventID)
     {
-        if (!basicSupported)
-        {
-            Log.Error("Basic stimulation not supported on this Stimulator.");
-            return;
-        }
+        if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.WaveformSetup(wave, eventID, IntToWssTarget(targetWSS));
     }
+
     #endregion
 
-    #region "Stimulation methods params"
-    // Normalized drive [0..1] → computes PW from minPW..maxPW and stimulates
-    public void StimulateNormalized(int channel, float value01)
+    #region ==== Stimulation methods: params and model layers ====
+
+    /// <summary>
+    /// Normalized drive [0..1]. Computes PW via per-finger calibration and model constants, then stimulates.
+    /// </summary>
+    public void StimulateNormalized(string finger, float magnitude)
     {
-        WSS.StimulateNormalized(channel, value01);
+        int ch = FingerToChannel(finger);
+        WSS.StimulateNormalized(ch, magnitude);
     }
 
-    // Read last computed PW for a channel
-    public int GetLastPulseWidth(int channel)
+    /// <summary>Returns last computed pulse width for the specified finger.</summary>
+    public int GetStimIntensity(string finger)
     {
-        return (int)WSS.GetStimIntensity(channel);
+        int ch = FingerToChannel(finger);
+        return (int)WSS.GetStimIntensity(ch);
     }
 
-    // Persist/Load the params JSON
+    /// <summary>Saves model-layer parameters JSON to disk.</summary>
     public void SaveParamsJson() => WSS.SaveParamsJson();
+
+    /// <summary>Loads model-layer parameters JSON from default location.</summary>
     public void LoadParamsJson() => WSS.LoadParamsJson();
+
+    /// <summary>Loads model-layer parameters JSON from a specified path.</summary>
     public void LoadParamsJson(string pathOrDir) => WSS.LoadParamsJson(pathOrDir);
 
-    // Dotted-key access: "stim.ch.{N}.amp|minPW|maxPW|IPI"
+    /// <summary>Sets a parameter by dotted key (e.g., "stim.ch.1.amp").</summary>
     public void AddOrUpdateStimParam(string key, float value) => WSS.AddOrUpdateStimParam(key, value);
+
+    /// <summary>Gets a parameter by dotted key.</summary>
     public float GetStimParam(string key) => WSS.GetStimParam(key);
+
+    /// <summary>Attempts to read a parameter by key, returns <c>true</c> on success.</summary>
     public bool TryGetStimParam(string key, out float v) => WSS.TryGetStimParam(key, out v);
+
+    /// <summary>Returns a dictionary copy of all current stimulation parameters.</summary>
     public Dictionary<string, float> GetAllStimParams() => WSS.GetAllStimParams();
 
-    // Channel helpers
-    public void SetChannelAmp(int ch, float mA) => WSS.SetChannelAmp(ch, mA);
-    public void SetChannelPWMin(int ch, int us) => WSS.SetChannelPWMin(ch, us);
-    public void SetChannelPWMax(int ch, int us) => WSS.SetChannelPWMax(ch, us);
-    public void SetChannelIPI(int ch, int ms) => WSS.SetChannelIPI(ch, ms);
-
-    public float GetChannelAmp(int ch) => WSS.GetChannelAmp(ch);
-    public int GetChannelPWMin(int ch) => WSS.GetChannelPWMin(ch);
-    public int GetChannelPWMax(int ch) => WSS.GetChannelPWMax(ch);
-    public int GetChannelIPI(int ch) => WSS.GetChannelIPI(ch);
-
-    public bool IsChannelInRange(int ch) => WSS.IsChannelInRange(ch);
-    #endregion
-
-    #region getSets
-    public bool Ready()
+    /// <summary>Sets per-finger amplitude in milliamps.</summary>
+    public void SetChannelAmp(string finger, float mA)
     {
-        return WSS.Ready();
+        int ch = FingerToChannel(finger);
+        WSS.SetChannelAmp(ch, mA);
     }
 
-    public bool Started()
+    /// <summary>Sets per-finger minimum PW in microseconds.</summary>
+    public void SetChannelPWMin(string finger, int us)
     {
-        return WSS.Started();
+        int ch = FingerToChannel(finger);
+        WSS.SetChannelPWMin(ch, us);
     }
 
-    public CoreConfigController GetCoreConfigCTRL()
+    /// <summary>Sets per-finger maximum PW in microseconds.</summary>
+    public void SetChannelPWMax(string finger, int us)
     {
-        return WSS.GetCoreConfigController();
-    }
-    #endregion
-
-    private WssTarget IntToWssTarget(int i)
-    {
-        switch (i)
-        {
-            case 0: return WssTarget.Broadcast;
-            case 1: return WssTarget.Wss1;
-            case 2: return WssTarget.Wss2;
-            case 3: return WssTarget.Wss3;
-            default: return WssTarget.Wss1;
-        }
+        int ch = FingerToChannel(finger);
+        WSS.SetChannelPWMax(ch, us);
     }
 
+    /// <summary>Sets per-finger IPI in milliseconds.</summary>
+    public void SetChannelIPI(string finger, int ms)
+    {
+        int ch = FingerToChannel(finger);
+        WSS.SetChannelIPI(ch, ms);
+    }
+
+    /// <summary>Gets per-finger amplitude in milliamps.</summary>
+    public float GetChannelAmp(string finger)
+    {
+        int ch = FingerToChannel(finger);
+        return WSS.GetChannelAmp(ch);
+    }
+
+    /// <summary>Gets per-finger minimum PW in microseconds.</summary>
+    public int GetChannelPWMin(string finger)
+    {
+        int ch = FingerToChannel(finger);
+        return WSS.GetChannelPWMin(ch);
+    }
+
+    /// <summary>Gets per-finger maximum PW in microseconds.</summary>
+    public int GetChannelPWMax(string finger)
+    {
+        int ch = FingerToChannel(finger);
+        return WSS.GetChannelPWMax(ch);
+    }
+
+    /// <summary>Gets per-finger IPI in milliseconds.</summary>
+    public int GetChannelIPI(string finger)
+    {
+        int ch = FingerToChannel(finger);
+        return WSS.GetChannelIPI(ch);
+    }
+
+    /// <summary>Checks whether the specified finger maps to a valid channel index.</summary>
+    public bool IsFingerValid(string finger)
+    {
+        int ch = FingerToChannel(finger);
+        return WSS.IsChannelInRange(ch);
+    }
+
+    /// <summary>
+    /// Applies model-driven stimulation using proportional or PD mode.
+    /// </summary>
+    /// <param name="finger">Finger label or alias.</param>
+    /// <param name="magnitude">Normalized or physical magnitude input to the model.</param>
     public void StimWithMode(string finger, float magnitude)
     {
-        WSS.StimWithMode(FingerToChannel(finger), magnitude);
+        int ch = FingerToChannel(finger);
+        WSS.StimWithMode(ch, magnitude);
     }
 
-    public ModelConfigController GetModelConfigCTRL()
-    {
-        return WSS.GetModelConfigController();
-    }
-
+    /// <summary>
+    /// Updates calibration parameters for a specific finger.
+    /// </summary>
     public void UpdateChannelParams(string finger, int max, int min, int amp)
     {
         int ch = FingerToChannel(finger);
         if (!WSS.IsChannelInRange(ch))
             throw new ArgumentOutOfRangeException(nameof(finger), $"Channel {ch} is not valid for current config.");
 
-        // build dotted keys and update values
         string baseKey = $"stim.ch.{ch}";
         WSS.AddOrUpdateStimParam($"{baseKey}.maxPW", max);
         WSS.AddOrUpdateStimParam($"{baseKey}.minPW", min);
         WSS.AddOrUpdateStimParam($"{baseKey}.amp", amp);
     }
 
-    public bool isModeValid()
-    {
-        return WSS.IsModeValid();
-    }
-    
+    #endregion
+
+    #region ==== Config and state ====
+
+    /// <summary>Returns <c>true</c> if the model mode currently loaded is valid.</summary>
+    public bool isModeValid() => WSS.IsModeValid();
+
+    /// <summary>Returns <c>true</c> if the device is initialized and ready.</summary>
+    public bool Ready() => WSS.Ready();
+
+    /// <summary>Returns <c>true</c> if stimulation is currently active.</summary>
+    public bool Started() => WSS.Started();
+
+    /// <summary>Provides access to the model configuration controller.</summary>
+    public ModelConfigController GetModelConfigCTRL() => WSS.GetModelConfigController();
+
+    /// <summary>Provides access to the core configuration controller.</summary>
+    public CoreConfigController GetCoreConfigCTRL() => WSS.GetCoreConfigController();
+
+    #endregion
+
+    #region ==== Utility ====
+
+    private WssTarget IntToWssTarget(int i) =>
+        i switch
+        {
+            0 => WssTarget.Broadcast,
+            1 => WssTarget.Wss1,
+            2 => WssTarget.Wss2,
+            3 => WssTarget.Wss3,
+            _ => WssTarget.Wss1
+        };
+
+    /// <summary>
+    /// Maps a finger label or alias to its numeric channel.
+    /// Supports "thumb", "index", "middle", "ring", "pinky" or "little",
+    /// and generic "chN" notation. Returns 0 if invalid.
+    /// </summary>
     private int FingerToChannel(string fingerOrAlias)
     {
         if (string.IsNullOrWhiteSpace(fingerOrAlias)) return 0;
-        // chN alias
-        if (fingerOrAlias.StartsWith("ch", StringComparison.OrdinalIgnoreCase) &&
-            int.TryParse(fingerOrAlias.AsSpan(2), out var n)) return n;
 
-        // simple name map (adjust if your mapping differs)
+        if (fingerOrAlias.StartsWith("ch", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(fingerOrAlias.AsSpan(2), out var n))
+            return n;
+
         return fingerOrAlias.ToLowerInvariant() switch
         {
             "thumb" => 1,
@@ -348,4 +405,5 @@ public class Stimulation : MonoBehaviour
         };
     }
 
+    #endregion
 }

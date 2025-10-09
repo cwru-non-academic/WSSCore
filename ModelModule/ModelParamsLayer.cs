@@ -127,6 +127,14 @@ public sealed class ModelParamsLayer : IModelParamsCore
 
     // ===== helpers =====
 
+    /// <summary>
+    /// Ensures model-layer working arrays exist and match the current channel count.
+    /// Starts the internal stopwatch on first use and initializes per-channel state.
+    /// </summary>
+    /// <remarks>
+    /// Channel count is derived from <see cref="CoreConfigController.MaxWss"/> on the inner core.
+    /// Arrays hold last magnitude, derivative estimate, and previous timestamps per channel.
+    /// </remarks>
     private void EnsureModelArrays()
     {
         if (_timer == null) { _timer = new Stopwatch(); _timer.Start(); }
@@ -134,20 +142,42 @@ public sealed class ModelParamsLayer : IModelParamsCore
         if (_currentMag != null && _currentMag.Length == n) return;
 
         _prevMagnitude = new float[n];
-        _currentMag    = new float[n];
-        _d_dt          = new float[n];
-        _tPrev         = new float[n];
+        _currentMag = new float[n];
+        _d_dt = new float[n];
+        _tPrev = new float[n];
 
         float now = _timer.ElapsedMilliseconds / 1000.0f;
         for (int i = 0; i < n; i++) { _prevMagnitude[i] = 0f; _tPrev[i] = now; }
     }
 
+    /// <summary>
+    /// Verifies that the active controller mode in the model config is supported.
+    /// </summary>
+    /// <remarks>
+    /// Sets the private flag <c>_validMode</c> to true for modes <c>"P"</c> or <c>"PD"</c>, false otherwise.
+    /// Uses <c>_modelCfg.GetCalibMode()</c>.
+    /// </remarks>
     private void VerifyStimMode()
     {
         string mode = _modelCfg.GetCalibMode(); // e.g., "P" or "PD"
         _validMode = mode == "P" || mode == "PD";
     }
 
+    /// <summary>
+    /// Computes a normalized output magnitude for a 1-based channel using the current controller mode.
+    /// </summary>
+    /// <param name="channel1">1-based channel index.</param>
+    /// <param name="magnitude01">Input magnitude, clamped to [0,1].</param>
+    /// <returns>
+    /// Normalized output in [0,1] after applying P or PD mapping with model constants and a finite-difference derivative.
+    /// Returns 0 if the channel index is out of range.
+    /// </returns>
+    /// <remarks>
+    /// Updates per-channel caches: current magnitude, previous magnitude, derivative estimate, and last timestamp (seconds).
+    /// PD mode uses keys: <c>PDModeDerivative</c>, <c>PDModeProportional</c>, <c>PDModeOffset</c>.  
+    /// P mode uses keys: <c>PModeProportional</c>, <c>PModeOffset</c>.  
+    /// Missing constants fall back to defaults used in code.
+    /// </remarks>
     private float CalculateMagnitude(int channel1, float magnitude01)
     {
         int idx = channel1 - 1;
@@ -157,7 +187,7 @@ public sealed class ModelParamsLayer : IModelParamsCore
         // time + derivative bookkeeping
         _currentMag[idx] = Clamp01(magnitude01);
         float tNow = _timer.ElapsedMilliseconds / 1000.0f;
-        float dt   = MathF.Max(1e-5f, tNow - _tPrev[idx]);
+        float dt = MathF.Max(1e-5f, tNow - _tPrev[idx]);
         _d_dt[idx] = (_currentMag[idx] - _prevMagnitude[idx]) / dt;
         _tPrev[idx] = tNow;
         _prevMagnitude[idx] = _currentMag[idx];
@@ -177,5 +207,10 @@ public sealed class ModelParamsLayer : IModelParamsCore
         return Clamp01(y);
     }
 
+    /// <summary>
+    /// Clamps a float to the inclusive range [0,1].
+    /// </summary>
+    /// <param name="x">Value to clamp.</param>
+    /// <returns><c>0</c> if <paramref name="x"/> &lt; 0, <c>1</c> if &gt; 1, otherwise <paramref name="x"/>.</returns>
     private static float Clamp01(float x) => x < 0f ? 0f : (x > 1f ? 1f : x);
 }

@@ -43,6 +43,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     private int[] _chPWs;   // us
     private int[] _chIPIs;   // ms
     private int _currentIPD = 50; // us
+    private int _maxWSSChannels=0;
 
     private enum CoreState { Disconnected, Connecting, SettingUp, Ready, Started, Streaming, Error }
     #endregion
@@ -70,10 +71,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     #endregion
 
     #region ========== Lifecycle (Initialize / Tick / Shutdown) ==========
-    /// <summary>
-    /// Initializes the core: loads JSON config, prepares buffers, and begins connecting
-    /// to the WSS transport. Non-blocking; call <see cref="Tick"/> each frame to advance.
-    /// </summary>
+    /// <inheritdoc/>
     public void Initialize()
     {
         if (_state is CoreState.Ready or CoreState.SettingUp) Shutdown();
@@ -102,10 +100,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         _connectTask = _wss.ConnectAsync();
     }
 
-    /// <summary>
-    /// Advances the internal state machine (Connecting → SettingUp → Ready → Streaming).
-    /// Call regularly from your main loop (e.g., Unity Update). Non-blocking.
-    /// </summary>
+    /// <inheritdoc/>
     public void Tick()
     {
         switch (_state)
@@ -164,10 +159,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         }
     }
 
-    /// <summary>
-    /// Stops streaming, zeroes outputs (best-effort), disconnects the transport,
-    /// and releases resources. Safe to call multiple times.
-    /// </summary>
+    /// <inheritdoc/>
     public void Shutdown()
     {
         StopStreamingInternal();
@@ -188,30 +180,20 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     /// </summary>
     public void LoadConfigFile() => _coreConfig.LoadJson();
 
-    /// <summary>Disposes the core by calling <see cref="Shutdown"/>.</summary>
+    /// <inheritdoc/>
     public void Dispose() => Shutdown();
     #endregion
 
     #region ========== Status ==========
-    /// <summary>True when device transport is started or streaming.</summary>
+    /// <inheritdoc/>
     public bool Started() => _state is CoreState.Started or CoreState.Streaming;
 
-    /// <summary>
-    /// True when the core is Ready. Use this to decide when it’s safe to send
-    /// start stimulation.
-    /// </summary>
+    /// <inheritdoc/>
     public bool Ready() => _state is CoreState.Ready;
     #endregion
 
     #region ========== Public control API (non-blocking) ==========
-    /// <summary>
-    /// Updates the cached amplitude and PW for a logical finger/channel, using your
-    /// analog mapping. No device I/O occurs here; the streaming loop will pick it up.
-    /// </summary>
-    /// <param name="finger">Finger name (e.g., "Thumb", "Index") or "ch#".</param>
-    /// <param name="PW">Pulse width to cache.</param>
-    /// <param name="amp">Amplitude (mA domain, will be mapped to device scale during streaming).</param>
-    /// <param name="IPI">Period (ms domain, from start of cathode to start of cathode).</param>
+    /// <inheritdoc/>
     public void StimulateAnalog(int channel, int PW, float amp, int IPI)
     {
         if (channel <= 0 || channel > _maxWSS * 3) return;
@@ -221,20 +203,13 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         _chIPIs[channel - 1] = IPI;
     }
 
-    /// <summary>
-    /// Sends a zero-out command to the device (fire-and-forget). Does not alter cached values.
-    /// </summary>
-    /// <param name="wsstarget">Target device or Broadcast.</param>
+    /// <inheritdoc/>
     public void ZeroOutStim(WssTarget wsstarget = WssTarget.Broadcast)
     {
         _ = _wss.ZeroOutStim(wsstarget);
     }
 
-    /// <summary>
-    /// Starts stimulation on the target and launches the background streaming loop
-    /// when the core is <see cref="CoreState.Ready"/>.
-    /// </summary>
-    /// <param name="targetWSS">Target device or Broadcast.</param>
+    /// <inheritdoc/>
     public void StartStim(WssTarget targetWSS = WssTarget.Broadcast)
     {
         if (_wss == null) return;
@@ -270,11 +245,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         }
     }
 
-    /// <summary>
-    /// Stops stimulation on the target. If currently Streaming, also stops the background
-    /// streaming loop and returns the core to Ready.
-    /// </summary>
-    /// <param name="targetWSS">Target device or Broadcast.</param>
+    /// <inheritdoc/>
     public void StopStim(WssTarget targetWSS = WssTarget.Broadcast)
     {
         if (_wss == null) return;
@@ -297,55 +268,37 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         }
     }
 
-    /// <summary>
-    /// Updates inter-phase delay (IPD) for events 1–3 via setup commands (with replies).
-    /// If currently Streaming, the core pauses streaming, sends edits, and resumes when done.
-    /// </summary>
-    /// <param name="IPD">Inter-phase delay in microseconds (clamped internally).</param>
-    /// <param name="targetWSS">Target device or Broadcast.</param>
+    /// <inheritdoc/>
+    public bool IsChannelInRange(int ch)
+    {
+        return ch > 0 && ch <= _maxWSSChannels;
+    }
+
+    /// <inheritdoc/>
     public void UpdateIPD(int IPD, WssTarget targetWSS = WssTarget.Broadcast)
     {
         _currentIPD = Math.Clamp(IPD, 1, 1000);
 
         _ = ScheduleSetupChangeAsync(targetWSS,
-            () => StepLogger(_wss.EditEventPw(1, new[] { 0, 0, _currentIPD }, targetWSS),      $"UpdateIPD[{targetWSS}], Event[1]"),
-            () => StepLogger(_wss.EditEventPw(2, new[] { 0, 0, _currentIPD }, targetWSS),      $"UpdateIPD[{targetWSS}], Event[2]"),
-            () => StepLogger(_wss.EditEventPw(3, new[] { 0, 0, _currentIPD }, targetWSS),      $"UpdateIPD[{targetWSS}], Event[3]")
+            () => StepLogger(_wss.EditEventPw(1, new[] { 0, 0, _currentIPD }, targetWSS), $"UpdateIPD[{targetWSS}], Event[1]"),
+            () => StepLogger(_wss.EditEventPw(2, new[] { 0, 0, _currentIPD }, targetWSS), $"UpdateIPD[{targetWSS}], Event[2]"),
+            () => StepLogger(_wss.EditEventPw(3, new[] { 0, 0, _currentIPD }, targetWSS), $"UpdateIPD[{targetWSS}], Event[3]")
         );
     }
 
-    /// <summary>
-    /// Builds a custom waveform from raw points and enqueues the necessary upload steps
-    /// (with replies). If Streaming, the core pauses, uploads, then resumes.
-    /// </summary>
-    /// <param name="waveform">Concatenated waveform definition used by your <see cref="WaveformBuilder"/>.</param>
-    /// <param name="eventID">Event ID that will reference the uploaded shapes.</param>
-    /// <param name="targetWSS">Target device or Broadcast.</param>
+    /// <inheritdoc/>
     public void UpdateWaveform(int[] waveform, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
     {
         WaveformSetup(new WaveformBuilder(waveform), eventID, targetWSS);
     }
 
-    /// <summary>
-    /// Enqueues a prebuilt waveform upload and event shape assignment (with replies).
-    /// If Streaming, the core pauses, uploads, then resumes.
-    /// </summary>
-    /// <param name="waveform">Prepared <see cref="WaveformBuilder"/>.</param>
-    /// <param name="eventID">Event ID to point at the uploaded shapes.</param>
-    /// <param name="targetWSS">Target device or Broadcast.</param>
+    /// <inheritdoc/>
     public void UpdateWaveform(WaveformBuilder waveform, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
     {
         WaveformSetup(waveform, eventID, targetWSS);
     }
 
-    /// <summary>
-    /// Enqueues setting the event shape IDs directly (with replies). If Streaming, the core pauses,
-    /// sends the edit, then resumes.
-    /// </summary>
-    /// <param name="cathodicWaveform">Shape ID for standard phase.</param>
-    /// <param name="anodicWaveform">Shape ID for recharge phase.</param>
-    /// <param name="eventID">Event ID to modify.</param>
-    /// <param name="targetWSS">Target device or Broadcast.</param>
+    /// <inheritdoc/>
     public void UpdateEventShape(int cathodicWaveform, int anodicWaveform, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
     {
         _ = ScheduleSetupChangeAsync(targetWSS,
@@ -353,12 +306,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         );
     }
 
-    /// <summary>
-    /// Loads a waveform JSON file (…WF.json) from <c>_jsonPath</c>, builds it, and enqueues
-    /// an upload. Logs an error if the file cannot be read or deserialized.
-    /// </summary>
-    /// <param name="fileName">File name or path (WF suffix enforced).</param>
-    /// <param name="eventID">Event ID to point at the uploaded shapes.</param>
+    /// <inheritdoc/>
     public void LoadWaveform(string fileName, int eventID)
     {
         string candidatePath = Path.Combine(_jsonPath, fileName);
@@ -381,48 +329,25 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         }
     }
 
-    /// <summary>
-    /// Saves the board settings to FRAM via a setup command (with reply). If Streaming,
-    /// the core pauses, saves, then resumes.
-    /// </summary>
-    /// <param name="targetWSS">Target device or Broadcast.</param>
+    /// <inheritdoc/>
     public void Save(WssTarget targetWSS = WssTarget.Broadcast)
     {
         _ = ScheduleSetupChangeAsync(targetWSS, () => StepLogger(_wss.PopulateFramSettings(targetWSS), $"SaveChanges[{targetWSS}]"));
     }
 
-    /// <summary>
-    /// Loads the board settings from FRAM via a setup command (with reply). If Streaming,
-    /// the core pauses, loads, then resumes.
-    /// </summary>
-    /// <param name="targetWSS">Target device or Broadcast.</param>
+    /// <inheritdoc/>
     public void Load(WssTarget targetWSS = WssTarget.Broadcast)
     {
         _ = ScheduleSetupChangeAsync(targetWSS, () => StepLogger(_wss.PopulateBoardSettings(targetWSS), $"Load[{targetWSS}]"));
     }
 
-    /// <summary>
-    /// Requests configuration blocks from the device via a setup command (with reply).
-    /// If Streaming, the core pauses, requests, then resumes.
-    /// </summary>
-    /// <param name="command">Command group identifier.</param>
-    /// <param name="id">Sub-id / selector.</param>
-    /// <param name="targetWSS">Target device or Broadcast.</param>
+    /// <inheritdoc/>
     public void Request_Configs(int command, int id, WssTarget targetWSS = WssTarget.Broadcast)
     {
         _ = ScheduleSetupChangeAsync(targetWSS, () => StepLogger(_wss.RequestConfigs(command, id, targetWSS), $"RequestConfig[{command}, {id}]"));
     }
 
-    /// <summary>
-    /// Gets the JSON-backed stimulation configuration controller currently used by this core.
-    /// </summary>
-    /// <returns>
-    /// The active <see cref="CoreConfigController"/> instance that provides read/write access
-    /// to stimulation parameters and constants loaded from the configuration file.
-    /// </returns>
-    /// <remarks>
-    /// Returned reference is live, not a copy and thread safe.
-    /// </remarks>
+    /// <inheritdoc/>
     public CoreConfigController GetCoreConfigController()
     {
         return _coreConfig;
@@ -485,13 +410,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     #endregion
 
     #region ========== Waveforms (enqueue uploads) ==========
-    /// <summary>
-    /// Helper that schedules custom waveform uploads (in 4 chunks per polarity) and
-    /// then points <paramref name="eventID"/> at User Program shapes 11/12.
-    /// </summary>
-    /// <param name="wave">Waveform builder.</param>
-    /// <param name="eventID">Event ID to edit.</param>
-    /// <param name="targetWSS">Target device or Broadcast.</param>
+    /// <inheritdoc/>
     public void WaveformSetup(WaveformBuilder wave, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
     {
         var cat = wave.getCatShapeArray();
@@ -679,12 +598,12 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     /// <summary> Initializes arrays to hold values neccessary for streaming</summary>
     private void InitStimArrays()
     {
-        int n = _maxWSS * 3;
-        _chAmps = new float[n];
-        _chPWs = new int[n];
-        _chIPIs = new int[n];
+        _maxWSSChannels = _maxWSS * 3;
+        _chAmps = new float[_maxWSSChannels];
+        _chPWs = new int[_maxWSSChannels];
+        _chIPIs = new int[_maxWSSChannels];
 
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < _maxWSSChannels; i++)
         {
             _chAmps[i] = 0f;
             _chPWs[i] = 0;

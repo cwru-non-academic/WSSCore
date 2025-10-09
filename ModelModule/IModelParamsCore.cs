@@ -1,4 +1,3 @@
-// IModelParamsCore.cs
 using System;
 
 /// <summary>
@@ -40,5 +39,21 @@ public interface IModelParamsCore : IStimParamsCore
     /// </example>
     void StimWithMode(int ch, float magnitude);
 
+    /// <summary>
+    /// Returns the model-layer configuration controller used to read and write model constants
+    /// (e.g., proportional/derivative gains, offsets, and mode selection).
+    /// </summary>
+    /// <returns>The active <see cref="ModelConfigController"/> instance.</returns>
+    /// <remarks>
+    /// Use this to query constants like <c>PModeProportional</c> or to persist model settings.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var mc = model.GetModelConfigController();
+    /// float kp = mc.GetConstant("PModeProportional");
+    /// mc.SetConstant("PDModeDerivative", 0.15f);
+    /// mc.SaveJson();
+    /// </code>
+    /// </example>
     ModelConfigController GetModelConfigController();
 }
