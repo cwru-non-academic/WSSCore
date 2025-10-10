@@ -409,7 +409,8 @@ public sealed class WssClient : IDisposable
     /// </param>
     /// /// <param name="LEDs">
     /// Optional int representing LED locations to light during stimulation
-    /// Index 0 = closest to switch, index 3 = farthest from switch.
+    /// Index int read as binary so 0011 or 3 is both the first and second LEDs (first is clossest to the switch).
+    /// 1 in binary is on and 0 is off. The trigering of the event will trigger the on LEDs
     /// Ignored if not supported by firmware.
     /// Pass -1 to indicate no LED configuration.
     /// </param>

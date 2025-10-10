@@ -11,6 +11,6 @@ public enum WSSLimits : int
         Frequency = 10000,//TODO
         customWaveformMaxAmp = 2000,
         IPD = 1000,
-        LEDs = 3,
+        LEDs = 8,
         enable = 1,
     }

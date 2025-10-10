@@ -374,7 +374,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
 
                 // Schedule 1 (Ch1)
                 () => StepLogger(_wss.CreateSchedule(1, 13, 170, t), $"CreateSchedule#1[{t}]"), //TODO frequewncy from config
-                () => StepLogger(_wss.CreateContactConfig(1, new[]{0,0,2,1}, new[]{0,0,1,2}, 1, t), $"CreateContactConfig#1[{t}]"),
+                () => StepLogger(_wss.CreateContactConfig(1, new[]{0,0,2,1}, new[]{0,0,1,2}, 2, t), $"CreateContactConfig#1[{t}]"),
                 () => StepLogger(_wss.CreateEvent(1, 0, 1, 11, 11,
                         new[]{11,11,0,0}, new[]{11,11,0,0}, new[]{0,0,_currentIPD}, t),
                         $"CreateEvent#1[{t}]"),
@@ -383,7 +383,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
 
                 // Schedule 2 (Ch2)
                 () => StepLogger(_wss.CreateSchedule(2, 13, 170, t), $"CreateSchedule#2[{t}]"),
-                () => StepLogger(_wss.CreateContactConfig(2, new[]{0,2,0,1}, new[]{0,1,0,2}, 2, t), $"CreateContactConfig#2[{t}]"),
+                () => StepLogger(_wss.CreateContactConfig(2, new[]{0,2,0,1}, new[]{0,1,0,2}, 4, t), $"CreateContactConfig#2[{t}]"),
                 () => StepLogger(_wss.CreateEvent(2, 2, 2, 11, 11,
                         new[]{11,0,11,0}, new[]{11,0,11,0}, new[]{0,0,_currentIPD}, t),
                         $"CreateEvent#2[{t}]"),
@@ -392,7 +392,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
 
                 // Schedule 3 (Ch3)
                 () => StepLogger(_wss.CreateSchedule(3, 13, 170, t), $"CreateSchedule#3[{t}]"),
-                () => StepLogger(_wss.CreateContactConfig(3, new[]{2,0,0,1}, new[]{1,0,0,2}, 3, t), $"CreateContactConfig#3[{t}]"),
+                () => StepLogger(_wss.CreateContactConfig(3, new[]{2,0,0,1}, new[]{1,0,0,2}, 8, t), $"CreateContactConfig#3[{t}]"),
                 () => StepLogger(_wss.CreateEvent(3, 4, 3, 11, 11,
                         new[]{11,0,0,11}, new[]{11,0,0,11}, new[]{0,0,_currentIPD}, t),
                         $"CreateEvent#3[{t}]"),
@@ -469,8 +469,13 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                     _ = _wss.StreamChange(
                         new[] { AmpTo255Convention(_chAmps[baseIdx + 0]), AmpTo255Convention(_chAmps[baseIdx + 1]), AmpTo255Convention(_chAmps[baseIdx + 2]) },
                         new[] { _chPWs[baseIdx + 0], _chPWs[baseIdx + 1], _chPWs[baseIdx + 2] },
-                        new[] { _chIPIs[baseIdx + 0], _chIPIs[baseIdx + 1], _chIPIs[baseIdx + 2] },
+                        null,
                         IntToWssTarget(w));
+                    /* _ = _wss.StreamChange(
+                        new[] { AmpTo255Convention(_chAmps[baseIdx + 0]), AmpTo255Convention(_chAmps[baseIdx + 1]), AmpTo255Convention(_chAmps[baseIdx + 2]) },
+                        new[] { _chPWs[baseIdx + 0], _chPWs[baseIdx + 1], _chPWs[baseIdx + 2] },
+                        new[] { _chIPIs[baseIdx + 0], _chIPIs[baseIdx + 1], _chIPIs[baseIdx + 2] },
+                        IntToWssTarget(w)); */
                     await Task.Delay(_delayMsBetweenPackets, tk);
                 }
             }
