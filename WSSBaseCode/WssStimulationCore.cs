@@ -20,7 +20,8 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     private readonly string _comPort = null;
     private readonly string _jsonPath;
     private readonly int _maxSetupTries;
-    private readonly int _delayMsBetweenPackets = 10; // radio throttling
+    private readonly int _delayMsBetweenPackets = 100; // radio throttling
+    private readonly int _minIpiIntervalLoops = 100; // ipi individual throttling (f cannot be updated as fast)a multiplier of _delayMsBetweenPackets
     private WssClient _wss;
     private bool _resumeStreamingAfter;
 
@@ -42,8 +43,10 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     private float[] _chAmps;  // mA (mapped to 0..255 for device)
     private int[] _chPWs;   // us
     private int[] _chIPIs;   // ms
+    private int[] _lastIpiSentPerCh; //ms used to check changes
     private int _currentIPD = 50; // us
-    private int _maxWSSChannels=0;
+    private int _maxWSSChannels = 0;
+    private int[] _wssCooldownLoopsLeft; //keeps ipi cooldown per wss
 
     private enum CoreState { Disconnected, Connecting, SettingUp, Ready, Started, Streaming, Error }
     #endregion
@@ -465,17 +468,59 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
             {
                 for (int w = 1; w <= _maxWSS; w++)
                 {
-                    int baseIdx = (w - 1) * 3;
-                    _ = _wss.StreamChange(
-                        new[] { AmpTo255Convention(_chAmps[baseIdx + 0]), AmpTo255Convention(_chAmps[baseIdx + 1]), AmpTo255Convention(_chAmps[baseIdx + 2]) },
-                        new[] { _chPWs[baseIdx + 0], _chPWs[baseIdx + 1], _chPWs[baseIdx + 2] },
-                        null,
-                        IntToWssTarget(w));
-                    /* _ = _wss.StreamChange(
-                        new[] { AmpTo255Convention(_chAmps[baseIdx + 0]), AmpTo255Convention(_chAmps[baseIdx + 1]), AmpTo255Convention(_chAmps[baseIdx + 2]) },
-                        new[] { _chPWs[baseIdx + 0], _chPWs[baseIdx + 1], _chPWs[baseIdx + 2] },
-                        new[] { _chIPIs[baseIdx + 0], _chIPIs[baseIdx + 1], _chIPIs[baseIdx + 2] },
-                        IntToWssTarget(w)); */
+                    int wIdx    = w - 1;
+                    int baseIdx = wIdx * 3;
+
+                    var amps = new[] {
+                        AmpTo255Convention(_chAmps[baseIdx + 0]),
+                        AmpTo255Convention(_chAmps[baseIdx + 1]),
+                        AmpTo255Convention(_chAmps[baseIdx + 2])
+                    };
+                    var pws = new[] {
+                        _chPWs[baseIdx + 0],
+                        _chPWs[baseIdx + 1],
+                        _chPWs[baseIdx + 2]
+                    };
+
+                    // Desired per-channel IPIs for this WSS (source of truth)
+                    var desiredIpis = new[] {
+                        _chIPIs[baseIdx + 0],
+                        _chIPIs[baseIdx + 1],
+                        _chIPIs[baseIdx + 2]
+                    };
+
+                    // Per-channel change memory, gated by per-WSS cooldown
+                    bool anyChanged =
+                        _lastIpiSentPerCh[baseIdx + 0] != desiredIpis[0] ||
+                        _lastIpiSentPerCh[baseIdx + 1] != desiredIpis[1] ||
+                        _lastIpiSentPerCh[baseIdx + 2] != desiredIpis[2];
+
+                    anyChanged = false;//force no ipi update due to bug
+
+                    bool cooldownOver = _wssCooldownLoopsLeft[wIdx] <=0;
+
+                    if (anyChanged && cooldownOver)
+                    {
+                        // Send one WSS-level IPI update (array API). This is the only time we send.
+                        _ = _wss.StreamChange(amps, pws, desiredIpis, IntToWssTarget(w));
+
+                        // Update per-channel last-sent memory and start per-WSS cooldown
+                        _lastIpiSentPerCh[baseIdx + 0] = desiredIpis[0];
+                        _lastIpiSentPerCh[baseIdx + 1] = desiredIpis[1];
+                        _lastIpiSentPerCh[baseIdx + 2] = desiredIpis[2];
+                        _wssCooldownLoopsLeft[wIdx] = _minIpiIntervalLoops;
+                    }
+                    else
+                    {
+                        // Do not send any IPI during cooldown or if nothing changed
+                        _ = _wss.StreamChange(amps, pws, null, IntToWssTarget(w));
+                    }
+
+                    if (!cooldownOver)
+                    {
+                        _wssCooldownLoopsLeft[wIdx]--;
+                    }
+
                     await Task.Delay(_delayMsBetweenPackets, tk);
                 }
             }
@@ -604,15 +649,22 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     private void InitStimArrays()
     {
         _maxWSSChannels = _maxWSS * 3;
+        _wssCooldownLoopsLeft = new int[_maxWSS];
         _chAmps = new float[_maxWSSChannels];
         _chPWs = new int[_maxWSSChannels];
         _chIPIs = new int[_maxWSSChannels];
+        _lastIpiSentPerCh = new int[_maxWSSChannels];
+
+        for (int i = 0; i < _maxWSS; i++) {
+            _wssCooldownLoopsLeft[i] = 0;
+        }
 
         for (int i = 0; i < _maxWSSChannels; i++)
         {
             _chAmps[i] = 0f;
             _chPWs[i] = 0;
             _chIPIs[i] = 0;
+            _lastIpiSentPerCh[i] = 0;
         }
     }
     
