@@ -20,8 +20,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     private readonly string _comPort = null;
     private readonly string _jsonPath;
     private readonly int _maxSetupTries;
-    private readonly int _delayMsBetweenPackets = 100; // radio throttling
-    private readonly int _minIpiIntervalLoops = 100; // ipi individual throttling (f cannot be updated as fast)a multiplier of _delayMsBetweenPackets
+    private readonly int _delayMsBetweenPackets = 10; // radio throttling
     private WssClient _wss;
     private bool _resumeStreamingAfter;
 
@@ -42,11 +41,17 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     // ---- channels & controller state ----
     private float[] _chAmps;  // mA (mapped to 0..255 for device)
     private int[] _chPWs;   // us
-    private int[] _chIPIs;   // ms
-    private int[] _lastIpiSentPerCh; //ms used to check changes
-    private int _currentIPD = 50; // us
+    private int[] _chIPIs;   // ms period
+    private int[] _lastIpiSentPerCh; //used to check changes since frequency reset schedule only send if there is a change
     private int _maxWSSChannels = 0;
-    private int[] _wssCooldownLoopsLeft; //keeps ipi cooldown per wss
+
+    //defaults vaules used for initial setup
+    private readonly int _defaultIPI=10;
+    private readonly float _defaultAmp = 1.0f;
+    private readonly int _defaultSync = 170;
+    private readonly int _defaultRatio = 8;
+    private readonly int _defaultIPD = 50;
+    
 
     private enum CoreState { Disconnected, Connecting, SettingUp, Ready, Started, Streaming, Error }
     #endregion
@@ -280,7 +285,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     /// <inheritdoc/>
     public void UpdateIPD(int IPD, WssTarget targetWSS = WssTarget.Broadcast)
     {
-        _currentIPD = Math.Clamp(IPD, 1, 1000);
+        int _currentIPD = Math.Clamp(IPD, 1, 1000);
 
         _ = ScheduleSetupChangeAsync(targetWSS,
             () => StepLogger(_wss.EditEventPw(1, new[] { 0, 0, _currentIPD }, targetWSS), $"UpdateIPD[{targetWSS}], Event[1]"),
@@ -288,6 +293,17 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
             () => StepLogger(_wss.EditEventPw(3, new[] { 0, 0, _currentIPD }, targetWSS), $"UpdateIPD[{targetWSS}], Event[3]")
         );
     }
+
+    /// <inheritdoc/>
+    public void UpdateIPD(int IPD, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
+    {
+        int _currentIPD = Math.Clamp(IPD, 1, 1000);
+
+        _ = ScheduleSetupChangeAsync(targetWSS,
+            () => StepLogger(_wss.EditEventPw(eventID, new[] { 0, 0, _currentIPD }, targetWSS), $"UpdateIPD[{targetWSS}], Event[{eventID}]")
+        );
+    }
+    
 
     /// <inheritdoc/>
     public void UpdateWaveform(int[] waveform, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
@@ -376,33 +392,36 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                 () => StepLogger(_wss.Clear(0, t), $"Clear[{t}]"),
 
                 // Schedule 1 (Ch1)
-                () => StepLogger(_wss.CreateSchedule(1, 13, 170, t), $"CreateSchedule#1[{t}]"), //TODO frequewncy from config
+                () => StepLogger(_wss.CreateSchedule(1, _defaultIPI, _defaultSync, t), $"CreateSchedule#1[{t}]"), //TODO frequewncy from config
                 () => StepLogger(_wss.CreateContactConfig(1, new[]{1,2,0,0}, new[]{2,1,0,0}, 2, t), $"CreateContactConfig#1[{t}]"),
                 () => StepLogger(_wss.CreateEvent(1, 0, 1, 0, 0,
-                        new[]{11,11,0,0}, new[]{11,11,0,0}, new[]{0,0,_currentIPD}, t),
-                        $"CreateEvent#1[{t}]"),
-                () => StepLogger(_wss.EditEventRatio(1, 8, t), $"EditEventRatio#1[{t}]"),
+                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
+                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
+                        new[]{0,0,_defaultIPD}, t), $"CreateEvent#1[{t}]"),
+                () => StepLogger(_wss.EditEventRatio(1, _defaultRatio, t), $"EditEventRatio#1[{t}]"),
                 () => StepLogger(_wss.AddEventToSchedule(1, 1, t), $"AddEventToSchedule#1[{t}]"),
 
                 // Schedule 2 (Ch2)
-                () => StepLogger(_wss.CreateSchedule(2, 13, 170, t), $"CreateSchedule#2[{t}]"),
+                () => StepLogger(_wss.CreateSchedule(2, _defaultIPI, _defaultSync, t), $"CreateSchedule#2[{t}]"),
                 () => StepLogger(_wss.CreateContactConfig(2, new[]{1,0,2,0}, new[]{2,0,1,0}, 4, t), $"CreateContactConfig#2[{t}]"),
                 () => StepLogger(_wss.CreateEvent(2, 2, 2, 0, 0,
-                        new[]{11,0,11,0}, new[]{11,0,11,0}, new[]{0,0,_currentIPD}, t),
-                        $"CreateEvent#2[{t}]"),
-                () => StepLogger(_wss.EditEventRatio(2, 8, t), $"EditEventRatio#2[{t}]"),
+                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
+                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
+                        new[]{0,0,_defaultIPD}, t), $"CreateEvent#2[{t}]"),
+                () => StepLogger(_wss.EditEventRatio(2, _defaultRatio, t), $"EditEventRatio#2[{t}]"),
                 () => StepLogger(_wss.AddEventToSchedule(2, 2, t), $"AddEventToSchedule#2[{t}]"),
 
                 // Schedule 3 (Ch3)
-                () => StepLogger(_wss.CreateSchedule(3, 13, 170, t), $"CreateSchedule#3[{t}]"),
+                () => StepLogger(_wss.CreateSchedule(3, _defaultIPI, _defaultSync, t), $"CreateSchedule#3[{t}]"),
                 () => StepLogger(_wss.CreateContactConfig(3, new[]{1,0,0,2}, new[]{2,0,0,1}, 8, t), $"CreateContactConfig#3[{t}]"),
                 () => StepLogger(_wss.CreateEvent(3, 4, 3, 0, 0,
-                        new[]{11,0,0,11}, new[]{11,0,0,11}, new[]{0,0,_currentIPD}, t),
-                        $"CreateEvent#3[{t}]"),
-                () => StepLogger(_wss.EditEventRatio(3, 8, t), $"EditEventRatio#3[{t}]"),
+                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
+                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
+                        new[]{0,0,_defaultIPD}, t), $"CreateEvent#3[{t}]"),
+                () => StepLogger(_wss.EditEventRatio(3, _defaultRatio, t), $"EditEventRatio#3[{t}]"),
                 () => StepLogger(_wss.AddEventToSchedule(3, 3, t), $"AddEventToSchedule#3[{t}]"),
 
-                () => StepLogger(_wss.SyncGroup(170, t), $"SyncGroup[{t}]"),
+                () => StepLogger(_wss.SyncGroup(_defaultSync, t), $"SyncGroup[{t}]"),
                 () => StepLogger(_wss.StartStim(t),      $"StartStim[{t}]"),
             });
         }
@@ -495,11 +514,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                         _lastIpiSentPerCh[baseIdx + 1] != desiredIpis[1] ||
                         _lastIpiSentPerCh[baseIdx + 2] != desiredIpis[2];
 
-                    anyChanged = false;//force no ipi update due to bug
-
-                    bool cooldownOver = _wssCooldownLoopsLeft[wIdx] <=0;
-
-                    if (anyChanged && cooldownOver)
+                    if (anyChanged)
                     {
                         // Send one WSS-level IPI update (array API). This is the only time we send.
                         _ = _wss.StreamChange(amps, pws, desiredIpis, IntToWssTarget(w));
@@ -508,17 +523,11 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                         _lastIpiSentPerCh[baseIdx + 0] = desiredIpis[0];
                         _lastIpiSentPerCh[baseIdx + 1] = desiredIpis[1];
                         _lastIpiSentPerCh[baseIdx + 2] = desiredIpis[2];
-                        _wssCooldownLoopsLeft[wIdx] = _minIpiIntervalLoops;
                     }
                     else
                     {
                         // Do not send any IPI during cooldown or if nothing changed
                         _ = _wss.StreamChange(amps, pws, null, IntToWssTarget(w));
-                    }
-
-                    if (!cooldownOver)
-                    {
-                        _wssCooldownLoopsLeft[wIdx]--;
                     }
 
                     await Task.Delay(_delayMsBetweenPackets, tk);
@@ -649,22 +658,17 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     private void InitStimArrays()
     {
         _maxWSSChannels = _maxWSS * 3;
-        _wssCooldownLoopsLeft = new int[_maxWSS];
         _chAmps = new float[_maxWSSChannels];
         _chPWs = new int[_maxWSSChannels];
         _chIPIs = new int[_maxWSSChannels];
         _lastIpiSentPerCh = new int[_maxWSSChannels];
 
-        for (int i = 0; i < _maxWSS; i++) {
-            _wssCooldownLoopsLeft[i] = 0;
-        }
-
         for (int i = 0; i < _maxWSSChannels; i++)
         {
-            _chAmps[i] = 0f;
+            _chAmps[i] = AmpTo255Convention(_defaultAmp);
             _chPWs[i] = 0;
-            _chIPIs[i] = 0;
-            _lastIpiSentPerCh[i] = 0;
+            _chIPIs[i] = _defaultIPI;
+            _lastIpiSentPerCh[i] = _defaultIPI;
         }
     }
     
