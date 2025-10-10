@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 
 /// <summary>
-/// Layer that wraps an <see cref="IStimulationCore"/> and a <see cref="StimParamsController"/>.
+/// Layer that wraps an <see cref="IStimulationCore"/> and a <see cref="StimParamsConfigController"/>.
 /// Computes pulse widths from normalized inputs and forwards stimulation to the core.
 /// Also exposes dotted-key parameter access and an optional BASIC capability.
 /// </summary>
@@ -69,52 +69,52 @@ public sealed class StimParamsLayer : IStimParamsCore
         return _ctrl;
     }
 
-    /// <inheritdoc cref="StimParamsController.SaveParamsJson"/>
+    /// <inheritdoc cref="StimParamsConfigController.SaveParamsJson"/>
     public void SaveParamsJson() => _ctrl.SaveParamsJson();
 
-    /// <inheritdoc cref="StimParamsController.LoadParamsJson()"/>
+    /// <inheritdoc cref="StimParamsConfigController.LoadParamsJson()"/>
     public void LoadParamsJson() => _ctrl.LoadParamsJson();
 
-    /// <inheritdoc cref="StimParamsController.LoadParamsJson(string)"/>
+    /// <inheritdoc cref="StimParamsConfigController.LoadParamsJson(string)"/>
     public void LoadParamsJson(string path) => _ctrl.LoadParamsJson(path);
 
-    /// <inheritdoc cref="StimParamsController.AddOrUpdateStimParam(string,float)"/>
+    /// <inheritdoc cref="StimParamsConfigController.AddOrUpdateStimParam(string,float)"/>
     public void AddOrUpdateStimParam(string key, float value) => _ctrl.AddOrUpdateStimParam(key, value);
 
-    /// <inheritdoc cref="StimParamsController.GetStimParam(string)"/>
+    /// <inheritdoc cref="StimParamsConfigController.GetStimParam(string)"/>
     public float GetStimParam(string key) => _ctrl.GetStimParam(key);
 
-    /// <inheritdoc cref="StimParamsController.TryGetStimParam(string,out float)"/>
+    /// <inheritdoc cref="StimParamsConfigController.TryGetStimParam(string,out float)"/>
     public bool TryGetStimParam(string key, out float value) => _ctrl.TryGetStimParam(key, out value);
 
-    /// <inheritdoc cref="StimParamsController.GetAllStimParams"/>
+    /// <inheritdoc cref="StimParamsConfigController.GetAllStimParams"/>
     public Dictionary<string, float> GetAllStimParams() => _ctrl.GetAllStimParams();
 
-    /// <inheritdoc cref="StimParamsController.SetChannelAmp(int,float)"/>
+    /// <inheritdoc cref="StimParamsConfigController.SetChannelAmp(int,float)"/>
     public void SetChannelAmp(int ch, float mA) => _ctrl.SetChannelAmp(ch, mA);
 
-    /// <inheritdoc cref="StimParamsController.SetChannelPWMin(int,int)"/>
+    /// <inheritdoc cref="StimParamsConfigController.SetChannelPWMin(int,int)"/>
     public void SetChannelPWMin(int ch, int us) => _ctrl.SetChannelPWMin(ch, us);
 
-    /// <inheritdoc cref="StimParamsController.SetChannelPWMax(int,int)"/>
+    /// <inheritdoc cref="StimParamsConfigController.SetChannelPWMax(int,int)"/>
     public void SetChannelPWMax(int ch, int us) => _ctrl.SetChannelPWMax(ch, us);
 
-    /// <inheritdoc cref="StimParamsController.SetChannelIPI(int,int)"/>
+    /// <inheritdoc cref="StimParamsConfigController.SetChannelIPI(int,int)"/>
     public void SetChannelIPI(int ch, int ms) => _ctrl.SetChannelIPI(ch, ms);
 
-    /// <inheritdoc cref="StimParamsController.GetChannelAmp(int)"/>
+    /// <inheritdoc cref="StimParamsConfigController.GetChannelAmp(int)"/>
     public float GetChannelAmp(int ch) => _ctrl.GetChannelAmp(ch);
 
-    /// <inheritdoc cref="StimParamsController.GetChannelPWMin(int)"/>
+    /// <inheritdoc cref="StimParamsConfigController.GetChannelPWMin(int)"/>
     public int GetChannelPWMin(int ch) => _ctrl.GetChannelPWMin(ch);
 
-    /// <inheritdoc cref="StimParamsController.GetChannelPWMax(int)"/>
+    /// <inheritdoc cref="StimParamsConfigController.GetChannelPWMax(int)"/>
     public int GetChannelPWMax(int ch) => _ctrl.GetChannelPWMax(ch);
 
-    /// <inheritdoc cref="StimParamsController.GetChannelIPI(int)"/>
+    /// <inheritdoc cref="StimParamsConfigController.GetChannelIPI(int)"/>
     public int GetChannelIPI(int ch) => _ctrl.GetChannelIPI(ch);
 
-    /// <inheritdoc cref="StimParamsController.IsChannelInRange(int)"/>
+    /// <inheritdoc cref="StimParamsConfigController.IsChannelInRange(int)"/>
     public bool IsChannelInRange(int ch) => _ctrl.IsChannelInRange(ch);
 
     /// <inheritdoc/>

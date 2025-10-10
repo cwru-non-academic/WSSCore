@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO.Ports;
 using System.Threading;
 using System.Threading.Tasks;
@@ -169,8 +169,8 @@ public sealed class SerialPortTransport : ITransport
     /// <summary>
     /// Selects a serial COM port. If <paramref name="preferredPort"/> is provided,
     /// that port is used. Otherwise, prefers ports whose PNPDeviceID contains
-    /// <c>VID_0403&PID_6001</c> (FTDI FT232R). If none match, returns the lowest
-    /// COM port by natural sort (COM2, COM10, …).
+    /// <c>VID_0403&amp;PID_6001</c> (FTDI FT232R). If none match, returns the lowest
+    /// COM port by natural sort (COM2, COM10, â€¦).
     /// </summary>
     /// <param name="preferredPort">Exact port name to use, e.g., <c>COM11</c>. Optional.</param>
     /// <returns>The selected COM port name, e.g., <c>COM3</c>.</returns>
@@ -206,7 +206,7 @@ public sealed class SerialPortTransport : ITransport
             Log.Warn($"Preferred port '{preferredPort}' not found.");
         }
 
-        // Try to find FTDI FT232R (VID_0403&PID_6001)
+        // Try to find FTDI FT232R (VID_0403&amp;PID_6001)
         string[] ftdiMatches = Array.Empty<string>();
         /* try
         {
@@ -219,7 +219,7 @@ public sealed class SerialPortTransport : ITransport
 
             ftdiMatches = ports
                 .Where(p => map.TryGetValue(p, out var pnp) &&
-                            pnp.IndexOf("VID_0403&PID_6001", StringComparison.OrdinalIgnoreCase) >= 0)
+                            pnp.IndexOf("VID_0403&amp;PID_6001", StringComparison.OrdinalIgnoreCase) >= 0)
                 .ToArray();
         }
         catch (Exception ex)
@@ -252,3 +252,4 @@ public sealed class SerialPortTransport : ITransport
     }
 
 }
+

@@ -25,12 +25,8 @@ public interface IModelParamsCore : IStimParamsCore
     /// Computes a pulse width from <paramref name="magnitude"/> using the active controller mode
     /// and stimulates the resolved channel. Updates cached per-channel PW and amp internally.
     /// </summary>
-    /// <param name="finger">
-    /// Finger name or channel alias, for example <c>"index"</c>, <c>"middle"</c>, or <c>"ch2"</c>.
-    /// </param>
-    /// <param name="magnitude">
-    /// Normalized input typically in [0..1]. Values are clamped before computation.
-    /// </param>
+    /// <param name="ch">1-based channel index.</param>
+    /// <param name="magnitude">Normalized input typically in [0..1]. Values are clamped.</param>
     /// <example>
     /// <code>
     /// model.StimWithMode("index", 0.42f);     // P/PD mapping → PW → StimulateAnalog

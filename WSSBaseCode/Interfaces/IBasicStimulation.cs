@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 /// <summary>
 /// Basic stimulation operations that upload or select waveforms and manage
@@ -35,9 +35,9 @@ public interface IBasicStimulation : IDisposable
     void UpdateWaveform(int[] waveform, int eventID, WssTarget wssTarget);
 
     /// <summary>
-    /// Loads a waveform JSON file (…WF.json), builds it, and enqueues an upload.
+    /// Loads a waveform JSON file (â€¦WF.json), builds it, and enqueues an upload.
     /// </summary>
-    /// <param name="fileName">File name or path; “WF.json” suffix is enforced.</param>
+    /// <param name="fileName">File name or path; â€œWF.jsonâ€ suffix is enforced.</param>
     /// <param name="eventID">Event slot to target.</param>
     void LoadWaveform(string fileName, int eventID);
 
@@ -75,10 +75,12 @@ public interface IBasicStimulation : IDisposable
     void Request_Configs(int command, int id, WssTarget wssTarget);
 
     /// <summary>
-    /// Updates inter-phase delay (IPD) for events 1–3 via setup commands (with replies).
+    /// Updates inter-phase delay (IPD) for events 1â€“3 via setup commands (with replies).
     /// If currently Streaming, the core pauses streaming, sends edits, and resumes when done.
     /// </summary>
-    /// <param name="IPD">Inter-phase delay in microseconds (clamped internally).</param>
-    /// <param name="targetWSS">Target device or Broadcast.</param>
-    public void UpdateIPD(int ipd, WssTarget wssTarget = WssTarget.Broadcast);
+    /// <param name="ipd">Inter-phase delay in microseconds (clamped internally).</param>
+    /// <param name="wssTarget">Target device or broadcast.</param>
+    void UpdateIPD(int ipd, WssTarget wssTarget = WssTarget.Broadcast);
 }
+
+

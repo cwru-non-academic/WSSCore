@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json.Linq;
@@ -43,7 +43,7 @@ public sealed class ModelConfigController
 
     /// <summary>
     /// Save the current in-memory model configuration to disk.
-    /// Uses <see cref="ModelConfig.Save"/>.
+    /// Uses <see cref="DictConfigBase.Save"/>.
     /// Call after any Set/Update to persist changes.
     /// </summary>
     /// <example>
@@ -176,7 +176,7 @@ public sealed class ModelConfigController
     // ---------- Calib helpers ----------
 
     /// <summary>
-    /// Get the model’s calibration mode from <c>"calib.mode"</c>. Throws if missing.
+    /// Get the modelâ€™s calibration mode from <c>"calib.mode"</c>. Throws if missing.
     /// </summary>
     /// <returns>Calibration mode string, e.g., <c>"midpoint"</c>, <c>"sweep"</c>.</returns>
     /// <example>
@@ -253,3 +253,4 @@ public sealed class ModelConfigController
         }
     }
 }
+
