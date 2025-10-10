@@ -125,6 +125,7 @@ public sealed class SerialPortTransport : ITransport
         if (data == null) throw new ArgumentNullException(nameof(data));
         if (!_port.IsOpen) throw new InvalidOperationException("Transport is not connected.");
 
+        //Log.Info("Out: "+BitConverter.ToString(data).Replace("-", " ").ToLowerInvariant());
         _port.Write(data, 0, data.Length);
         _port.BaseStream.Flush();
         return Task.CompletedTask;
