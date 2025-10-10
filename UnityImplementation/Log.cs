@@ -3,8 +3,15 @@ using Debug = UnityEngine.Debug;
 #endif
 using System;
 
+/// <summary>
+/// Minimal logging facade that writes to Unity's console when running inside
+/// Unity, and falls back to System.Console on non‑Unity environments.
+/// </summary>
 public static class Log
 {
+    /// <summary>
+    /// Logs an informational message.
+    /// </summary>
     public static void Info(string msg)
     {
 #if UNITY_2019_1_OR_NEWER
@@ -14,6 +21,9 @@ public static class Log
 #endif
     }
 
+    /// <summary>
+    /// Logs a warning message.
+    /// </summary>
     public static void Warn(string msg)
     {
 #if UNITY_2019_1_OR_NEWER
@@ -23,6 +33,11 @@ public static class Log
 #endif
     }
 
+    /// <summary>
+    /// Logs an error message, optionally including an exception's details.
+    /// </summary>
+    /// <param name="msg">Message to log.</param>
+    /// <param name="ex">Optional exception to append.</param>
     public static void Error(string msg, Exception ex = null)
     {
 #if UNITY_2019_1_OR_NEWER

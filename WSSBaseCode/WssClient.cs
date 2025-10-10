@@ -5,6 +5,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 
+/// <summary>
+/// Low-level WSS protocol client. Frames commands using an <see cref="IFrameCodec"/>,
+/// sends them over an <see cref="ITransport"/>, and correlates responses by
+/// <c>(target,msgId)</c>. Provides async connect/disconnect and a request/response
+/// pipeline used by higher-level cores and layers.
+/// </summary>
 public sealed class WssClient : IDisposable
 {
     private readonly ITransport _transport;

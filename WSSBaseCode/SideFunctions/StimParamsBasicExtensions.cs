@@ -1,6 +1,12 @@
 // StimParamsBasicExtensions.cs
 using System;
 
+/// <summary>
+/// Convenience extension methods over <see cref="IStimParamsCore"/> that forward
+/// to the optional BASIC layer (<see cref="IBasicStimulation"/>). These helpers
+/// make common operations (waveform upload, shape selection, save/load, requests)
+/// concise while preserving the core API surface.
+/// </summary>
 public static class StimParamsBasicExtensions
 {
     /// <summary>Forward to BASIC.UpdateWaveform(WaveformBuilder,...).</summary>

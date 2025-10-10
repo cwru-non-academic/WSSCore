@@ -109,65 +109,67 @@ public class Stimulation : MonoBehaviour
         WSS.StimulateAnalog(channel, PW, amp, IPI);
     }
 
-    /// <summary>Broadcasts start stimulation command to all connected WSS units.</summary>
+    /// <inheritdoc cref="IStimulationCore.StartStim(WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void StartStimulation() => WSS.StartStim(WssTarget.Broadcast);
 
-    /// <summary>Broadcasts stop stimulation command to all connected WSS units.</summary>
+    /// <inheritdoc cref="IStimulationCore.StopStim(WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void StopStimulation() => WSS.StopStim(WssTarget.Broadcast);
 
-    /// <summary>Saves the current device configuration to a specific WSS unit.</summary>
+    /// <inheritdoc cref="IBasicStimulation.Save(WssTarget)"/>
     public void Save(int targetWSS)
     {
         if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.Save(IntToWssTarget(targetWSS));
     }
 
-    /// <summary>Saves the current device configuration to all connected units.</summary>
+    /// <inheritdoc cref="IBasicStimulation.Save(WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void Save()
     {
         if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.Save(WssTarget.Broadcast);
     }
 
-    /// <summary>Loads a saved configuration from a specific WSS unit.</summary>
+    /// <inheritdoc cref="IBasicStimulation.Load(WssTarget)"/>
     public void load(int targetWSS)
     {
         if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.Load(IntToWssTarget(targetWSS));
     }
 
-    /// <summary>Loads configuration from all connected WSS units.</summary>
+    /// <inheritdoc cref="IBasicStimulation.Load(WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void load()
     {
         if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.Load(WssTarget.Broadcast);
     }
 
-    /// <summary>Requests configuration data from a specific WSS unit.</summary>
+    /// <inheritdoc cref="IBasicStimulation.Request_Configs(int,int,WssTarget)"/>
     public void request_Configs(int targetWSS, int command, int id)
     {
         if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.Request_Configs(command, id, IntToWssTarget(targetWSS));
     }
 
-    /// <summary>Uploads a waveform array for a given event ID to all units.</summary>
+    /// <inheritdoc cref="IBasicStimulation.UpdateWaveform(int[],int,WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void updateWaveform(int[] waveform, int eventID)
     {
         if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.UpdateWaveform(waveform, eventID, WssTarget.Broadcast);
     }
 
-    /// <summary>Uploads a waveform array to a specific WSS unit.</summary>
+    /// <inheritdoc cref="IBasicStimulation.UpdateWaveform(int[],int,WssTarget)"/>
     public void updateWaveform(int targetWSS, int[] waveform, int eventID)
     {
         if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
         basicWSS.UpdateWaveform(waveform, eventID, IntToWssTarget(targetWSS));
     }
 
-    /// <summary>
-    /// Selects predefined or custom waveform shapes for a given event ID.
-    /// Slots 0–10 are predefined, 11–13 are custom.
-    /// </summary>
+    /// <inheritdoc cref="IBasicStimulation.UpdateEventShape(int,int,int,WssTarget)"/>
     public void updateWaveform(int cathodicWaveform, int anodicWaveform, int eventID)
     {
         if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }
@@ -183,7 +185,8 @@ public class Stimulation : MonoBehaviour
         basicWSS.UpdateEventShape(cathodicWaveform, anodicWaveform, eventID, IntToWssTarget(targetWSS));
     }
 
-    /// <summary>Loads a waveform definition from JSON for all units.</summary>
+    /// <inheritdoc cref="IBasicStimulation.UpdateWaveform(WaveformBuilder,int,WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void updateWaveform(WaveformBuilder waveform, int eventID)
     {
         if (!basicSupported) { Log.Error("Basic stimulation not supported."); return; }

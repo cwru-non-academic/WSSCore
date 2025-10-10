@@ -1,5 +1,10 @@
 using Newtonsoft.Json.Linq;
 
+/// <summary>
+/// JSON-backed stimulation-parameters configuration. Inherits common JSON
+/// handling from <see cref="DictConfigBase"/> and seeds default per-channel
+/// values under the <c>stim.ch</c> hierarchy.
+/// </summary>
 public sealed class StimParamsConfig : DictConfigBase
 {
     public StimParamsConfig(string path)

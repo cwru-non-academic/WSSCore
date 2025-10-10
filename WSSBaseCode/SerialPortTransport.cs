@@ -58,29 +58,20 @@ public sealed class SerialPortTransport : ITransport
         _port = new SerialPort(GetComPort(), baud, parity, dataBits, stopBits) { ReadTimeout = readTimeoutMs };
     }
 
-    /// <summary>
-    /// Gets whether the underlying serial port is currently open.
-    /// </summary>
+    /// <inheritdoc/>
     public bool IsConnected => _port.IsOpen;
 
-    /// <summary>
-    /// Raised when raw bytes are received from the serial port.
-    /// Each invocation may contain any number of bytes and may include partial or multiple protocol frames.
-    /// </summary>
+    /// <inheritdoc/>
     /// <remarks>
     /// This event is typically raised on a background thread by the internal read loop.
     /// Consumers should copy the buffer if it needs to be retained beyond the callback.
     /// </remarks>
     public event Action<byte[]> BytesReceived;
 
-    /// <summary>
+    /// <inheritdoc/>
+    /// <remarks>
     /// Opens the serial port and starts a background read loop that forwards incoming data to <see cref="BytesReceived"/>.
-    /// </summary>
-    /// <param name="ct">Optional cancellation token to abort the connect/start operation.</param>
-    /// <returns>A completed task once the port is open and the read loop has been scheduled.</returns>
-    /// <exception cref="UnauthorizedAccessException">Access to the port is denied.</exception>
-    /// <exception cref="IOException">The specified port could not be found or opened.</exception>
-    /// <exception cref="OperationCanceledException">If <paramref name="ct"/> is canceled before opening.</exception>
+    /// </remarks>
     public Task ConnectAsync(CancellationToken ct = default)
     {
         _port.Open();
@@ -89,11 +80,10 @@ public sealed class SerialPortTransport : ITransport
         return Task.CompletedTask;
     }
 
-    /// <summary>
+    /// <inheritdoc/>
+    /// <remarks>
     /// Stops the background read loop and closes the serial port.
-    /// </summary>
-    /// <param name="ct">Optional cancellation token to abort a long-running disconnect.</param>
-    /// <returns>A task that completes after the read loop has exited and the port is closed.</returns>
+    /// </remarks>
     public async Task DisconnectAsync(CancellationToken ct = default)
     {
         try
@@ -110,16 +100,10 @@ public sealed class SerialPortTransport : ITransport
         if (_port.IsOpen) _port.Close();
     }
 
-    /// <summary>
-    /// Sends the specified bytes over the serial port.
-    /// </summary>
-    /// <param name="data">Data to write. The buffer is written synchronously to the port.</param>
-    /// <param name="ct">
-    /// Optional cancellation token. For synchronous serial writes, cancellation is only observed before the write begins.
-    /// </param>
-    /// <returns>A completed task once the bytes are written and the base stream is flushed.</returns>
-    /// <exception cref="InvalidOperationException">Thrown if the port is not open.</exception>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="data"/> is null.</exception>
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Writes the buffer synchronously to the underlying <see cref="SerialPort"/> and flushes the base stream.
+    /// </remarks>
     public Task SendAsync(byte[] data, CancellationToken ct = default)
     {
         if (data == null) throw new ArgumentNullException(nameof(data));

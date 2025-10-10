@@ -108,62 +108,61 @@ public class Stimulationbasic : MonoBehaviour
         WSS.StimulateAnalog(channel, PW, amp, IPI);
     }
 
-    /// <summary>Broadcasts start stimulation command to all connected WSS units.</summary>
+    /// <inheritdoc cref="IStimulationCore.StartStim(WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void StartStimulation() => WSS.StartStim(WssTarget.Broadcast);
 
-    /// <summary>Broadcasts stop stimulation command to all connected WSS units.</summary>
+    /// <inheritdoc cref="IStimulationCore.StopStim(WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void StopStimulation() => WSS.StopStim(WssTarget.Broadcast);
 
-    /// <summary>Saves current settings to a specific WSS unit.</summary>
+    /// <inheritdoc cref="IBasicStimulation.Save(WssTarget)"/>
     public void Save(int targetWSS) => basicWSS.Save(IntToWssTarget(targetWSS));
 
-    /// <summary>Saves current settings to all WSS units.</summary>
+    /// <inheritdoc cref="IBasicStimulation.Save(WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void Save() => basicWSS.Save(WssTarget.Broadcast);
 
-    /// <summary>Loads saved configuration on a specific WSS unit.</summary>
+    /// <inheritdoc cref="IBasicStimulation.Load(WssTarget)"/>
     public void load(int targetWSS) => basicWSS.Load(IntToWssTarget(targetWSS));
 
-    /// <summary>Loads saved configuration on all WSS units.</summary>
+    /// <inheritdoc cref="IBasicStimulation.Load(WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void load() => basicWSS.Load(WssTarget.Broadcast);
 
-    /// <summary>
-    /// Requests configuration data from a specific WSS unit.
-    /// </summary>
+    /// <inheritdoc cref="IBasicStimulation.Request_Configs(int,int,WssTarget)"/>
     public void request_Configs(int targetWSS, int command, int id)
         => basicWSS.Request_Configs(command, id, IntToWssTarget(targetWSS));
 
-    /// <summary>
-    /// Updates the waveform parameters for a specific event across all units.
-    /// </summary>
+    /// <inheritdoc cref="IBasicStimulation.UpdateWaveform(int[],int,WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void updateWaveform(int[] waveform, int eventID)
         => basicWSS.UpdateWaveform(waveform, eventID, WssTarget.Broadcast);
 
     public void updateWaveform(int targetWSS, int[] waveform, int eventID)
         => basicWSS.UpdateWaveform(waveform, eventID, IntToWssTarget(targetWSS));
 
-    /// <summary>
-    /// Selects a predefined or custom waveform shape from device memory.
-    /// </summary>
+    /// <inheritdoc cref="IBasicStimulation.UpdateEventShape(int,int,int,WssTarget)"/>
     public void updateWaveform(int cathodicWaveform, int anodicWaveform, int eventID)
         => basicWSS.UpdateEventShape(cathodicWaveform, anodicWaveform, eventID, WssTarget.Broadcast);
 
     public void updateWaveform(int targetWSS, int cathodicWaveform, int anodicWaveform, int eventID)
         => basicWSS.UpdateEventShape(cathodicWaveform, anodicWaveform, eventID, IntToWssTarget(targetWSS));
 
-    /// <summary>
-    /// Updates waveform using JSON-loaded builder definition.
-    /// </summary>
+    /// <inheritdoc cref="IBasicStimulation.UpdateWaveform(WaveformBuilder,int,WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void updateWaveform(WaveformBuilder waveform, int eventID)
         => basicWSS.UpdateWaveform(waveform, eventID, WssTarget.Broadcast);
 
     public void updateWaveform(int targetWSS, WaveformBuilder waveform, int eventID)
         => basicWSS.UpdateWaveform(waveform, eventID, IntToWssTarget(targetWSS));
 
-    /// <summary>Loads waveform from external file.</summary>
+    /// <inheritdoc cref="IBasicStimulation.LoadWaveform(string,int)"/>
     public void loadWaveform(string fileName, int eventID)
         => basicWSS.LoadWaveform(fileName, eventID);
 
-    /// <summary>Defines a custom waveform for the specified event slot.</summary>
+    /// <inheritdoc cref="IBasicStimulation.WaveformSetup(WaveformBuilder,int,WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
     public void WaveformSetup(WaveformBuilder wave, int eventID)
         => basicWSS.WaveformSetup(wave, eventID, WssTarget.Broadcast);
 
