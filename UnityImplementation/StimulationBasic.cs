@@ -169,6 +169,15 @@ public class Stimulationbasic : MonoBehaviour
     public void WaveformSetup(int targetWSS, WaveformBuilder wave, int eventID)
         => basicWSS.WaveformSetup(wave, eventID, IntToWssTarget(targetWSS));
 
+    /// <inheritdoc cref="IBasicStimulation.UpdateIPD(int,int,WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
+    public void UpdateIPD(int ipd, int eventID)
+        => basicWSS.UpdateIPD(ipd, eventID, WssTarget.Broadcast);
+
+    /// <inheritdoc cref="IBasicStimulation.UpdateIPD(int,int,WssTarget)"/>
+    public void UpdateIPD(int targetWSS, int ipd, int eventID)
+        => basicWSS.UpdateIPD(ipd, eventID, IntToWssTarget(targetWSS));
+
     #endregion
 
     #region ==== Getters ====

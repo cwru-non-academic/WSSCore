@@ -75,12 +75,21 @@ public interface IBasicStimulation : IDisposable
     void Request_Configs(int command, int id, WssTarget wssTarget);
 
     /// <summary>
-    /// Updates inter-phase delay (IPD) for events 1â€“3 via setup commands (with replies).
+    /// Updates inter-phase delay (IPD) for events 1–3 via setup commands (with replies).
     /// If currently Streaming, the core pauses streaming, sends edits, and resumes when done.
     /// </summary>
     /// <param name="ipd">Inter-phase delay in microseconds (clamped internally).</param>
     /// <param name="wssTarget">Target device or broadcast.</param>
     void UpdateIPD(int ipd, WssTarget wssTarget = WssTarget.Broadcast);
+
+    /// <summary>
+    /// Updates inter-phase delay (IPD) for a specific <paramref name="eventID"/> via setup commands (with replies).
+    /// If currently Streaming, the core pauses streaming, sends the edit, and resumes when done.
+    /// </summary>
+    /// <param name="ipd">Inter-phase delay in microseconds (clamped internally).</param>
+    /// <param name="eventID">Event slot to target.</param>
+    /// <param name="wssTarget">Target device or broadcast.</param>
+    void UpdateIPD(int ipd, int eventID, WssTarget wssTarget = WssTarget.Broadcast);
 }
 
 

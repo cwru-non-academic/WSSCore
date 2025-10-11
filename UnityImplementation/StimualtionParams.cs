@@ -250,6 +250,21 @@ public class StimulationParams : MonoBehaviour
         basicWSS.WaveformSetup(wave, eventID, IntToWssTarget(targetWSS));
     }
 
+    /// <inheritdoc cref="IBasicStimulation.UpdateIPD(int,int,WssTarget)"/>
+    /// <remarks>Broadcasts to all connected WSS units.</remarks>
+    public void UpdateIPD(int ipd, int eventID)
+    {
+        if (!basicSupported) { Log.Error("Basic stimulation not supported on this Stimulator."); return; }
+        basicWSS.UpdateIPD(ipd, eventID, WssTarget.Broadcast);
+    }
+
+    /// <inheritdoc cref="IBasicStimulation.UpdateIPD(int,int,WssTarget)"/>
+    public void UpdateIPD(int targetWSS, int ipd, int eventID)
+    {
+        if (!basicSupported) { Log.Error("Basic stimulation not supported on this Stimulator."); return; }
+        basicWSS.UpdateIPD(ipd, eventID, IntToWssTarget(targetWSS));
+    }
+
     #endregion
 
     #region ==== Stimulation methods: params layer (finger APIs) ====
