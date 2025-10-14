@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- Multi-target for desktop/Python (net48) and Unity (netstandard2.1) -->
-    <TargetFrameworks>net48;netstandard2.1</TargetFrameworks>
+    <!-- Target only .NET Framework 4.8 (Unity-compatible) -->
+    <TargetFramework>net48</TargetFramework>
     <LangVersion>latest</LangVersion>
     <AssemblyName>WSS_Core_Interface</AssemblyName>
     <RootNamespace>WSS_Core_Interface</RootNamespace>
@@ -15,8 +15,8 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <!-- Span/ReadOnlySpan support when using newer C# features on .NET Framework -->
     <PackageReference Include="System.Memory" Version="4.5.5" />
-    <!-- Cross-platform serial port stream (works under IL2CPP/Unity) -->
-    <PackageReference Include="RJCP.SerialPortStream" Version="2.5.1" />
   </ItemGroup>
+
+  <!-- No extra serial package needed: net48 includes System.IO.Ports in-box -->
 
 </Project>

@@ -34,3 +34,24 @@ A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\netstandard2.1\de\RJCP.
 A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\netstandard2.1\WSS_Core_Interface.csproj.CopyComplete
 A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\netstandard2.1\WSS_Core_Interface.dll
 A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\netstandard2.1\WSS_Core_Interface.pdb
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\netstandard2.1\WSS_Core_Interface.csproj.AssemblyReference.cache
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\netstandard2.1\WSS_Core_Interface.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\netstandard2.1\WSS_Core_Interface.AssemblyInfoInputs.cache
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\netstandard2.1\WSS_Core_Interface.AssemblyInfo.cs
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\netstandard2.1\WSS_Core_Interface.csproj.CoreCompileInputs.cache
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\netstandard2.1\WSS_Core_Interface.sourcelink.json
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\netstandard2.1\WSS_Core_Interface.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\netstandard2.1\WSS_Core_Interface.pdb
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\WSS_Core_Interface.deps.json
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\WSS_Core_Interface.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\WSS_Core_Interface.pdb
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\Microsoft.Win32.Registry.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\Newtonsoft.Json.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\System.Buffers.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\System.IO.Ports.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\System.Memory.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\System.Numerics.Vectors.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\System.Runtime.CompilerServices.Unsafe.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\System.Security.AccessControl.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\netstandard2.1\System.Security.Principal.Windows.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\netstandard2.1\WSS_Core_Interface.csproj.CopyComplete

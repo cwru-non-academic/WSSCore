@@ -1,7 +1,5 @@
 ﻿using System;
-using RJCP.IO.Ports;
-using Parity = RJCP.IO.Ports.Parity;
-using StopBits = RJCP.IO.Ports.StopBits;
+using System.IO.Ports;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
@@ -20,7 +18,7 @@ using System.Linq;
 /// </remarks>
 public sealed class SerialPortTransport : ITransport
 {
-    private readonly SerialPortStream _port;
+    private readonly SerialPort _port;
     private CancellationTokenSource _cts;
     private Task _readLoop;
 
@@ -39,11 +37,7 @@ public sealed class SerialPortTransport : ITransport
     public SerialPortTransport(string portName, int baud = 115200, Parity parity = Parity.None,
                                int dataBits = 8, StopBits stopBits = StopBits.One, int readTimeoutMs = 10)
     {
-        _port = new SerialPortStream(portName, baud, dataBits, parity, stopBits)
-        {
-            ReadTimeout = readTimeoutMs,
-            WriteTimeout = 1000
-        };
+        _port = new SerialPort(portName, baud, parity, dataBits, stopBits) { ReadTimeout = readTimeoutMs };
     }
 
     /// <summary>
@@ -60,11 +54,7 @@ public sealed class SerialPortTransport : ITransport
     public SerialPortTransport(int baud = 115200, Parity parity = Parity.None,
                                int dataBits = 8, StopBits stopBits = StopBits.One, int readTimeoutMs = 10)
     {
-        _port = new SerialPortStream(GetComPort(), baud, dataBits, parity, stopBits)
-        {
-            ReadTimeout = readTimeoutMs,
-            WriteTimeout = 1000
-        };
+        _port = new SerialPort(GetComPort(), baud, parity, dataBits, stopBits) { ReadTimeout = readTimeoutMs };
     }
 
     /// <inheritdoc/>
@@ -120,7 +110,7 @@ public sealed class SerialPortTransport : ITransport
 
         //Log.Info("Out: "+BitConverter.ToString(data).Replace("-", " ").ToLowerInvariant());
         _port.Write(data, 0, data.Length);
-        _port.Flush();
+        _port.BaseStream.Flush();
         return Task.CompletedTask;
     }
 
@@ -189,11 +179,9 @@ public sealed class SerialPortTransport : ITransport
     /// add the <c>System.Management</c> package. If the VID/PID probe fails, the method
     /// falls back to the lowest COM by natural sort.
     /// </remarks>
-    private string GetComPort(string preferredPort = null)
+    private static string GetComPort(string preferredPort = null)
     {
-        string[] ports;
-        try { using (var tmp = new SerialPortStream()) { ports = tmp.GetPortNames(); } }
-        catch { ports = Array.Empty<string>(); }
+        var ports = SerialPort.GetPortNames();
         if (ports.Length == 0)
             throw new InvalidOperationException("No serial ports found.");
 
@@ -219,24 +207,7 @@ public sealed class SerialPortTransport : ITransport
 
         // Try to find FTDI FT232R (VID_0403&amp;PID_6001)
         string[] ftdiMatches = Array.Empty<string>();
-        /* try
-        {
-            using var searcher = new ManagementObjectSearcher("SELECT DeviceID,PNPDeviceID FROM Win32_SerialPort");
-            var map = searcher.Get()
-                .OfType<ManagementObject>()
-                .Select(mo => (Dev: (string)mo["DeviceID"], Pnp: (string)mo["PNPDeviceID"]))
-                .Where(t => !string.IsNullOrEmpty(t.Dev) && !string.IsNullOrEmpty(t.Pnp))
-                .ToDictionary(t => t.Dev, t => t.Pnp, StringComparer.OrdinalIgnoreCase);
-
-            ftdiMatches = ports
-                .Where(p => map.TryGetValue(p, out var pnp) &&
-                            pnp.IndexOf("VID_0403&amp;PID_6001", StringComparison.OrdinalIgnoreCase) >= 0)
-                .ToArray();
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"WMI probe failed: {ex.Message}. Skipping VID/PID filter.");
-        } */
+        //currently not implemented as cors platform with unity makes it complicated.
 
         if (ftdiMatches.Length == 1)
         {

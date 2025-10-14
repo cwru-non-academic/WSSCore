@@ -1,26 +1,24 @@
 {
   "format": 1,
   "restore": {
-    "A:\\Documents\\GIT Projects\\WSS_Core_Interface\\WSS_Core_Interface.csproj": {}
+    "C:\\Users\\lemfn\\Documents\\GitHub\\WSSCoreInterface\\WSS_Core_Interface.csproj": {}
   },
   "projects": {
-    "A:\\Documents\\GIT Projects\\WSS_Core_Interface\\WSS_Core_Interface.csproj": {
+    "C:\\Users\\lemfn\\Documents\\GitHub\\WSSCoreInterface\\WSS_Core_Interface.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "A:\\Documents\\GIT Projects\\WSS_Core_Interface\\WSS_Core_Interface.csproj",
+        "projectUniqueName": "C:\\Users\\lemfn\\Documents\\GitHub\\WSSCoreInterface\\WSS_Core_Interface.csproj",
         "projectName": "WSS_Core_Interface",
-        "projectPath": "A:\\Documents\\GIT Projects\\WSS_Core_Interface\\WSS_Core_Interface.csproj",
-        "packagesPath": "C:\\Users\\Luis.DESKTOP-B151VCV\\.nuget\\packages\\",
-        "outputPath": "A:\\Documents\\GIT Projects\\WSS_Core_Interface\\obj\\",
+        "projectPath": "C:\\Users\\lemfn\\Documents\\GitHub\\WSSCoreInterface\\WSS_Core_Interface.csproj",
+        "packagesPath": "C:\\Users\\lemfn\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\lemfn\\Documents\\GitHub\\WSSCoreInterface\\obj\\",
         "projectStyle": "PackageReference",
-        "crossTargeting": true,
         "configFilePaths": [
-          "C:\\Users\\Luis.DESKTOP-B151VCV\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\lemfn\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
-          "net48",
-          "netstandard2.1"
+          "net48"
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
@@ -29,10 +27,6 @@
         "frameworks": {
           "net48": {
             "targetAlias": "net48",
-            "projectReferences": {}
-          },
-          "netstandard2.1": {
-            "targetAlias": "netstandard2.1",
             "projectReferences": {}
           }
         },
@@ -50,47 +44,9 @@
               "target": "Package",
               "version": "[13.0.3, )"
             },
-            "RJCP.SerialPortStream": {
-              "target": "Package",
-              "version": "[2.5.1, )"
-            },
             "System.Memory": {
               "target": "Package",
               "version": "[4.5.5, )"
-            }
-          },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.101\\RuntimeIdentifierGraph.json"
-        },
-        "netstandard2.1": {
-          "targetAlias": "netstandard2.1",
-          "dependencies": {
-            "Newtonsoft.Json": {
-              "target": "Package",
-              "version": "[13.0.3, )"
-            },
-            "RJCP.SerialPortStream": {
-              "target": "Package",
-              "version": "[2.5.1, )"
-            },
-            "System.Memory": {
-              "target": "Package",
-              "version": "[4.5.5, )"
-            }
-          },
-          "imports": [
-            "net461",
-            "net462",
-            "net47",
-            "net471",
-            "net472",
-            "net48",
-            "net481"
-          ],
-          "assetTargetFallback": true,
-          "warn": true,
-          "frameworkReferences": {
-            "NETStandard.Library": {
-              "privateAssets": "all"
             }
           },
           "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.101\\RuntimeIdentifierGraph.json"

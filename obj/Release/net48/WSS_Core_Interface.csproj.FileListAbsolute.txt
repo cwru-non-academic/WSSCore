@@ -20,3 +20,19 @@ A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\RJCP.IO.Buffer.dl
 A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\RJCP.IO.Device.dll
 A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\RJCP.SerialPortStream.dll
 A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\de\RJCP.Core.Environment.resources.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\WSS_Core_Interface.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\WSS_Core_Interface.pdb
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\Newtonsoft.Json.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\System.Buffers.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\System.Memory.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\System.Numerics.Vectors.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\System.Runtime.CompilerServices.Unsafe.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.csproj.AssemblyReference.cache
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.AssemblyInfoInputs.cache
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.AssemblyInfo.cs
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.csproj.CoreCompileInputs.cache
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.sourcelink.json
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.csproj.CopyComplete
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.dll
+C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.pdb
