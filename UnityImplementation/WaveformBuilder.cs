@@ -40,7 +40,9 @@ public class WaveformBuilder
     {
         float rechargeHeight = area *maxAmp;
         int[] anodicWaveform = new int[shapeSize];
-        Array.Fill(anodicWaveform, (int)rechargeHeight);
+        // Array.Fill is not available on older targets; manual fill
+        int v = (int)rechargeHeight;
+        for (int i = 0; i < anodicWaveform.Length; i++) anodicWaveform[i] = v;
         return anodicWaveform;
     }
 

@@ -1,0 +1,11 @@
+A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\netstandard2.0\WSS_Core_Interface.csproj.AssemblyReference.cache
+A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\netstandard2.0\WSS_Core_Interface.GeneratedMSBuildEditorConfig.editorconfig
+A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\netstandard2.0\WSS_Core_Interface.AssemblyInfoInputs.cache
+A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\netstandard2.0\WSS_Core_Interface.AssemblyInfo.cs
+A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\netstandard2.0\WSS_Core_Interface.csproj.CoreCompileInputs.cache
+A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\netstandard2.0\WSS_Core_Interface.sourcelink.json
+A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\netstandard2.0\WSS_Core_Interface.deps.json
+A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\netstandard2.0\WSS_Core_Interface.dll
+A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\netstandard2.0\WSS_Core_Interface.pdb
+A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\netstandard2.0\WSS_Core_Interface.dll
+A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\netstandard2.0\WSS_Core_Interface.pdb

@@ -1,5 +1,0 @@
-/home/schramfield/HFI_WSS_Interface/HFI_WSS_Interface_Class_Library/obj/Debug/net8.0/HFI_WSS_Interface_Class_Library.GeneratedMSBuildEditorConfig.editorconfig
-/home/schramfield/HFI_WSS_Interface/HFI_WSS_Interface_Class_Library/obj/Debug/net8.0/HFI_WSS_Interface_Class_Library.AssemblyInfoInputs.cache
-/home/schramfield/HFI_WSS_Interface/HFI_WSS_Interface_Class_Library/obj/Debug/net8.0/HFI_WSS_Interface_Class_Library.AssemblyInfo.cs
-/home/schramfield/HFI_WSS_Interface/HFI_WSS_Interface_Class_Library/obj/Debug/net8.0/HFI_WSS_Interface_Class_Library.csproj.CoreCompileInputs.cache
-/home/schramfield/HFI_WSS_Interface/HFI_WSS_Interface_Class_Library/obj/Debug/net8.0/HFI_WSS_Interface_Class_Library.sourcelink.json
