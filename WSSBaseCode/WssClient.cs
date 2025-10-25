@@ -18,8 +18,14 @@ public sealed class WssClient : IDisposable
     private readonly byte _sender;
     private readonly WSSVersionHandler _versionHandler;
 
+    private byte[] wssConfigArray; 
+
     private readonly ConcurrentDictionary<(byte target, byte msgId), ConcurrentQueue<TaskCompletionSource<byte[]>>> _pending
         = new ConcurrentDictionary<(byte target, byte msgId), ConcurrentQueue<TaskCompletionSource<byte[]>>>();
+
+    // Stores last ModuleQuery data-only bytes per device target
+    private readonly ConcurrentDictionary<WssTarget, byte[]> _moduleQueryData
+        = new ConcurrentDictionary<WssTarget, byte[]>();
 
     /// <summary>
     /// Indicates whether the WSS client connection has been started.
@@ -234,13 +240,48 @@ public sealed class WssClient : IDisposable
                 };
                 return $"Error: {text} in Command: {cmd:x}";
             case (byte)WSSMessageIDs.ModuleQuery:
-                break;
+                // Cache data-only slice for this sender (device). Payload is [msgId][len][data...]
+                try
+                {
+                    var senderAddr = frame[0];
+                    var target = (WssTarget)senderAddr;
+                    int declaredLen = frame[3];
+                    int available = Math.Max(0, frame.Length - 4);
+                    int dataLen = Math.Min(declaredLen, available);
+                    var data = dataLen > 0 ? new byte[dataLen] : Array.Empty<byte>();
+                    if (dataLen > 0)
+                        Buffer.BlockCopy(frame, 4, data, 0, dataLen);
+                    _moduleQueryData[target] = data;
+                }
+                catch
+                {
+                    // non-fatal: still return reply text
+                }
+                return "Querry: " + BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant();
             case (byte)WSSMessageIDs.StimulationSwitch:
                 if (frame[4] == 0x01) { Started = true; return "Start Acknowledged"; }
                 else if (frame[4] == 0x00) { Started = false; return "Stop Acknowledged"; }
                 return $"Unexpected data {frame[4]} in reply for cmd {WSSMessageIDs.StimulationSwitch}";
         }
         return BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Gets the last cached ModuleQuery data (data-only slice) for a target, if present.
+    /// </summary>
+    /// <param name="target">Target device that produced the ModuleQuery reply.</param>
+    /// <param name="data">The cached data bytes (snapshot reference).</param>
+    /// <returns>True if cached data exists; otherwise false.</returns>
+    public bool TryGetModuleQueryData(WssTarget target, out byte[] data)
+        => _moduleQueryData.TryGetValue(target, out data);
+
+    /// <summary>
+    /// Indicates whether ModuleQuery is available in this firmware (version J or later).
+    /// </summary>
+    public bool IsModuleQueryAvailable()
+    {
+        try { return _versionHandler.GetVersion() >= WSSVersionHandler.SupportedVersions.J03; }
+        catch { return false; }
     }
 
     /// <summary>
@@ -251,6 +292,7 @@ public sealed class WssClient : IDisposable
     {
         _transport.BytesReceived -= OnBytes;
         _transport.Dispose();
+        _moduleQueryData.Clear();
     }
 
     // Helper used to extract a byte from an int, ensuring it's within 0-255 range.
@@ -337,11 +379,37 @@ public sealed class WssClient : IDisposable
     }
 
     /// <summary>
-    /// Gets settings or information for that target WSS (0x01): 0=serial number, 1=settings array.
+    /// Gets settings or information for the target WSS (opcode 0x01).
+    /// Version-gated: on firmware that supports ModuleQuery (version J+), this sends the
+    /// command and the reply is cached as data-only bytes per target. On older firmware,
+    /// no command is sent; for index 1 (settings array) a default 16-byte payload is
+    /// seeded in the cache so higher layers can decode default unit settings.
     /// </summary>
-    /// <param name="moduleIndex">serial number(0), settings array(1).</param>
+    /// <param name="moduleIndex">0 = serial number, 1 = settings array.</param>
+    /// <remarks>
+    /// - When supported (J+): this method transmits the request and, upon reply, ProcessFrame
+    ///   caches the data-only slice under the sender's target address. Use
+    ///   <see cref="TryGetModuleQueryData(WssTarget, out byte[])"/> to retrieve the last snapshot.
+    /// - When not supported: this method does not transmit. For <c>moduleIndex == 1</c>, it seeds
+    ///   a default 16-byte zero array into the per-target cache, allowing the core to decode a
+    ///   default profile. The returned string indicates that defaults are being used.
+    /// </remarks>
+    /// <returns>
+    /// A human-readable string summary. Cache side-effects are described above.
+    /// </returns>
     public Task<string> ModuleQuery(int moduleIndex, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
     {
+        // Gate by firmware support: if unsupported, avoid sending an invalid command
+        if (_versionHandler == null || !_versionHandler.IsModuleQueryAvailable())
+        {
+            // For settings array (index 1), seed a default 16-byte data-only payload (zeros)
+            // so core decoders can construct a default (e.g., 72mA) profile.
+            if (moduleIndex == 1)
+            {
+                try { _moduleQueryData[target] = new byte[16]; } catch { }
+            }
+            return Task.FromResult("Querry: module query not supported on this firmware; using defaults");
+        }
         // Validate and convert ints into bytes
         var b1 = ToByteValidated(moduleIndex, (int)WSSLimits.moduleIndex, nameof(moduleIndex));
 
@@ -436,8 +504,8 @@ public sealed class WssClient : IDisposable
 
         // Reverse order so index 0 (closest to switch) becomes index 3 internally
         // made so the order matches other methods in which array index 0 is closest to the switch
-        var stimReversed = stimSetup.Reverse().ToArray();
-        var rechargeReversed = rechargeSetup.Reverse().ToArray();
+        var stimReversed     = System.Linq.Enumerable.Reverse(stimSetup).ToArray();
+        var rechargeReversed = System.Linq.Enumerable.Reverse(rechargeSetup).ToArray(); 
 
         // Encode stim and recharge setups into single bytes (bit-packed 2 bits per output)
         byte stimByte = EncodeContactSetup(stimReversed);

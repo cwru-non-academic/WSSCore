@@ -123,6 +123,22 @@ public sealed class CoreConfigController : ICoreConfig
     }
 
     /// <summary>
+    /// When true, the core should use per-WSS amplitude curves from the config file.
+    /// </summary>
+    public bool UseConfigAmpCurves
+    {
+        get { lock (_sync) return _config.useConfigAmpCurves; }
+    }
+
+    /// <summary>
+    /// Returns the configured amplitude curve parameters per WSS (index 0..2 maps to Wss1..Wss3).
+    /// </summary>
+    public AmpCurveParams[] AmpCurves
+    {
+        get { lock (_sync) return _config.ampCurves; }
+    }
+
+    /// <summary>
     /// Updates the maximum number of supported WSS devices in the loaded configuration
     /// and immediately persists the change to disk. Thread safe.
     /// </summary>

@@ -29,6 +29,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     private int _currentSetupTries;
     private readonly Dictionary<WssTarget, int> _cursor = new Dictionary<WssTarget, int>(); // per-target step index
     private readonly Dictionary<WssTarget, List<Func<Task<string>>>> _steps = new Dictionary<WssTarget, List<Func<Task<string>>>>();
+    private readonly Dictionary<WssTarget, ModuleSettings> _unitSettings = new Dictionary<WssTarget, ModuleSettings>();
     private int _maxWSS = 1;
     private readonly SemaphoreSlim _setupGate = new(1, 1);
 
@@ -89,6 +90,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         // (re)load app config
         _coreConfig.LoadJson();
         _maxWSS = _coreConfig.MaxWss;
+        _unitSettings.Clear();
 
         InitStimArrays();
 
@@ -390,13 +392,24 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
             _steps[t].AddRange(new Func<Task<string>>[]
             {
                 () => StepLogger(_wss.Clear(0, t), $"Clear[{t}]"),
-
+                //querry settings.
+                () => StepLogger(_wss.ModuleQuery(1, t), $"QuerryCurrent[{t}]"),
+                // capture decoded unit settings if available (client seeds defaults when unsupported)
+                () => {
+                    if (TryGetModuleSettings(t, out var s) && s != null)
+                    {
+                        _unitSettings[t] = s;
+                        var src = s.ProbeSupported ? "probe" : "default";
+                        return Task.FromResult($"UnitSettings[{t}]: {src} {s.AmpCurveKey}");
+                    }
+                    return Task.FromResult($"UnitSettings[{t}]: not available");
+                },
                 // Schedule 1 (Ch1)
                 () => StepLogger(_wss.CreateSchedule(1, _defaultIPI, _defaultSync, t), $"CreateSchedule#1[{t}]"), //TODO frequewncy from config
                 () => StepLogger(_wss.CreateContactConfig(1, new[]{1,2,0,0}, new[]{2,1,0,0}, 2, t), $"CreateContactConfig#1[{t}]"),
                 () => StepLogger(_wss.CreateEvent(1, 0, 1, 0, 0,
-                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
-                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
+                        new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
+                        new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
                         new[]{0,0,_defaultIPD}, t), $"CreateEvent#1[{t}]"),
                 () => StepLogger(_wss.EditEventRatio(1, _defaultRatio, t), $"EditEventRatio#1[{t}]"),
                 () => StepLogger(_wss.AddEventToSchedule(1, 1, t), $"AddEventToSchedule#1[{t}]"),
@@ -405,8 +418,8 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                 () => StepLogger(_wss.CreateSchedule(2, _defaultIPI, _defaultSync, t), $"CreateSchedule#2[{t}]"),
                 () => StepLogger(_wss.CreateContactConfig(2, new[]{1,0,2,0}, new[]{2,0,1,0}, 4, t), $"CreateContactConfig#2[{t}]"),
                 () => StepLogger(_wss.CreateEvent(2, 2, 2, 0, 0,
-                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
-                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
+                        new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
+                        new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
                         new[]{0,0,_defaultIPD}, t), $"CreateEvent#2[{t}]"),
                 () => StepLogger(_wss.EditEventRatio(2, _defaultRatio, t), $"EditEventRatio#2[{t}]"),
                 () => StepLogger(_wss.AddEventToSchedule(2, 2, t), $"AddEventToSchedule#2[{t}]"),
@@ -415,8 +428,8 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                 () => StepLogger(_wss.CreateSchedule(3, _defaultIPI, _defaultSync, t), $"CreateSchedule#3[{t}]"),
                 () => StepLogger(_wss.CreateContactConfig(3, new[]{1,0,0,2}, new[]{2,0,0,1}, 8, t), $"CreateContactConfig#3[{t}]"),
                 () => StepLogger(_wss.CreateEvent(3, 4, 3, 0, 0,
-                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
-                        new[]{AmpTo255Convention(_defaultAmp),AmpTo255Convention(_defaultAmp),0,0},
+                        new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
+                        new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
                         new[]{0,0,_defaultIPD}, t), $"CreateEvent#3[{t}]"),
                 () => StepLogger(_wss.EditEventRatio(3, _defaultRatio, t), $"EditEventRatio#3[{t}]"),
                 () => StepLogger(_wss.AddEventToSchedule(3, 3, t), $"AddEventToSchedule#3[{t}]"),
@@ -490,10 +503,11 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                     int wIdx    = w - 1;
                     int baseIdx = wIdx * 3;
 
+                    var target = IntToWssTarget(w);
                     var amps = new[] {
-                        AmpTo255Convention(_chAmps[baseIdx + 0]),
-                        AmpTo255Convention(_chAmps[baseIdx + 1]),
-                        AmpTo255Convention(_chAmps[baseIdx + 2])
+                        AmpTo255Convention(_chAmps[baseIdx + 0], target),
+                        AmpTo255Convention(_chAmps[baseIdx + 1], target),
+                        AmpTo255Convention(_chAmps[baseIdx + 2], target)
                     };
                     var pws = new[] {
                         _chPWs[baseIdx + 0],
@@ -517,7 +531,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                     if (anyChanged)
                     {
                         // Send one WSS-level IPI update (array API). This is the only time we send.
-                        _ = _wss.StreamChange(amps, pws, desiredIpis, IntToWssTarget(w));
+                        _ = _wss.StreamChange(amps, pws, desiredIpis, target);
 
                         // Update per-channel last-sent memory and start per-WSS cooldown
                         _lastIpiSentPerCh[baseIdx + 0] = desiredIpis[0];
@@ -527,7 +541,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                     else
                     {
                         // Do not send any IPI during cooldown or if nothing changed
-                        _ = _wss.StreamChange(amps, pws, null, IntToWssTarget(w));
+                        _ = _wss.StreamChange(amps, pws, null, target);
                     }
 
                     await Task.Delay(_delayMsBetweenPackets, tk);
@@ -665,26 +679,97 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
 
         for (int i = 0; i < _maxWSSChannels; i++)
         {
-            _chAmps[i] = AmpTo255Convention(_defaultAmp);
+            // Store amplitude in mA; convert to 0..255 at send time using per-target curve
+            _chAmps[i] = _defaultAmp;
             _chPWs[i] = 0;
             _chIPIs[i] = _defaultIPI;
             _lastIpiSentPerCh[i] = _defaultIPI;
         }
     }
     
-    /// <summary> hanndles the  non-linear conversion of an amplitude in mA to bytes depending on WSS capabilities </summary>
-    private int AmpTo255Convention(float amp)
+    // Note: single-argument AmpTo255Convention(float) removed; use the target-aware overload below.
+
+    // Overload that selects curve based on config or per-target unit settings.
+    private int AmpTo255Convention(float amp, WssTarget target)
     {
-        if (amp < 4)
+        amp = Math.Max(0f, amp);
+
+        // Choose curve source: config override sets key to Custom, else use device mode mapping
+        string key = _coreConfig.UseConfigAmpCurves ? "Custom" : "72mA";
+        if (!_coreConfig.UseConfigAmpCurves)
         {
-            double v = Math.Pow(amp / 0.0522f, 1.0 / 1.5466f) + 1.0;
-            return (int)v;
+            if (_unitSettings.TryGetValue(target, out var s) && s != null)
+                key = s.AmpCurveKey ?? "72mA";
+        }
+
+        double lowThresh;
+        double cLow;
+        double exp;
+        double linOffset;
+        double linSlope;
+
+        switch (key)
+        {
+            case "10mA":
+                {
+                    // Proportional scaling of the 72mA curve for a 10mA unit
+                    const double scale = 10.0 / 72.0; // ~0.1389
+                    lowThresh = 4.0 * scale;         // ~0.5556 mA
+                    cLow = 0.0522 * scale;           // scale low-range constant
+                    exp = 1.0 / 1.5466;              // same nonlinearity exponent
+                    linOffset = 1.7045 * scale;      // scale linear offset
+                    linSlope = 0.3396 * scale;       // scale linear slope
+                    break;
+                }
+
+            case "Custom":
+                {
+                    var curves = _coreConfig.AmpCurves;
+                    var idx = TargetToIndex(target);
+                    var p = (curves != null && idx >= 0 && idx < curves.Length && curves[idx] != null)
+                        ? curves[idx]
+                        : AmpCurveParams.Default72mA();
+                    lowThresh = p.LowThreshold;
+                    cLow = p.LowConst;
+                    exp = p.ExpPower;
+                    linOffset = p.LinearOffset;
+                    linSlope = p.LinearSlope;
+                    break;
+                }
+
+            case "72mA":
+            default:
+                {
+                    lowThresh = 4.0;         // mA
+                    cLow = 0.0522;           // low-range constant
+                    exp = 1.0 / 1.5466;      // nonlinearity exponent
+                    linOffset = 1.7045;      // linear offset
+                    linSlope = 0.3396;       // linear slope
+                    break;
+                }
+        }
+        double v;
+        if (amp < lowThresh)
+        {
+            v = Math.Pow(amp / cLow, exp) + 1.0;
         }
         else
         {
-            double v = ((amp + 1.7045f) / 0.3396f) + 1.0;
-            return (int)v;
+            v = ((amp + linOffset) / linSlope) + 1.0;
         }
+        return (int)Math.Max(0, Math.Min(255, v));
+    }
+
+    // Helper to map WssTarget to index 0..2 for config arrays
+    private static int TargetToIndex(WssTarget t)
+    {
+        return t switch
+        {
+            WssTarget.Wss1 => 0,
+            WssTarget.Wss2 => 1,
+            WssTarget.Wss3 => 2,
+            _ => 0
+        };
     }
 
     /// <summary> Helper to use int instead of targets in for loops </summary>
@@ -698,6 +783,21 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
             3 => WssTarget.Wss3,
             _ => WssTarget.Wss1
         };
+    }
+
+    /// <summary>
+    /// Tries to obtain the last decoded ModuleSettings for a target by reading
+    /// the client's cached ModuleQuery data and decoding it. Returns false if
+    /// no data is cached or the payload is incomplete; when false, 'settings'
+    /// may still be non-null but marked as partial.
+    /// </summary>
+    public bool TryGetModuleSettings(WssTarget target, out ModuleSettings settings)
+    {
+        settings = null;
+        if (_wss == null) return false;
+        if (!_wss.TryGetModuleQueryData(target, out var data) || data == null)
+            return false;
+        return ModuleSettings.TryDecode(data, out settings);
     }
     #endregion
 }

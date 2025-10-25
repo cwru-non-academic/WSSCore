@@ -25,8 +25,8 @@ public class WSSVersionHandler
     /// </summary>
     private static readonly Dictionary<string, SupportedVersions> FeatureMinimumVersions = new()
     {
-        { "AmplitudeCheck", SupportedVersions.J03 },
-        { "LEDSettings", SupportedVersions.J03 }
+        { "LEDSettings", SupportedVersions.J03 },
+        { "ModuleQuery", SupportedVersions.J03 }
     };
 
     /// <summary>
@@ -83,16 +83,16 @@ public class WSSVersionHandler
     }
 
     /// <summary>
-    /// Indicates whether amplitude check support is available in the current firmware version.
-    /// </summary>
-    /// <returns><c>true</c> if amplitude check is supported; otherwise, <c>false</c>.</returns>
-    public bool IsAmplitudeCheckAvailable() => IsFeatureAvailable("AmplitudeCheck");
-
-    /// <summary>
     /// Indicates whether LED settings are available in the current firmware version.
     /// </summary>
     /// <returns><c>true</c> if LED settings are supported; otherwise, <c>false</c>.</returns>
     public bool IsLEDSettingsAvailable() => IsFeatureAvailable("LEDSettings");
+
+    /// <summary>
+    /// Indicates whether ModuleQuery (unit settings probe) is available in the current firmware version.
+    /// </summary>
+    /// <returns><c>true</c> if module query is supported; otherwise, <c>false</c>.</returns>
+    public bool IsModuleQueryAvailable() => IsFeatureAvailable("ModuleQuery");
 
     /// <summary>
     /// Returns the string representation of the current firmware version (e.g., "H03").
