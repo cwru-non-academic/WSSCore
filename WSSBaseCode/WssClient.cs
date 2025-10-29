@@ -18,8 +18,6 @@ public sealed class WssClient : IDisposable
     private readonly byte _sender;
     private readonly WSSVersionHandler _versionHandler;
 
-    private byte[] wssConfigArray; 
-
     private readonly ConcurrentDictionary<(byte target, byte msgId), ConcurrentQueue<TaskCompletionSource<byte[]>>> _pending
         = new ConcurrentDictionary<(byte target, byte msgId), ConcurrentQueue<TaskCompletionSource<byte[]>>>();
 

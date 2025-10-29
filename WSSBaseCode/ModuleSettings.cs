@@ -72,52 +72,52 @@ public sealed class ModuleSettings
 
     public static bool TryDecode(ReadOnlySpan<byte> data, out ModuleSettings settings)
     {
+        // helpers cannot capture ref-like values; make them static and pass args
+        static byte ReadU8(ReadOnlySpan<byte> d, ref int i, ref bool partial)
+        {
+            if ((uint)i < (uint)d.Length) return d[i++];
+            partial = true; return 0;
+        }
+        static ushort ReadU16BE(ReadOnlySpan<byte> d, ref int i, ref bool partial)
+        {
+            byte hi = ReadU8(d, ref i, ref partial);
+            byte lo = ReadU8(d, ref i, ref partial);
+            return (ushort)((hi << 8) | lo);
+        }
+        static uint ReadU24BE(ReadOnlySpan<byte> d, ref int i, ref bool partial)
+        {
+            byte b2 = ReadU8(d, ref i, ref partial); // high
+            byte b1 = ReadU8(d, ref i, ref partial); // mid
+            byte b0 = ReadU8(d, ref i, ref partial); // low
+            return (uint)((b2 << 16) | (b1 << 8) | b0);
+        }
+
         var s = new ModuleSettings();
         bool partial = false;
         int i = 0;
 
-        byte ReadU8()
-        {
-            if ((uint)i < (uint)data.Length) return data[i++];
-            partial = true; return 0;
-        }
-        ushort ReadU16BE()
-        {
-            byte hi = ReadU8();
-            byte lo = ReadU8();
-            return (ushort)((hi << 8) | lo);
-        }
-        uint ReadU24BE()
-        {
-            byte b2 = ReadU8(); // high
-            byte b1 = ReadU8(); // mid
-            byte b0 = ReadU8(); // low
-            return (uint)((b2 << 16) | (b1 << 8) | b0);
-        }
+        s.SerialNumber        = ReadU8(data, ref i, ref partial);
+        s.DataStart24         = ReadU24BE(data, ref i, ref partial);
+        s.BatteryThreshold    = ReadU16BE(data, ref i, ref partial);
+        s.BatteryCheckPeriod  = ReadU16BE(data, ref i, ref partial);
+        s.ImpedanceThreshold  = ReadU16BE(data, ref i, ref partial);
+        s.HwConfig            = (HwConfigFlags)ReadU8(data, ref i, ref partial);
+        s.FswConfig           = (FingerswitchConfig)ReadU8(data, ref i, ref partial);
+        s.IpdUs               = ReadU8(data, ref i, ref partial);
 
-        s.SerialNumber = ReadU8();
-        s.DataStart24 = ReadU24BE();
-        s.BatteryThreshold = ReadU16BE();
-        s.BatteryCheckPeriod = ReadU16BE();
-        s.ImpedanceThreshold = ReadU16BE();
-        s.HwConfig = (HwConfigFlags)ReadU8();
-        s.FswConfig = (FingerswitchConfig)ReadU8();
+        byte step             = ReadU8(data, ref i, ref partial);
+        s.StepKind            = (step & 0x80) != 0 ? ParameterStepKind.PW : ParameterStepKind.PA;
+        s.StepSize            = step & 0x7F;
 
-        // IPD appears as a single byte config in ModuleQuery (device dependent).
-        s.IpdUs = ReadU8();
+        s.PaLimit             = ReadU8(data, ref i, ref partial);
+        s.PwLimit             = ReadU8(data, ref i, ref partial);
 
-        byte step = ReadU8();
-        s.StepKind = (step & 0x80) != 0 ? ParameterStepKind.PW : ParameterStepKind.PA;
-        s.StepSize = step & 0x7F;
-
-        s.PaLimit = ReadU8();
-        s.PwLimit = ReadU8();
-
-        s.IsPartial = partial;
-        s.ProbeSupported = true;
+        s.IsPartial           = partial;
+        s.ProbeSupported      = true;
         settings = s;
-        return !partial; // true if all fields were present; still returns settings when false
+        return !partial;
     }
+
 
     /// <summary>
     /// Creates a default 72mA profile when ModuleQuery is not supported or data is unavailable.
