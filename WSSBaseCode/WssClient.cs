@@ -174,7 +174,25 @@ public sealed class WssClient : IDisposable
                 continue;
             }
 
-            // 2) Normal replies: route by msgId
+            // 2) Exptions to paired replies
+            if (frame[2] == 0x02 && frame.Length >= 16)//querry msg
+            {
+                //force to serach using querry msg id and the reply is unpaired
+                var key = (frame[0], (byte)WSSMessageIDs.ModuleQuery); // sender, querryCommandID
+                if (_pending.TryGetValue(key, out var q))
+                {
+                    while (q.TryDequeue(out var waiter))
+                        if (waiter.TrySetResult(frame)) break;
+                    if (q.IsEmpty) _pending.TryRemove(key, out _);
+                }
+                else
+                {
+                    Log.Warn("Unpaired error: " + BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant());
+                }
+                continue;
+            }
+
+            // 3) Normal replies: route by msgId
             var normalKey = (frame[0], frame[2]); // sender, msgId
             if (_pending.TryGetValue(normalKey, out var nq))
             {
@@ -238,6 +256,7 @@ public sealed class WssClient : IDisposable
                 };
                 return $"Error: {text} in Command: {cmd:x}";
             case (byte)WSSMessageIDs.ModuleQuery:
+            case (byte)WSSMessageIDs.RequestAnalog://Module Queery replies with request analog msg id
                 // Cache data-only slice for this sender (device). Payload is [msgId][len][data...]
                 try
                 {
@@ -253,9 +272,9 @@ public sealed class WssClient : IDisposable
                 }
                 catch
                 {
-                    // non-fatal: still return reply text
+                    Log.Warn("Could not match queery data to object using defaults" + BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant());
                 }
-                return "Querry: " + BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant();
+                return BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant();
             case (byte)WSSMessageIDs.StimulationSwitch:
                 if (frame[4] == 0x01) { Started = true; return "Start Acknowledged"; }
                 else if (frame[4] == 0x00) { Started = false; return "Stop Acknowledged"; }

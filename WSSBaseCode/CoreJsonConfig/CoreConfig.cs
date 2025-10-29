@@ -45,6 +45,10 @@ public sealed class AmpCurveParams
     /// <summary>Slope divisor used in the high-range linear segment.</summary>
     public double LinearSlope { get; set; }
 
+    /// <summary>
+    /// Returns the built-in 72 mA piecewise curve parameters that match the historical mapping
+    /// used by the core (power segment below 4 mA and linear segment above).
+    /// </summary>
     public static AmpCurveParams Default72mA() => new AmpCurveParams
     {
         LowThreshold = 4.0,

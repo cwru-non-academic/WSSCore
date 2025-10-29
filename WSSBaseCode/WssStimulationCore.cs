@@ -394,16 +394,8 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                 () => StepLogger(_wss.Clear(0, t), $"Clear[{t}]"),
                 //querry settings.
                 () => StepLogger(_wss.ModuleQuery(1, t), $"QuerryCurrent[{t}]"),
-                // capture decoded unit settings if available (client seeds defaults when unsupported)
-                () => {
-                    if (TryGetModuleSettings(t, out var s) && s != null)
-                    {
-                        _unitSettings[t] = s;
-                        var src = s.ProbeSupported ? "probe" : "default";
-                        return Task.FromResult($"UnitSettings[{t}]: {src} {s.AmpCurveKey}");
-                    }
-                    return Task.FromResult($"UnitSettings[{t}]: not available");
-                },
+                // capture decoded unit settings (or defaults) and log via StepLogger
+                () => StepLogger(CaptureUnitSettingsAsync(t), $"UnitSettings[{t}]"),
                 // Schedule 1 (Ch1)
                 () => StepLogger(_wss.CreateSchedule(1, _defaultIPI, _defaultSync, t), $"CreateSchedule#1[{t}]"), //TODO frequewncy from config
                 () => StepLogger(_wss.CreateContactConfig(1, new[]{1,2,0,0}, new[]{2,1,0,0}, 2, t), $"CreateContactConfig#1[{t}]"),
@@ -676,7 +668,6 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         _chPWs = new int[_maxWSSChannels];
         _chIPIs = new int[_maxWSSChannels];
         _lastIpiSentPerCh = new int[_maxWSSChannels];
-
         for (int i = 0; i < _maxWSSChannels; i++)
         {
             // Store amplitude in mA; convert to 0..255 at send time using per-target curve
@@ -686,14 +677,11 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
             _lastIpiSentPerCh[i] = _defaultIPI;
         }
     }
-    
-    // Note: single-argument AmpTo255Convention(float) removed; use the target-aware overload below.
 
-    // Overload that selects curve based on config or per-target unit settings.
+    // Selects curve based on config or per-target unit settings.
     private int AmpTo255Convention(float amp, WssTarget target)
     {
         amp = Math.Max(0f, amp);
-
         // Choose curve source: config override sets key to Custom, else use device mode mapping
         string key = _coreConfig.UseConfigAmpCurves ? "Custom" : "72mA";
         if (!_coreConfig.UseConfigAmpCurves)
@@ -701,13 +689,11 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
             if (_unitSettings.TryGetValue(target, out var s) && s != null)
                 key = s.AmpCurveKey ?? "72mA";
         }
-
         double lowThresh;
         double cLow;
         double exp;
         double linOffset;
         double linSlope;
-
         switch (key)
         {
             case "10mA":
@@ -721,7 +707,6 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                     linSlope = 0.3396 * scale;       // scale linear slope
                     break;
                 }
-
             case "Custom":
                 {
                     var curves = _coreConfig.AmpCurves;
@@ -736,7 +721,6 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                     linSlope = p.LinearSlope;
                     break;
                 }
-
             case "72mA":
             default:
                 {
@@ -760,7 +744,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         return (int)Math.Max(0, Math.Min(255, v));
     }
 
-    // Helper to map WssTarget to index 0..2 for config arrays
+    /// <summary>  Helper to map WssTarget to index 0..2 for config arrays </summary>
     private static int TargetToIndex(WssTarget t)
     {
         return t switch
@@ -771,7 +755,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
             _ => 0
         };
     }
-
+    
     /// <summary> Helper to use int instead of targets in for loops </summary>
     private WssTarget IntToWssTarget(int i)
     {
@@ -785,6 +769,20 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         };
     }
 
+    /// <summary> Helper: capture and report unit settings for a target. Logs a warning when not available. </summary>
+    private Task<string> CaptureUnitSettingsAsync(WssTarget t)
+    {
+        if (TryGetModuleSettings(t, out var s) && s != null)
+        {
+            _unitSettings[t] = s;
+            var src = s.ProbeSupported ? "querryProbe" : "default";
+            return Task.FromResult($"from {src} are {s.AmpCurveKey}");
+        }
+        var warn = $"not available";
+        Log.Warn($"UnitSettings[{t}]: {warn}");
+        return Task.FromResult($"{warn}");
+    }
+    
     /// <summary>
     /// Tries to obtain the last decoded ModuleSettings for a target by reading
     /// the client's cached ModuleQuery data and decoding it. Returns false if

@@ -22,8 +22,8 @@ public sealed class TestModeTransport : ITransport
     /// <summary>Probability [0..1] of randomly dropping an inbound chunk.</summary>
     public double InboundDropProbability { get; set; } = 0.0;
 
-    /// <summary>Random generator used for jitter, chunk sizing, and drops.</summary>
-    public Random Rng { get; set; } = new Random(1234);
+    /// <summary>Random generator used for jitter, chunk sizing, drops, and synthetic replies.</summary>
+    public Random Rng { get; set; } = new Random();
 
     /// <summary>Payload used when incoming checksum is invalid.</summary>
     public byte[] FallbackPayload { get; set; } = new byte[] { 0xE1, 0xE2, 0xE3 };
@@ -65,7 +65,8 @@ public sealed class TestModeTransport : ITransport
         JitterMs = jitterMs;
         MaxInboundChunkSize = maxInboundChunkSize;
         InboundDropProbability = inboundDropProbability;
-        Rng = rng ?? new Random(1234);
+        // Use caller-provided RNG if available; otherwise time-based randomness.
+        Rng = rng ?? new Random();
         FallbackPayload = fallbackPayload ?? new byte[] { 0xE1, 0xE2, 0xE3 };
         AutoResponderAsync = autoResponderAsync;
     }
@@ -173,7 +174,8 @@ public sealed class TestModeTransport : ITransport
 
         byte sender = frame[0];
         byte target = frame[1];
-        var payload = frame.AsSpan(2, frame.Length - 3); // exclude [S][T] and trailing [CKS]
+        // Use an array for easier manipulation and compatibility with Buffer.BlockCopy
+        var payload = frame.AsSpan(2, frame.Length - 3).ToArray(); // exclude [S][T] and trailing [CKS]
 
         // Fire-and-forget IDs 0x30..0x33 at payload[0]
         byte id = payload[0];
@@ -204,8 +206,44 @@ public sealed class TestModeTransport : ITransport
                     payload = new byte[] { msgID, 0x01, eventID };
                     break;
                 case (byte)WSSMessageIDs.ModuleQuery:
-                    msgID = payload[0];
-                    payload = new byte[] { msgID, 0x01, 0x02 };
+                    // Mirror real transport quirk: reply under RequestAnalog msgId
+                    msgID = (byte)WSSMessageIDs.RequestAnalog;
+                    {
+                        // Build a fake settings array (16 bytes) with random HW config bits for 10mA and 10ms pulse guard
+                        // Data layout matches ModuleSettings.TryDecode expectations (data-only slice):
+                        // [Serial][DataStart H][DataStart M][DataStart L][BattTh H][BattTh L]
+                        // [BattChk H][BattChk L][ImpTh H][ImpTh L][HwCfg][FswCfg][IPD][Step][PaLim][PwLim]
+                        var data = new byte[16];
+                        data[0] = 0x01; // Serial
+                        // DataStart 24-bit (0)
+                        data[1] = 0x00; data[2] = 0x00; data[3] = 0x00;
+                        // Battery threshold (0)
+                        data[4] = 0x00; data[5] = 0x00;
+                        // Battery check period (0)
+                        data[6] = 0x00; data[7] = 0x00;
+                        // Impedance threshold (0)
+                        data[8] = 0x00; data[9] = 0x00;
+                        // HW Config: randomize bit1 (10mA) and bit2 (10ms pulse guard)
+                        int bit10mA = Rng.Next(0, 2);     // 0 or 1
+                        int bitPulse = Rng.Next(0, 2);    // 0 or 1
+                        byte hwCfg = (byte)((bit10mA << 1) | (bitPulse << 2));
+                        data[10] = hwCfg;
+                        // Fingerswitch config (None)
+                        data[11] = 0x00;
+                        // IPD (example 50us)
+                        data[12] = 50;
+                        // Parameter step: PA (bit7=0), step size = 1
+                        data[13] = 0x01;
+                        // PA limit: 10 if 10mA mode else 72
+                        data[14] = (byte)(bit10mA == 1 ? 10 : 72);
+                        // PW limit: arbitrary nonzero (e.g., 255)
+                        data[15] = 255;
+
+                        payload = new byte[2 + data.Length];
+                        payload[0] = msgID;
+                        payload[1] = (byte)data.Length; // len
+                        Buffer.BlockCopy(data, 0, payload, 2, data.Length);
+                    }
                     break;
             }
         }
@@ -219,7 +257,7 @@ public sealed class TestModeTransport : ITransport
         // Since codec validated OK, only echo path runs.
         // If you still want a forced-fallback mode, add a flag and build below.
 
-        outPayload = payload.ToArray();
+        outPayload = payload;
 
         // Build and return escaped reply: [target][sender][payload...][CKS][END]
         var reply = _codec.Frame(target, sender, outPayload);

@@ -1,36 +1,32 @@
 using System;
 
 /// <summary>
-/// Typed snapshot of ModuleQuery settings with a safe decoder from raw data-only bytes.
-/// Data layout (data-only slice):
-///   [Serial (1)]
-///   [DataStart 24-bit: High (1), Mid (1), Low (1)]
-///   [BatteryThreshold (2, BE)]
-///   [BatteryCheckPeriod (2, BE)]
-///   [ImpedanceThreshold (2, BE)]
-///   [HwConfig (1, flags)]
-///   [FingerswitchConfig (1)]
-///   [IPD (1, microseconds, device-specific granularity)]
-///   [ParameterStep (1): bit7=1 => PW, 0 => PA; bits 0..6 = step size]
-///   [PaLimit (1)]
-///   [PwLimit (1)]
-/// Missing/short fields are tolerated; the decoder sets IsPartial = true.
+/// Strongly-typed snapshot of settings returned by the ModuleQuery command.
+/// Includes a safe decoder for the data-only payload and helpers for selecting
+/// amplitude mapping behavior (e.g., 10 mA vs 72 mA based on HW flags).
 /// </summary>
 public sealed class ModuleSettings
 {
     [Flags]
+    /// <summary>
+    /// Hardware configuration flags reported by the device. Each bit defines an
+    /// independent setting; the on-wire value is the sum of set bits. In particular,
+    /// bit 1 (value 2) indicates 10 mA PA mode and bit 2 (value 4) indicates 10 ms pulse guard.
+    /// </summary>
     public enum HwConfigFlags : byte
     {
-        Default         = 0, // 72 mA PA mode
-        TenMilliAmpPA   = 1 << 0, // 10 mA PA mode
-        TenMsPulseGuard = 1 << 1, // 10 ms pulse guard
-        Future4         = 1 << 2,
-        Future8         = 1 << 3,
-        Future16        = 1 << 4,
-        Future32        = 1 << 5,
-        Future64        = 1 << 6
+        Default         = 0,          // no special flags
+        TenMilliAmpPA   = 1 << 1,     // bit1 => 10 mA PA mode (value 2) otheriwise 72mA PA
+        TenMsPulseGuard = 1 << 2,     // bit2 => 10 ms pulse guard (value 4)
+        Future8         = 1 << 3,     // future use (value 8)
+        Future16        = 1 << 4,     // future use (value 16)
+        Future32        = 1 << 5,     // future use (value 32)
+        Future64        = 1 << 6      // future use (value 64)
     }
 
+    /// <summary>
+    /// Fingerswitch operating mode, when present.
+    /// </summary>
     public enum FingerswitchConfig : byte
     {
         None  = 0,
@@ -39,26 +35,48 @@ public sealed class ModuleSettings
         Future = 3 // 3..255 reserved/future
     }
 
+    /// <summary>Which parameter the front-panel step affects (PA or PW).</summary>
     public enum ParameterStepKind : byte { PA, PW }
 
+    /// <summary>Device serial number (one byte in this query).</summary>
     public byte SerialNumber { get; private set; }
+    /// <summary>Start pointer for device log data (24-bit big-endian value).</summary>
     public uint DataStart24 { get; private set; }
+    /// <summary>Low-battery threshold (raw units).</summary>
     public ushort BatteryThreshold { get; private set; }
+    /// <summary>Battery check timer period (raw units).</summary>
     public ushort BatteryCheckPeriod { get; private set; }
+    /// <summary>High-impedance threshold (raw units).</summary>
     public ushort ImpedanceThreshold { get; private set; }
+    /// <summary>Hardware configuration flags (bitfield).</summary>
     public HwConfigFlags HwConfig { get; private set; }
+    /// <summary>Fingerswitch configuration value.</summary>
     public FingerswitchConfig FswConfig { get; private set; }
+    /// <summary>Inter-phase delay in microseconds (one byte in this query).</summary>
     public int IpdUs { get; private set; }
+    /// <summary>Whether the step size applies to PA or PW.</summary>
     public ParameterStepKind StepKind { get; private set; }
+    /// <summary>Step size magnitude (lower 7 bits of the Step byte).</summary>
     public int StepSize { get; private set; }
+    /// <summary>PA limit (raw device units; typically correlates with max mA capability).</summary>
     public int PaLimit { get; private set; }
+    /// <summary>PW limit (raw device units).</summary>
     public int PwLimit { get; private set; }
+    /// <summary>True when the payload was shorter than expected; some fields may be defaulted.</summary>
     public bool IsPartial { get; private set; }
+    /// <summary>True when the values originated from a real device probe, not defaults.</summary>
     public bool ProbeSupported { get; private set; }
 
-    // Convenience: map HW config to a curve key for config lookup (e.g., "10mA" vs "72mA")
+    /// <summary>
+    /// Convenience selector for amplitude curves. Returns "10mA" when the
+    /// <see cref="HwConfigFlags.TenMilliAmpPA"/> bit is set; otherwise "72mA".
+    /// </summary>
     public string AmpCurveKey => (HwConfig & HwConfigFlags.TenMilliAmpPA) != 0 ? "10mA" : "72mA";
 
+    /// <summary>
+    /// Builds a human-readable one-line summary of key fields for logs and diagnostics.
+    /// </summary>
+    /// <returns>Summary string including HW flags, FSW config, IPD, limits, thresholds, and serial.</returns>
     public string ToSummaryString()
     {
         string hw = HwConfig.ToString();
@@ -70,6 +88,15 @@ public sealed class ModuleSettings
                $"DataStart=0x{DataStart24:X6}, Serial={SerialNumber}{partial}";
     }
 
+    /// <summary>
+    /// Attempts to decode a ModuleQuery settings payload (data-only slice) into a <see cref="ModuleSettings"/> instance.
+    /// </summary>
+    /// <param name="data">Data-only bytes in the expected order (length ≥ 16 recommended).</param>
+    /// <param name="settings">Decoded settings snapshot (always set; may have <see cref="IsPartial"/>=true).</param>
+    /// <returns>
+    /// True when all expected fields were present (not partial). False indicates a short payload, but a
+    /// best-effort decode is still returned in <paramref name="settings"/>.
+    /// </returns>
     public static bool TryDecode(ReadOnlySpan<byte> data, out ModuleSettings settings)
     {
         // helpers cannot capture ref-like values; make them static and pass args
@@ -120,8 +147,8 @@ public sealed class ModuleSettings
 
 
     /// <summary>
-    /// Creates a default 72mA profile when ModuleQuery is not supported or data is unavailable.
-    /// Fields are set to safe defaults and IsPartial=true.
+    /// Creates a default (synthetic) 72 mA profile for cases where ModuleQuery is not supported or
+    /// data is unavailable. Fields are set to conservative defaults and <see cref="IsPartial"/> is true.
     /// </summary>
     public static ModuleSettings CreateDefault72mA(bool probeSupported)
     {
