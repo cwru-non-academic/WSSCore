@@ -1,14 +1,16 @@
 {
   "version": 2,
-  "dgSpecHash": "dRJ1ctH2/VOKOOMSw3vZVQvfcInKBo1uMbwFwOSjGwqmKKqjF/uZSpi3bGCRZDFY9cL/3KljugOPdkCjZa/OlQ==",
+  "dgSpecHash": "DZICktSOCWk=",
   "success": true,
-  "projectFilePath": "C:\\Users\\lemfn\\Documents\\GitHub\\WSSCoreInterface\\WSS_Core_Interface.csproj",
+  "projectFilePath": "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS_Core_Interface.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\lemfn\\.nuget\\packages\\newtonsoft.json\\13.0.3\\newtonsoft.json.13.0.3.nupkg.sha512",
-    "C:\\Users\\lemfn\\.nuget\\packages\\system.buffers\\4.5.1\\system.buffers.4.5.1.nupkg.sha512",
-    "C:\\Users\\lemfn\\.nuget\\packages\\system.memory\\4.5.5\\system.memory.4.5.5.nupkg.sha512",
-    "C:\\Users\\lemfn\\.nuget\\packages\\system.numerics.vectors\\4.5.0\\system.numerics.vectors.4.5.0.nupkg.sha512",
-    "C:\\Users\\lemfn\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\4.5.3\\system.runtime.compilerservices.unsafe.4.5.3.nupkg.sha512"
+    "/home/lemf/.nuget/packages/microsoft.netframework.referenceassemblies/1.0.3/microsoft.netframework.referenceassemblies.1.0.3.nupkg.sha512",
+    "/home/lemf/.nuget/packages/microsoft.netframework.referenceassemblies.net48/1.0.3/microsoft.netframework.referenceassemblies.net48.1.0.3.nupkg.sha512",
+    "/home/lemf/.nuget/packages/newtonsoft.json/13.0.3/newtonsoft.json.13.0.3.nupkg.sha512",
+    "/home/lemf/.nuget/packages/system.buffers/4.5.1/system.buffers.4.5.1.nupkg.sha512",
+    "/home/lemf/.nuget/packages/system.memory/4.5.5/system.memory.4.5.5.nupkg.sha512",
+    "/home/lemf/.nuget/packages/system.numerics.vectors/4.5.0/system.numerics.vectors.4.5.0.nupkg.sha512",
+    "/home/lemf/.nuget/packages/system.runtime.compilerservices.unsafe/4.5.3/system.runtime.compilerservices.unsafe.4.5.3.nupkg.sha512"
   ],
   "logs": []
 }

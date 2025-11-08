@@ -138,7 +138,14 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                 {
                     Log.Error("Setup failed: " + _setupRunner.Exception?.GetBaseException().Message);
                     _setupRunner = null;
-                    if (++_currentSetupTries > _maxSetupTries) _state = CoreState.Error;
+                    if (++_currentSetupTries > _maxSetupTries)
+                    {
+                        _state = CoreState.Error;
+                    }
+                    else
+                    {
+                        Log.Warn($"Setup retry {_currentSetupTries} / {_maxSetupTries}");
+                    }
                 }
                 else if (_setupRunner.IsCompleted && SetupQueueEmpty())
                 {

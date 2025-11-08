@@ -1,0 +1,16 @@
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Debug/net48/WSS_Core_Interface.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Debug/net48/WSS_Core_Interface.pdb
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Debug/net48/Newtonsoft.Json.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Debug/net48/System.Buffers.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Debug/net48/System.Memory.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Debug/net48/System.Numerics.Vectors.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Debug/net48/System.Runtime.CompilerServices.Unsafe.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core_Interface.csproj.AssemblyReference.cache
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core_Interface.GeneratedMSBuildEditorConfig.editorconfig
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core_Interface.AssemblyInfoInputs.cache
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core_Interface.AssemblyInfo.cs
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core_Interface.csproj.CoreCompileInputs.cache
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core_Interface.sourcelink.json
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core.C9F28945.Up2Date
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core_Interface.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core_Interface.pdb
