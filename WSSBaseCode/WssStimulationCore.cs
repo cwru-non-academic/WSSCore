@@ -136,15 +136,16 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                     EnsureSetupRunner();
                 else if (_setupRunner.IsFaulted)
                 {
-                    Log.Error("Setup failed: " + _setupRunner.Exception?.GetBaseException().Message);
+                    var root = _setupRunner.Exception?.GetBaseException().Message ?? "Unknown error";
                     _setupRunner = null;
                     if (++_currentSetupTries > _maxSetupTries)
                     {
+                        Log.Error($"Setup failed: {root} (exceeded {_maxSetupTries} attempts)");
                         _state = CoreState.Error;
                     }
                     else
                     {
-                        Log.Warn($"Setup retry {_currentSetupTries} / {_maxSetupTries}");
+                        Log.Warn($"Setup failed: {root}. Retrying {_currentSetupTries}/{_maxSetupTries}...");
                     }
                 }
                 else if (_setupRunner.IsCompleted && SetupQueueEmpty())
@@ -621,7 +622,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         catch (Exception ex)
         {
             Log.Error($"[SetupWorker] {ex.Message}");
-            //_state = CoreState.Error;
+            throw;
         }
     }
 
