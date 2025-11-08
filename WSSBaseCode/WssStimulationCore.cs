@@ -621,7 +621,7 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
         catch (Exception ex)
         {
             Log.Error($"[SetupWorker] {ex.Message}");
-            _state = CoreState.Error;
+            //_state = CoreState.Error;
         }
     }
 
