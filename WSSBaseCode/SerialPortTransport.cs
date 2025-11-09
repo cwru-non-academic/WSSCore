@@ -1,8 +1,9 @@
 ﻿using System;
 using System.IO.Ports;
+using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Linq;
 
 /// <summary>
 /// Serial-port implementation of <see cref="ITransport"/> for WSS communications.
@@ -37,7 +38,13 @@ public sealed class SerialPortTransport : ITransport
     public SerialPortTransport(string portName, int baud = 115200, Parity parity = Parity.None,
                                int dataBits = 8, StopBits stopBits = StopBits.One, int readTimeoutMs = 10)
     {
-        _port = new SerialPort(portName, baud, parity, dataBits, stopBits) { ReadTimeout = readTimeoutMs };
+        if (string.IsNullOrWhiteSpace(portName))
+            throw new ArgumentException("Port name cannot be empty.", nameof(portName));
+
+        _port = new SerialPort(NormalizePortForRuntime(portName), baud, parity, dataBits, stopBits)
+        {
+            ReadTimeout = readTimeoutMs
+        };
     }
 
     /// <summary>
@@ -54,7 +61,10 @@ public sealed class SerialPortTransport : ITransport
     public SerialPortTransport(int baud = 115200, Parity parity = Parity.None,
                                int dataBits = 8, StopBits stopBits = StopBits.One, int readTimeoutMs = 10)
     {
-        _port = new SerialPort(GetComPort(), baud, parity, dataBits, stopBits) { ReadTimeout = readTimeoutMs };
+        _port = new SerialPort(GetComPort(), baud, parity, dataBits, stopBits)
+        {
+            ReadTimeout = readTimeoutMs
+        };
     }
 
     /// <inheritdoc/>
@@ -166,37 +176,18 @@ public sealed class SerialPortTransport : ITransport
 
 
     /// <summary>
-    /// Selects a serial COM port. If <paramref name="preferredPort"/> is provided,
-    /// that port is used. Otherwise, prefers ports whose PNPDeviceID contains
-    /// <c>VID_0403&amp;PID_6001</c> (FTDI FT232R). If none match, returns the lowest
-    /// COM port by natural sort (COM2, COM10, â€¦).
+    /// Selects a serial port. Honors <paramref name="preferredPort"/> if available
+    /// and falls back to platform-appropriate defaults.
     /// </summary>
-    /// <param name="preferredPort">Exact port name to use, e.g., <c>COM11</c>. Optional.</param>
-    /// <returns>The selected COM port name, e.g., <c>COM3</c>.</returns>
-    /// <exception cref="InvalidOperationException">No serial ports found.</exception>
-    /// <remarks>
-    /// Uses WMI (<c>Win32_SerialPort</c>) to read <c>PNPDeviceID</c>. On .NET Core/5+,
-    /// add the <c>System.Management</c> package. If the VID/PID probe fails, the method
-    /// falls back to the lowest COM by natural sort.
-    /// </remarks>
     private static string GetComPort(string preferredPort = null)
     {
         var ports = SerialPort.GetPortNames();
         if (ports.Length == 0)
             throw new InvalidOperationException("No serial ports found.");
 
-        // Natural sort: COM2 < COM10
-        Array.Sort(ports, (a, b) =>
-        {
-            int na = TryParseComNum(a, out var ia) ? ia : int.MaxValue;
-            int nb = TryParseComNum(b, out var ib) ? ib : int.MaxValue;
-            int cmp = na.CompareTo(nb);
-            return cmp != 0 ? cmp : string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
-        });
-
         if (!string.IsNullOrWhiteSpace(preferredPort))
         {
-            var match = ports.FirstOrDefault(p => string.Equals(p, preferredPort, StringComparison.OrdinalIgnoreCase));
+            var match = FindMatchingPort(ports, preferredPort);
             if (match != null)
             {
                 Log.Info($"Using preferred port: {match}");
@@ -205,24 +196,47 @@ public sealed class SerialPortTransport : ITransport
             Log.Warn($"Preferred port '{preferredPort}' not found.");
         }
 
-        // Try to find FTDI FT232R (VID_0403&amp;PID_6001)
-        string[] ftdiMatches = Array.Empty<string>();
-        //currently not implemented as cors platform with unity makes it complicated.
-
-        if (ftdiMatches.Length == 1)
+        string selected;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            Log.Info($"Detected FTDI FT232R on {ftdiMatches[0]}");
-            return ftdiMatches[0];
+            selected = SelectWindowsPort((string[])ports.Clone());
         }
-        if (ftdiMatches.Length > 1)
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ||
+                 RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            Log.Warn($"Multiple FTDI FT232R ports: {string.Join(", ", ftdiMatches)}. Using {ftdiMatches[0]}.");
-            return ftdiMatches[0];
+            selected = SelectPosixPort(ports);
+        }
+        else
+        {
+            selected = ports[0];
         }
 
         if (ports.Length > 1)
-            Log.Warn($"Multiple ports detected: {string.Join(", ", ports)}. Using {ports[0]}.");
+            Log.Warn($"Multiple ports detected: {string.Join(", ", ports)}. Using {selected}.");
 
+        return selected;
+    }
+
+    private static string NormalizePortForRuntime(string portName)
+    {
+        var trimmed = portName.Trim();
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return trimmed;
+
+        return trimmed.StartsWith("/dev/", StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : "/dev/" + trimmed;
+    }
+
+    private static string SelectWindowsPort(string[] ports)
+    {
+        Array.Sort(ports, (a, b) =>
+        {
+            int na = TryParseComNum(a, out var ia) ? ia : int.MaxValue;
+            int nb = TryParseComNum(b, out var ib) ? ib : int.MaxValue;
+            int cmp = na.CompareTo(nb);
+            return cmp != 0 ? cmp : string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+        });
         return ports[0];
 
         static bool TryParseComNum(string s, out int n)
@@ -233,5 +247,41 @@ public sealed class SerialPortTransport : ITransport
         }
     }
 
-}
+    private static string SelectPosixPort(string[] ports)
+    {
+        var ordered = ports
+            .OrderBy(GetPosixPriority)
+            .ThenBy(p => p, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return ordered[0];
+    }
 
+    private static int GetPosixPriority(string port)
+    {
+        var lower = port.ToLowerInvariant();
+        if (lower.Contains("ttyusb") || lower.Contains("ttyacm") ||
+            lower.Contains("usbserial") || lower.Contains("usbmodem"))
+            return 0;
+        if (lower.Contains("tty.") || lower.Contains("cu."))
+            return 1;
+        return 2;
+    }
+
+    private static string FindMatchingPort(string[] ports, string preferredPort)
+    {
+        var preferredKey = NormalizePortKey(preferredPort);
+        return ports.FirstOrDefault(p =>
+            string.Equals(NormalizePortKey(p), preferredKey, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string NormalizePortKey(string port)
+    {
+        if (string.IsNullOrWhiteSpace(port)) return string.Empty;
+        var trimmed = port.Trim();
+        return trimmed.StartsWith("/dev/", StringComparison.OrdinalIgnoreCase)
+            ? trimmed.Substring("/dev/".Length)
+            : trimmed;
+    }
+
+
+}
