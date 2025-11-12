@@ -132,8 +132,10 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
             case CoreState.SettingUp:
                 // Start or keep the runner. If a pass finished but queue isn't empty (new steps arrived),
                 // restart the runner to drain remaining work.
-                if (_setupRunner == null || (_setupRunner.IsCompleted && !SetupQueueEmpty()))
+                if (_setupRunner == null)
+                {
                     EnsureSetupRunner();
+                }
                 else if (_setupRunner.IsFaulted)
                 {
                     var root = _setupRunner.Exception?.GetBaseException().Message ?? "Unknown error";
@@ -147,6 +149,10 @@ public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
                     {
                         Log.Warn($"Setup failed: {root}. Retrying {_currentSetupTries}/{_maxSetupTries}...");
                     }
+                }
+                else if (_setupRunner.IsCompleted && !SetupQueueEmpty())
+                {
+                    EnsureSetupRunner();
                 }
                 else if (_setupRunner.IsCompleted && SetupQueueEmpty())
                 {
