@@ -12,7 +12,7 @@ public sealed class StimParamsLayer : IStimParamsCore
     private readonly StimParamsConfigController _ctrl;      // params context
     private readonly IBasicStimulation _basic;       // optional BASIC capability
     private int _totalChannels;
-    private int[] _lastPw;
+    private float[] _lastAmp;
 
     /// <summary>
     /// Constructs the layer over an existing core and a params context path.
@@ -29,7 +29,7 @@ public sealed class StimParamsLayer : IStimParamsCore
         _basic = _core as IBasicStimulation;
 
         _totalChannels = _ctrl.PerWss * Math.Max(1, maxWss);
-        _lastPw = new int[_totalChannels];
+        _lastAmp = new float[_totalChannels];
         InitArrays();
     }
 
@@ -45,15 +45,37 @@ public sealed class StimParamsLayer : IStimParamsCore
         if (value01 < 0f) value01 = 0f; else if (value01 > 1f) value01 = 1f;
 
         string baseKey = $"stim.ch.{channel}";
-        float amp  = _ctrl.TryGetStimParam($"{baseKey}.amp",   out var a) ? a : 1f;
-        float pwLo = _ctrl.TryGetStimParam($"{baseKey}.minPW", out var mn) ? mn : 50f;
-        float pwHi = _ctrl.TryGetStimParam($"{baseKey}.maxPW", out var mx) ? mx : 500f;
-        float ipi  = _ctrl.TryGetStimParam($"{baseKey}.IPI",   out var ii) ? ii : 20f;
+        string ampMode = _ctrl.GetChannelAmpMode(channel);
+        float ipi  = _ctrl.TryGetStimParam($"{baseKey}.IPI", out var ii) ? ii : 20f;
 
-        if (pwHi < pwLo) { var tmp = pwLo; pwLo = pwHi; pwHi = tmp; }
+        int pulseWidth;
+        float amp;
+        float reportedDrive;
 
-        _lastPw[channel - 1] = (int)Math.Round(pwLo + (pwHi - pwLo) * value01);
-        _core.StimulateAnalog(channel, _lastPw[channel - 1], amp, (int)ipi);
+        if (ampMode == "PA")
+        {
+            float paMin = _ctrl.TryGetStimParam($"{baseKey}.minPA", out var minPa) ? minPa : 0f;
+            float paMax = _ctrl.TryGetStimParam($"{baseKey}.maxPA", out var maxPa) ? maxPa : paMin;
+            if (paMax < paMin) { var tmp = paMin; paMin = paMax; paMax = tmp; }
+
+            float defPw = _ctrl.TryGetStimParam($"{baseKey}.defaultPW", out var dPw) ? dPw : 50f;
+            pulseWidth = (int)Math.Round(defPw);
+            amp = paMin + (paMax - paMin) * value01;
+            reportedDrive = amp;
+        }
+        else
+        {
+            float pwMin = _ctrl.TryGetStimParam($"{baseKey}.minPW", out var mn) ? mn : 50f;
+            float pwMax = _ctrl.TryGetStimParam($"{baseKey}.maxPW", out var mx) ? mx : 500f;
+            if (pwMax < pwMin) { var tmp = pwMin; pwMin = pwMax; pwMax = tmp; }
+
+            pulseWidth = (int)Math.Round(pwMin + (pwMax - pwMin) * value01);
+            amp = _ctrl.TryGetStimParam($"{baseKey}.defaultPA", out var defaultPa) ? defaultPa : 1f;
+            reportedDrive = pulseWidth;
+        }
+
+        _lastAmp[channel - 1] = reportedDrive;
+        _core.StimulateAnalog(channel, pulseWidth, amp, (int)Math.Round(ipi));
     }
 
     /// <inheritdoc/>
@@ -61,7 +83,7 @@ public sealed class StimParamsLayer : IStimParamsCore
     {
         if (channel < 1 || channel > _totalChannels)
             throw new ArgumentOutOfRangeException(nameof(channel), $"Channel must be 1..{_totalChannels}.");
-        return _lastPw[channel - 1];
+        return _lastAmp[channel - 1];
     }
 
     /// <inheritdoc/>
@@ -97,11 +119,26 @@ public sealed class StimParamsLayer : IStimParamsCore
     /// <inheritdoc cref="StimParamsConfigController.SetChannelPWMin(int,int)"/>
     public void SetChannelPWMin(int ch, int us) => _ctrl.SetChannelPWMin(ch, us);
 
+    /// <inheritdoc cref="StimParamsConfigController.SetChannelPAMin(int,float)"/>
+    public void SetChannelPAMin(int ch, float mA) => _ctrl.SetChannelPAMin(ch, mA);
+
+    /// <inheritdoc cref="StimParamsConfigController.SetChannelPAMax(int,float)"/>
+    public void SetChannelPAMax(int ch, float mA) => _ctrl.SetChannelPAMax(ch, mA);
+
     /// <inheritdoc cref="StimParamsConfigController.SetChannelPWMax(int,int)"/>
     public void SetChannelPWMax(int ch, int us) => _ctrl.SetChannelPWMax(ch, us);
 
+    /// <inheritdoc cref="StimParamsConfigController.SetChannelDefaultPW(int,int)"/>
+    public void SetChannelDefaultPW(int ch, int us) => _ctrl.SetChannelDefaultPW(ch, us);
+
     /// <inheritdoc cref="StimParamsConfigController.SetChannelIPI(int,int)"/>
     public void SetChannelIPI(int ch, int ms) => _ctrl.SetChannelIPI(ch, ms);
+
+    /// <inheritdoc cref="StimParamsConfigController.SetChannelAmpMode(int,string)"/>
+    public void SetChannelAmpMode(int ch, string mode) => _ctrl.SetChannelAmpMode(ch, mode);
+
+    /// <inheritdoc cref="StimParamsConfigController.SetAllChannelsAmpMode(string)"/>
+    public void SetAllChannelsAmpMode(string mode) => _ctrl.SetAllChannelsAmpMode(mode);
 
     /// <inheritdoc cref="StimParamsConfigController.GetChannelAmp(int)"/>
     public float GetChannelAmp(int ch) => _ctrl.GetChannelAmp(ch);
@@ -109,11 +146,23 @@ public sealed class StimParamsLayer : IStimParamsCore
     /// <inheritdoc cref="StimParamsConfigController.GetChannelPWMin(int)"/>
     public int GetChannelPWMin(int ch) => _ctrl.GetChannelPWMin(ch);
 
+    /// <inheritdoc cref="StimParamsConfigController.GetChannelPAMin(int)"/>
+    public float GetChannelPAMin(int ch) => _ctrl.GetChannelPAMin(ch);
+
+    /// <inheritdoc cref="StimParamsConfigController.GetChannelPAMax(int)"/>
+    public float GetChannelPAMax(int ch) => _ctrl.GetChannelPAMax(ch);
+
     /// <inheritdoc cref="StimParamsConfigController.GetChannelPWMax(int)"/>
     public int GetChannelPWMax(int ch) => _ctrl.GetChannelPWMax(ch);
 
+    /// <inheritdoc cref="StimParamsConfigController.GetChannelDefaultPW(int)"/>
+    public int GetChannelDefaultPW(int ch) => _ctrl.GetChannelDefaultPW(ch);
+
     /// <inheritdoc cref="StimParamsConfigController.GetChannelIPI(int)"/>
     public int GetChannelIPI(int ch) => _ctrl.GetChannelIPI(ch);
+
+    /// <inheritdoc cref="StimParamsConfigController.GetChannelAmpMode(int)"/>
+    public string GetChannelAmpMode(int ch) => _ctrl.GetChannelAmpMode(ch);
 
     /// <inheritdoc cref="StimParamsConfigController.IsChannelInRange(int)"/>
     public bool IsChannelInRange(int ch) => _ctrl.IsChannelInRange(ch);
@@ -139,7 +188,7 @@ public sealed class StimParamsLayer : IStimParamsCore
         _ctrl.LoadParamsJson(); // load params after core init
         int maxWss = _core.GetCoreConfigController().MaxWss;
         _totalChannels = _ctrl.PerWss * Math.Max(1, maxWss);
-        _lastPw = new int[_totalChannels];
+        _lastAmp = new float[_totalChannels];
         InitArrays();
     }
 
@@ -179,11 +228,11 @@ public sealed class StimParamsLayer : IStimParamsCore
     // ---- StimParamsLayer-specific ----
 
     /// <summary>
-    /// Initializes internal arrays that cache per-channel pulse width results.
+    /// Initializes internal arrays that cache the last normalized drive result.
     /// </summary>
     private void InitArrays()
     {
-        for (int i = 0; i < _lastPw.Length; i++)
-            _lastPw[i] = 0;
+        for (int i = 0; i < _lastAmp.Length; i++)
+            _lastAmp[i] = 0f;
     }
 }

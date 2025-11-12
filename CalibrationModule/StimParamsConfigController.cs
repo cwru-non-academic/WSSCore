@@ -96,7 +96,7 @@ public sealed class StimParamsConfigController
     /// <summary>
     /// Adds or updates a stimulation parameter at the specified dotted key.
     /// </summary>
-    /// <param name="key">Parameter key (e.g., "stim.ch.1.amp").</param>
+    /// <param name="key">Parameter key (e.g., "stim.ch.1.defaultPA").</param>
     /// <param name="value">Value to assign.</param>
     public void AddOrUpdateStimParam(string key, float value)
     {
@@ -147,29 +147,80 @@ public sealed class StimParamsConfigController
 
     private static string ChKey(int ch, string leaf) => $"stim.ch.{ch}.{leaf}";
 
-    /// <summary>Sets channel amplitude in milliamps.</summary>
-    public void SetChannelAmp(int ch, float mA) { ValidateChannel(ch); AddOrUpdateStimParam(ChKey(ch, "amp"), mA); }
+    /// <summary>
+    /// Sets the default amplitude (PA) for a channel. Used when PW is the controlled axis.
+    /// </summary>
+    public void SetChannelAmp(int ch, float mA)
+    {
+        ValidateChannel(ch);
+        AddOrUpdateStimParam(ChKey(ch, "defaultPA"), mA);
+    }
 
     /// <summary>Sets minimum pulse width for the specified channel in micro seconds.</summary>
     public void SetChannelPWMin(int ch, int us) { ValidateChannel(ch); AddOrUpdateStimParam(ChKey(ch, "minPW"), us); }
 
+    /// <summary>Sets minimum PA (mA) for the specified channel.</summary>
+    public void SetChannelPAMin(int ch, float mA) { ValidateChannel(ch); AddOrUpdateStimParam(ChKey(ch, "minPA"), mA); }
+
+    /// <summary>Sets maximum PA (mA) for the specified channel.</summary>
+    public void SetChannelPAMax(int ch, float mA) { ValidateChannel(ch); AddOrUpdateStimParam(ChKey(ch, "maxPA"), mA); }
+
     /// <summary>Sets maximum pulse width for the specified channel in micro seconds.</summary>
     public void SetChannelPWMax(int ch, int us) { ValidateChannel(ch); AddOrUpdateStimParam(ChKey(ch, "maxPW"), us); }
+
+    /// <summary>Sets the default pulse width used when PA is the controlled axis.</summary>
+    public void SetChannelDefaultPW(int ch, int us) { ValidateChannel(ch); AddOrUpdateStimParam(ChKey(ch, "defaultPW"), us); }
 
     /// <summary>Sets inter-pulse interval (IPI) for the specified channel in mili seconds.</summary>
     public void SetChannelIPI(int ch, int ms)   { ValidateChannel(ch); AddOrUpdateStimParam(ChKey(ch, "IPI"), ms);  }
 
-    /// <summary>Gets channel amplitude in mili amps.</summary>
-    public float GetChannelAmp(int ch) { ValidateChannel(ch); return GetStimParam(ChKey(ch, "amp")); }
+    /// <summary>Sets the amplitude-control mode (\"PW\" or \"PA\") for the specified channel.</summary>
+    public void SetChannelAmpMode(int ch, string mode) => SetChannelAmpModeInternal(ch, mode);
+
+    /// <summary>Sets the amplitude-control mode for every channel in one call.</summary>
+    public void SetAllChannelsAmpMode(string mode)
+    {
+        for (int ch = 1; ch <= _totalChannels; ch++)
+            SetChannelAmpModeInternal(ch, mode);
+    }
+
+    /// <summary>
+    /// Gets the default amplitude (PA) stored for the channel.
+    /// </summary>
+    public float GetChannelAmp(int ch)
+    {
+        ValidateChannel(ch);
+        return GetStimParam(ChKey(ch, "defaultPA"));
+    }
 
     /// <summary>Gets minimum pulse width for a channel in micro seconds.</summary>
     public int GetChannelPWMin(int ch) { ValidateChannel(ch); return (int)GetStimParam(ChKey(ch, "minPW")); }
 
+    /// <summary>Gets minimum PA (mA) for the channel.</summary>
+    public float GetChannelPAMin(int ch) { ValidateChannel(ch); return GetStimParam(ChKey(ch, "minPA")); }
+
+    /// <summary>Gets maximum PA (mA) for the channel.</summary>
+    public float GetChannelPAMax(int ch) { ValidateChannel(ch); return GetStimParam(ChKey(ch, "maxPA")); }
+
     /// <summary>Gets maximum pulse width for a channel in micro seconds.</summary>
     public int GetChannelPWMax(int ch) { ValidateChannel(ch); return (int)GetStimParam(ChKey(ch, "maxPW")); }
 
+    /// <summary>Gets the default pulse width used when PA mode is active.</summary>
+    public int GetChannelDefaultPW(int ch) { ValidateChannel(ch); return (int)GetStimParam(ChKey(ch, "defaultPW")); }
+
     /// <summary>Gets inter-pulse interval (IPI) for a channel in mili seconds.</summary>
     public int GetChannelIPI(int ch)   { ValidateChannel(ch); return (int)GetStimParam(ChKey(ch, "IPI")); }
+
+    /// <summary>
+    /// Gets the configured amplitude-control mode, warning and falling back to PW when invalid.
+    /// </summary>
+    public string GetChannelAmpMode(int ch)
+    {
+        ValidateChannel(ch);
+        string key = ChKey(ch, "ampMode");
+        string raw = _cfg.GetString(key, "PW");
+        return NormalizeAmpModeOrWarn(raw, key, "JSON");
+    }
 
     /// <summary>Checks whether a channel index is within the valid range.</summary>
     public bool IsChannelInRange(int ch) => ch >= 1 && ch <= _totalChannels;
@@ -190,7 +241,16 @@ public sealed class StimParamsConfigController
 
         var seg = key.Split('.');
         if (seg.Length < 4) return;
-        if (int.TryParse(seg[2], out int ch)) ValidateChannel(ch);
+            if (int.TryParse(seg[2], out int ch)) ValidateChannel(ch);
+    }
+
+    private void SetChannelAmpModeInternal(int ch, string mode)
+    {
+        ValidateChannel(ch);
+        string key = ChKey(ch, "ampMode");
+        string normalized = NormalizeAmpModeOrWarn(mode, key, "input");
+        _cfg.Set(key, JToken.FromObject(normalized));
+        _cfg.Save();
     }
 
     /// <summary>Creates missing channel entries in the JSON structure up to the total channel count.</summary>
@@ -203,10 +263,14 @@ public sealed class StimParamsConfigController
         for (int ch = 1; ch <= totalChannels; ch++)
         {
             if (chObj[$"{ch}"] is not JObject n) { n = new JObject(); chObj[$"{ch}"] = n; }
-            if (n["amp"]   == null) n["amp"]   = 0.0;
-            if (n["minPW"] == null) n["minPW"] = 0;
-            if (n["maxPW"] == null) n["maxPW"] = 0;
-            if (n["IPI"]   == null) n["IPI"]   = 0;
+            if (n["minPW"]      == null) n["minPW"]      = 0;
+            if (n["maxPW"]      == null) n["maxPW"]      = 0;
+            if (n["maxPA"]      == null) n["maxPA"]      = 0.0;
+            if (n["minPA"]      == null) n["minPA"]      = 0.0;
+            if (n["defaultPA"]  == null) n["defaultPA"]  = 0.0;
+            if (n["defaultPW"]  == null) n["defaultPW"]  = 0;
+            if (n["ampMode"]    == null) n["ampMode"]    = "PW";
+            if (n["IPI"]        == null) n["IPI"]        = 0;
         }
     }
 
@@ -235,5 +299,22 @@ public sealed class StimParamsConfigController
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Key must be non-empty.", nameof(name));
+    }
+
+    /// <summary>
+    /// Normalizes amp-mode strings in one place. Emits the standard warning when invalid and falls back to PW.
+    /// Consider replacing this with an enum-backed strategy if additional modes emerge.
+    /// </summary>
+    private static string NormalizeAmpModeOrWarn(string mode, string keyPath, string source)
+    {
+        if (!string.IsNullOrWhiteSpace(mode))
+        {
+            var candidate = mode.Trim().ToUpperInvariant();
+            if (candidate == "PW" || candidate == "PA")
+                return candidate;
+        }
+
+        Log.Warn($"Invalid ampMode '{mode}' found in {source} for {keyPath}; defaulting to 'PW' and using default pulse-width limits.");
+        return "PW";
     }
 }

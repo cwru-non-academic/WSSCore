@@ -14,7 +14,17 @@ public sealed class StimParamsConfig : DictConfigBase
             {
                 ["ch"] = new JObject
                 {
-                    ["1"] = new JObject { ["maxPW"]=10, ["minPW"]=0, ["amp"]=3.0, ["IPI"]=10 }
+                    ["1"] = new JObject
+                    {
+                        ["ampMode"] = "PW",
+                        ["maxPW"] = 0,
+                        ["minPW"] = 0,
+                        ["maxPA"] = 0.0,
+                        ["minPA"] = 0.0,
+                        ["defaultPA"] = 1.0,
+                        ["defaultPW"] = 50,
+                        ["IPI"] = 10
+                    }
                 }
             }
         })

@@ -49,7 +49,7 @@ public interface IStimParamsCore : IStimulationCore
 
     /// <summary>
     /// Adds or updates a parameter by dotted key. Examples:
-    /// <c>stim.ch.1.amp</c>, <c>stim.ch.2.minPW</c>, <c>stim.ch.3.maxPW</c>, <c>stim.ch.4.IPI</c>.
+    /// <c>stim.ch.1.defaultPA</c>, <c>stim.ch.2.minPW</c>, <c>stim.ch.3.maxPW</c>, <c>stim.ch.4.IPI</c>.
     /// </summary>
     /// <param name="key">Dotted parameter key.</param>
     /// <param name="value">Value to set.</param>
@@ -81,10 +81,16 @@ public interface IStimParamsCore : IStimulationCore
 
     // ---- Channel helpers ----
 
-    /// <summary>Sets per-channel amplitude in mA.</summary>
+    /// <summary>Sets the per-channel default amplitude (PA) in mA.</summary>
     /// <param name="ch">1-based logical channel.</param>
     /// <param name="mA">Amplitude in milliamps.</param>
     void SetChannelAmp(int ch, float mA);
+
+    /// <summary>Sets per-channel minimum PA in mA.</summary>
+    void SetChannelPAMin(int ch, float mA);
+
+    /// <summary>Sets per-channel maximum PA in mA.</summary>
+    void SetChannelPAMax(int ch, float mA);
 
     /// <summary>Sets per-channel minimum pulse width in µs.</summary>
     void SetChannelPWMin(int ch, int us);
@@ -92,11 +98,26 @@ public interface IStimParamsCore : IStimulationCore
     /// <summary>Sets per-channel maximum pulse width in µs.</summary>
     void SetChannelPWMax(int ch, int us);
 
+    /// <summary>Sets the per-channel default pulse width in µs.</summary>
+    void SetChannelDefaultPW(int ch, int us);
+
     /// <summary>Sets per-channel IPI in ms.</summary>
     void SetChannelIPI(int ch, int ms);
 
-    /// <summary>Gets per-channel amplitude in mA.</summary>
+    /// <summary>Sets the amplitude-control mode ("PW"/"PA") for a channel.</summary>
+    void SetChannelAmpMode(int ch, string mode);
+
+    /// <summary>Sets the same amplitude-control mode for all channels.</summary>
+    void SetAllChannelsAmpMode(string mode);
+
+    /// <summary>Gets the per-channel default amplitude (PA) in mA.</summary>
     float GetChannelAmp(int ch);
+
+    /// <summary>Gets per-channel minimum PA in mA.</summary>
+    float GetChannelPAMin(int ch);
+
+    /// <summary>Gets per-channel maximum PA in mA.</summary>
+    float GetChannelPAMax(int ch);
 
     /// <summary>Gets per-channel minimum pulse width in µs.</summary>
     int GetChannelPWMin(int ch);
@@ -104,8 +125,14 @@ public interface IStimParamsCore : IStimulationCore
     /// <summary>Gets per-channel maximum pulse width in µs.</summary>
     int GetChannelPWMax(int ch);
 
+    /// <summary>Gets the per-channel default pulse width in µs.</summary>
+    int GetChannelDefaultPW(int ch);
+
     /// <summary>Gets per-channel IPI in ms.</summary>
     int GetChannelIPI(int ch);
+
+    /// <summary>Gets the current amplitude-control mode for a channel.</summary>
+    string GetChannelAmpMode(int ch);
 
     // ---- Optional capability ----
 

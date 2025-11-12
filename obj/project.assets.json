@@ -717,7 +717,7 @@
             "version": "[4.5.5, )"
           }
         },
-        "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/8.0.415/RuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/8.0.416/RuntimeIdentifierGraph.json"
       }
     }
   }

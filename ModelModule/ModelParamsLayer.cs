@@ -70,20 +70,38 @@ public sealed class ModelParamsLayer : IModelParamsCore
     /// <inheritdoc/>
     public void SetChannelAmp(int ch, float mA) => _inner.SetChannelAmp(ch, mA);
     /// <inheritdoc/>
+    public void SetChannelPAMin(int ch, float mA) => _inner.SetChannelPAMin(ch, mA);
+    /// <inheritdoc/>
+    public void SetChannelPAMax(int ch, float mA) => _inner.SetChannelPAMax(ch, mA);
+    /// <inheritdoc/>
     public void SetChannelPWMin(int ch, int us) => _inner.SetChannelPWMin(ch, us);
     /// <inheritdoc/>
     public void SetChannelPWMax(int ch, int us) => _inner.SetChannelPWMax(ch, us);
     /// <inheritdoc/>
+    public void SetChannelDefaultPW(int ch, int us) => _inner.SetChannelDefaultPW(ch, us);
+    /// <inheritdoc/>
     public void SetChannelIPI(int ch, int ms) => _inner.SetChannelIPI(ch, ms);
+    /// <inheritdoc/>
+    public void SetChannelAmpMode(int ch, string mode) => _inner.SetChannelAmpMode(ch, mode);
+    /// <inheritdoc/>
+    public void SetAllChannelsAmpMode(string mode) => _inner.SetAllChannelsAmpMode(mode);
 
     /// <inheritdoc/>
     public float GetChannelAmp(int ch) => _inner.GetChannelAmp(ch);
+    /// <inheritdoc/>
+    public float GetChannelPAMin(int ch) => _inner.GetChannelPAMin(ch);
+    /// <inheritdoc/>
+    public float GetChannelPAMax(int ch) => _inner.GetChannelPAMax(ch);
     /// <inheritdoc/>
     public int GetChannelPWMin(int ch) => _inner.GetChannelPWMin(ch);
     /// <inheritdoc/>
     public int GetChannelPWMax(int ch) => _inner.GetChannelPWMax(ch);
     /// <inheritdoc/>
+    public int GetChannelDefaultPW(int ch) => _inner.GetChannelDefaultPW(ch);
+    /// <inheritdoc/>
     public int GetChannelIPI(int ch) => _inner.GetChannelIPI(ch);
+    /// <inheritdoc/>
+    public string GetChannelAmpMode(int ch) => _inner.GetChannelAmpMode(ch);
     /// <inheritdoc/>
     public bool IsChannelInRange(int ch) => _inner.IsChannelInRange(ch);
 
