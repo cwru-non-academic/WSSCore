@@ -85,6 +85,12 @@ public sealed class ModelParamsLayer : IModelParamsCore
     public void SetChannelAmpMode(int ch, string mode) => _inner.SetChannelAmpMode(ch, mode);
     /// <inheritdoc/>
     public void SetAllChannelsAmpMode(string mode) => _inner.SetAllChannelsAmpMode(mode);
+    /// <inheritdoc/>
+    public void SetChannelMin(int ch, float value) => _inner.SetChannelMin(ch, value);
+    /// <inheritdoc/>
+    public void SetChannelMax(int ch, float value) => _inner.SetChannelMax(ch, value);
+    /// <inheritdoc/>
+    public void SetChannelDefault(int ch, float value) => _inner.SetChannelDefault(ch, value);
 
     /// <inheritdoc/>
     public float GetChannelAmp(int ch) => _inner.GetChannelAmp(ch);
@@ -102,6 +108,12 @@ public sealed class ModelParamsLayer : IModelParamsCore
     public int GetChannelIPI(int ch) => _inner.GetChannelIPI(ch);
     /// <inheritdoc/>
     public string GetChannelAmpMode(int ch) => _inner.GetChannelAmpMode(ch);
+    /// <inheritdoc/>
+    public float GetChannelMin(int ch) => _inner.GetChannelMin(ch);
+    /// <inheritdoc/>
+    public float GetChannelMax(int ch) => _inner.GetChannelMax(ch);
+    /// <inheritdoc/>
+    public float GetChannelDefault(int ch) => _inner.GetChannelDefault(ch);
     /// <inheritdoc/>
     public bool IsChannelInRange(int ch) => _inner.IsChannelInRange(ch);
 

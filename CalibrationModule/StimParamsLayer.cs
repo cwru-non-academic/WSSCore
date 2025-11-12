@@ -14,6 +14,8 @@ public sealed class StimParamsLayer : IStimParamsCore
     private int _totalChannels;
     private float[] _lastAmp;
 
+    private enum ChannelValueKind { Min, Max, Default }
+
     /// <summary>
     /// Constructs the layer over an existing core and a params context path.
     /// </summary>
@@ -140,6 +142,15 @@ public sealed class StimParamsLayer : IStimParamsCore
     /// <inheritdoc cref="StimParamsConfigController.SetAllChannelsAmpMode(string)"/>
     public void SetAllChannelsAmpMode(string mode) => _ctrl.SetAllChannelsAmpMode(mode);
 
+    /// <inheritdoc cref="IStimParamsCore.SetChannelMin(int,float)"/>
+    public void SetChannelMin(int ch, float value) => SetChannelControlValue(ch, value, ChannelValueKind.Min);
+
+    /// <inheritdoc cref="IStimParamsCore.SetChannelMax(int,float)"/>
+    public void SetChannelMax(int ch, float value) => SetChannelControlValue(ch, value, ChannelValueKind.Max);
+
+    /// <inheritdoc cref="IStimParamsCore.SetChannelDefault(int,float)"/>
+    public void SetChannelDefault(int ch, float value) => SetChannelControlValue(ch, value, ChannelValueKind.Default);
+
     /// <inheritdoc cref="StimParamsConfigController.GetChannelAmp(int)"/>
     public float GetChannelAmp(int ch) => _ctrl.GetChannelAmp(ch);
 
@@ -163,6 +174,81 @@ public sealed class StimParamsLayer : IStimParamsCore
 
     /// <inheritdoc cref="StimParamsConfigController.GetChannelAmpMode(int)"/>
     public string GetChannelAmpMode(int ch) => _ctrl.GetChannelAmpMode(ch);
+
+    /// <summary>
+    /// Writes the correct backing parameter for the requested control value based on the channel's amp mode.
+    /// </summary>
+    private void SetChannelControlValue(int ch, float value, ChannelValueKind kind)
+    {
+        string mode = _ctrl.GetChannelAmpMode(ch);
+        switch (mode)
+        {
+            case "PA":
+                switch (kind)
+                {
+                    case ChannelValueKind.Min:
+                        _ctrl.SetChannelPAMin(ch, value);
+                        break;
+                    case ChannelValueKind.Max:
+                        _ctrl.SetChannelPAMax(ch, value);
+                        break;
+                    case ChannelValueKind.Default:
+                        _ctrl.SetChannelDefaultPW(ch, (int)Math.Round(value));
+                        break;
+                }
+                break;
+            case "PW":
+            default:
+                int rounded = (int)Math.Round(value);
+                switch (kind)
+                {
+                    case ChannelValueKind.Min:
+                        _ctrl.SetChannelPWMin(ch, rounded);
+                        break;
+                    case ChannelValueKind.Max:
+                        _ctrl.SetChannelPWMax(ch, rounded);
+                        break;
+                    case ChannelValueKind.Default:
+                        _ctrl.SetChannelAmp(ch, value);
+                        break;
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Reads the active control value for the requested channel, adapting to PW/PA modes.
+    /// </summary>
+    private float GetChannelControlValue(int ch, ChannelValueKind kind)
+    {
+        string mode = _ctrl.GetChannelAmpMode(ch);
+        return mode switch
+        {
+            "PA" => kind switch
+            {
+                ChannelValueKind.Min => _ctrl.GetChannelPAMin(ch),
+                ChannelValueKind.Max => _ctrl.GetChannelPAMax(ch),
+                ChannelValueKind.Default => _ctrl.GetChannelDefaultPW(ch),
+                _ => 0f
+            },
+            _ => kind switch
+            {
+                ChannelValueKind.Min => _ctrl.GetChannelPWMin(ch),
+                ChannelValueKind.Max => _ctrl.GetChannelPWMax(ch),
+                ChannelValueKind.Default => _ctrl.GetChannelAmp(ch),
+                _ => 0f
+            }
+        };
+    }
+
+    /// <inheritdoc cref="IStimParamsCore.GetChannelMin(int)"/>
+    public float GetChannelMin(int ch) => GetChannelControlValue(ch, ChannelValueKind.Min);
+
+    /// <inheritdoc cref="IStimParamsCore.GetChannelMax(int)"/>
+    public float GetChannelMax(int ch) => GetChannelControlValue(ch, ChannelValueKind.Max);
+
+    /// <inheritdoc cref="IStimParamsCore.GetChannelDefault(int)"/>
+    public float GetChannelDefault(int ch) => GetChannelControlValue(ch, ChannelValueKind.Default);
 
     /// <inheritdoc cref="StimParamsConfigController.IsChannelInRange(int)"/>
     public bool IsChannelInRange(int ch) => _ctrl.IsChannelInRange(ch);
