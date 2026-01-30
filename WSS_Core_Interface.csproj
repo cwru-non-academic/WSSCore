@@ -15,6 +15,12 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <!-- Span/ReadOnlySpan support when using newer C# features on .NET Framework -->
     <PackageReference Include="System.Memory" Version="4.5.5" />
+    <!-- Ensure assemblies are copied local for pythonnet -->
+    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+    <PackageReference Include="System.Buffers" Version="4.5.1" />
+    <PackageReference Include="System.Numerics.Vectors" Version="4.5.0" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
+    <PackageReference Include="System.Security.Permissions" Version="6.0.0" />
   </ItemGroup>
 
   <!-- No extra serial package needed: net48 includes System.IO.Ports in-box -->

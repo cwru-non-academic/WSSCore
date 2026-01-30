@@ -14,3 +14,7 @@
 /home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core.C9F28945.Up2Date
 /home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core_Interface.dll
 /home/lemf/Documents/GitHub/WSSCoreInterface/obj/Debug/net48/WSS_Core_Interface.pdb
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Debug/net48/System.IO.Ports.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Debug/net48/System.Security.AccessControl.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Debug/net48/System.Security.Permissions.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Debug/net48/System.Security.Principal.Windows.dll
