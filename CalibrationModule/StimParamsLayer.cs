@@ -66,7 +66,14 @@ namespace Wss.CalibrationModule
 
                 float defPw = _ctrl.TryGetStimParam($"{baseKey}.defaultPW", out var dPw) ? dPw : 50f;
                 pulseWidth = (int)Math.Round(defPw);
-                amp = paMin + (paMax - paMin) * value01;
+                if (value01 <= 0f)
+                {
+                    amp = 0f;
+                }
+                else
+                {
+                    amp = paMin + (paMax - paMin) * value01;
+                }
                 reportedDrive = amp;
             }
             else
@@ -75,8 +82,15 @@ namespace Wss.CalibrationModule
                 float pwMax = _ctrl.TryGetStimParam($"{baseKey}.maxPW", out var mx) ? mx : 500f;
                 if (pwMax < pwMin) { var tmp = pwMin; pwMin = pwMax; pwMax = tmp; }
 
-                pulseWidth = (int)Math.Round(pwMin + (pwMax - pwMin) * value01);
                 amp = _ctrl.TryGetStimParam($"{baseKey}.defaultPA", out var defaultPa) ? defaultPa : 1f;
+                if (value01 <= 0f)
+                {
+                    pulseWidth = 0;
+                }
+                else
+                {
+                    pulseWidth = (int)Math.Round(pwMin + (pwMax - pwMin) * value01);
+                }
                 reportedDrive = pulseWidth;
             }
 
