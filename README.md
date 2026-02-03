@@ -2,7 +2,7 @@
 # WSSInterfacingCode
 C# class that has all the methods to communicate with the WSS and software specific classes that implements some of the functionalities necessary for that program.
 
-All documentation can be found: https://cwru-non-academic.github.io/WSS_Documentation/
+All documentation about this API and its implementations can be found in [GitHub Pages](https://cwru-non-academic.github.io/WSS_Documentation/).
 
 ## Linux serial setup
 - Install the native dependency that backs `System.IO.Ports`. On Debian/Ubuntu-based distros run `sudo apt install libudev1` (Unity build hosts may also require `libudev-dev`). Most other distros ship the equivalent package by default.
