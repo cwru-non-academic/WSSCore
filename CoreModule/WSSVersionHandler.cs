@@ -1,11 +1,9 @@
 using System.Collections.Generic;
-
-/// <summary>
-/// Handles WSS firmware version parsing and feature availability based on supported firmware versions.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Handles firmware version parsing and feature availability based on known supported versions.
+    /// </summary>
     public class WSSVersionHandler
     {
         /// <summary>
@@ -14,7 +12,9 @@ namespace Wss.CoreModule
         /// </summary>
         public enum SupportedVersions : int
         {
+            /// <summary>Firmware version H03.</summary>
             H03 = 83,
+            /// <summary>Firmware version J03.</summary>
             J03 = 93
         }
 

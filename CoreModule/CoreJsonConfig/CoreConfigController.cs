@@ -1,14 +1,12 @@
 using System;
 using System.IO;
 using System.Threading;
-
-/// <summary>
-/// Controls loading, validating, reading, and writing a stimulation configuration JSON file.
-/// Thread-safe. Ensures a valid default config exists on disk.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Controls loading, validating, reading, and writing a configuration JSON file.
+    /// Thread-safe. Ensures a valid default config exists on disk.
+    /// </summary>
     public sealed class CoreConfigController : ICoreConfig
     {
         private readonly object _sync = new object();

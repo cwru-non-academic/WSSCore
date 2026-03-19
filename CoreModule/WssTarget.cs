@@ -1,10 +1,9 @@
-/// <summary>
-/// Addresses for targeting individual WSS units or broadcasting to all.
-/// Values are on-wire destination IDs used by commands.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Addresses for targeting individual units or broadcasting to all.
+    /// Values are on-wire destination IDs used by commands.
+    /// </summary>
     public enum WssTarget : byte
     {
         /// <summary>Broadcast to all connected WSS devices.</summary>

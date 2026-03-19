@@ -1,17 +1,20 @@
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using Wss.CoreModule;
-
-/// <summary>
-/// JSON-backed model configuration that stores controller mode and constants
-/// under a dotted-key hierarchy (e.g., "calib.mode", "constants.PModeProportional").
-/// Provides typed access helpers via <see cref="DictConfigBase"/>.
-/// </summary>
-
 namespace Wss.ModelModule
 {
+    /// <summary>
+    /// JSON-backed model configuration that stores controller mode and constants
+    /// under a dotted-key hierarchy (e.g., "calib.mode", "constants.PModeProportional").
+    /// Provides typed access helpers via <see cref="DictConfigBase"/>.
+    /// </summary>
     public sealed class ModelConfig : DictConfigBase
     {
+        /// <summary>
+        /// Initializes a model configuration backed by the JSON file at <paramref name="path"/>.
+        /// Creates the file with defaults when missing.
+        /// </summary>
+        /// <param name="path">Destination file path.</param>
         public ModelConfig(string path)
         : base(path, defaults: new JObject
         {

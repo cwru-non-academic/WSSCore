@@ -1,30 +1,41 @@
 using System;
-
-/// <summary>
-/// Strongly-typed snapshot of settings returned by the ModuleQuery command.
-/// Includes a safe decoder for the data-only payload and helpers for selecting
-/// amplitude mapping behavior (e.g., 10 mA vs 72 mA based on HW flags).
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Strongly-typed snapshot of settings returned by a ModuleQuery-like payload.
+    /// Includes a safe decoder for the data-only payload and helpers for selecting
+    /// amplitude mapping behavior (e.g., 10 mA vs 72 mA based on HW flags).
+    /// </summary>
     public sealed class ModuleSettings
     {
-        [Flags]
         /// <summary>
-        /// Hardware configuration flags reported by the device. Each bit defines an
-        /// independent setting; the on-wire value is the sum of set bits. In particular,
-        /// bit 1 (value 2) indicates 10 mA PA mode and bit 2 (value 4) indicates 10 ms pulse guard.
-        /// </summary>
+         /// Hardware configuration flags reported by the device. Each bit defines an
+         /// independent setting; the on-wire value is the sum of set bits. In particular,
+         /// bit 1 (value 2) indicates 10 mA PA mode and bit 2 (value 4) indicates 10 ms pulse guard.
+         /// </summary>
+        [Flags]
         public enum HwConfigFlags : byte
         {
-            Default         = 0,          // no special flags
-            TenMilliAmpPA   = 1 << 1,     // bit1 => 10 mA PA mode (value 2) otheriwise 72mA PA
-            TenMsPulseGuard = 1 << 2,     // bit2 => 10 ms pulse guard (value 4)
-            Future8         = 1 << 3,     // future use (value 8)
-            Future16        = 1 << 4,     // future use (value 16)
-            Future32        = 1 << 5,     // future use (value 32)
-            Future64        = 1 << 6      // future use (value 64)
+            /// <summary>No special flags.</summary>
+            Default = 0,
+
+            /// <summary>Enables 10 mA PA mode (bit 1; value 2). When not set, PA mapping uses the default curve.</summary>
+            TenMilliAmpPA = 1 << 1,
+
+            /// <summary>Enables 10 ms pulse guard (bit 2; value 4).</summary>
+            TenMsPulseGuard = 1 << 2,
+
+            /// <summary>Reserved for future use (bit 3; value 8).</summary>
+            Future8 = 1 << 3,
+
+            /// <summary>Reserved for future use (bit 4; value 16).</summary>
+            Future16 = 1 << 4,
+
+            /// <summary>Reserved for future use (bit 5; value 32).</summary>
+            Future32 = 1 << 5,
+
+            /// <summary>Reserved for future use (bit 6; value 64).</summary>
+            Future64 = 1 << 6
         }
 
         /// <summary>
@@ -32,14 +43,27 @@ namespace Wss.CoreModule
         /// </summary>
         public enum FingerswitchConfig : byte
         {
-            None  = 0,
-            FSw   = 1,
+            /// <summary>No fingerswitch.</summary>
+            None = 0,
+
+            /// <summary>Fingerswitch mode.</summary>
+            FSw = 1,
+
+            /// <summary>Burst mode.</summary>
             Burst = 2,
-            Future = 3 // 3..255 reserved/future
+
+            /// <summary>Reserved for future use (3..255).</summary>
+            Future = 3
         }
 
         /// <summary>Which parameter the front-panel step affects (PA or PW).</summary>
-        public enum ParameterStepKind : byte { PA, PW }
+        public enum ParameterStepKind : byte
+        {
+            /// <summary>Pulse amplitude (PA).</summary>
+            PA,
+            /// <summary>Pulse width (PW).</summary>
+            PW
+        }
 
         /// <summary>Device serial number (one byte in this query).</summary>
         public byte SerialNumber { get; private set; }

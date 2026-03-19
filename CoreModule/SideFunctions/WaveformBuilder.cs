@@ -1,13 +1,11 @@
 using System;
-
-/// <summary>
-/// Utility for constructing charge-balanced stimulation waveforms.
-/// Given a cathodic shape, it computes a matching anodic recharge segment and
-/// exposes helpers to retrieve shapes and total area.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Utility for constructing charge-balanced stimulation waveforms.
+    /// Given a cathodic shape, it computes a matching anodic recharge segment and
+    /// exposes helpers to retrieve shapes and total area.
+    /// </summary>
     public class WaveformBuilder
     {
         private const int shapeSize = 32;

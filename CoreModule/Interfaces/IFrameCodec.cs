@@ -1,12 +1,10 @@
 using System;
 using System.Collections.Generic;
-
-/// <summary>
-/// Contract for framing and deframing WSS messages over byte-stream transports (Serial, BLE, TCP).
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Contract for framing and deframing messages over byte-stream transports (Serial, BLE, TCP).
+    /// </summary>
     public interface IFrameCodec
     {
         /// <summary>

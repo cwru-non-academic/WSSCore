@@ -6,14 +6,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
-
-/// <summary>
-/// Unity-agnostic WSS stimulation core that manages connection, setup (via a queued step runner),
-/// and a background streaming loop. Public mutator methods enqueue device edits and return immediately.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Stimulation core that manages connection, setup (via a queued step runner), and a background
+    /// streaming loop. Public mutator methods enqueue device edits and return immediately.
+    /// </summary>
     public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
     {
         #region ========== Fields & nested types ==========

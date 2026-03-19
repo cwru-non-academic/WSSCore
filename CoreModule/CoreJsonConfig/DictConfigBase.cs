@@ -1,15 +1,14 @@
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
-
-/// <summary>
-/// Base class for JSON-backed configuration objects that expose dotted-key access.
-/// Wraps a <see cref="JObject"/> and provides thread-safe getters/setters and save.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Base class for JSON-backed configuration objects that expose dotted-key access.
+    /// Wraps a <see cref="JObject"/> and provides thread-safe getters/setters and persistence.
+    /// </summary>
     public abstract class DictConfigBase
     {
+        /// <summary>Synchronization gate for JSON reads/writes.</summary>
         protected readonly object _sync = new object();
         /// <summary>Root JSON object for this configuration.</summary>
         protected JObject _root;

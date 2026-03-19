@@ -1,13 +1,11 @@
 using System;
-
-/// <summary>
-/// Unity-agnostic stimulation core lifecycle and control surface.
-/// Implementations manage connection, setup, and a background streaming loop.
-/// Public mutators should enqueue edits and return immediately.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Stimulation core lifecycle and control surface.
+    /// Implementations manage connection, setup, and a background streaming loop.
+    /// Public mutators should enqueue edits and return immediately.
+    /// </summary>
     public interface IStimulationCore : IDisposable
     {
         // lifecycle

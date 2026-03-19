@@ -1,19 +1,29 @@
 using System;
 using System.Diagnostics;
-
-/// <summary>
-/// Lightweight, host-agnostic logger.
-/// - Works in plain .NET via Console/Debug.
-/// - Detects Unity at runtime via reflection and forwards to UnityEngine.Debug.
-/// - Exposes a pluggable sink/event so hosts (e.g., Python via pythonnet) can capture logs.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Lightweight, host-agnostic logger.
+    /// - Works in plain .NET via Console/Debug.
+    /// - Detects Unity at runtime via reflection and forwards to UnityEngine.Debug.
+    /// - Exposes a pluggable sink/event so hosts can capture logs.
+    /// </summary>
     public static class Log
     {
-        public enum LogLevel { Info, Warn, Error }
+        /// <summary>Log severity.</summary>
+        public enum LogLevel
+        {
+            /// <summary>Informational message.</summary>
+            Info,
+            /// <summary>Warning message.</summary>
+            Warn,
+            /// <summary>Error message.</summary>
+            Error
+        }
 
+        /// <summary>
+        /// Raised for each message written via this logger, after the sink is invoked.
+        /// </summary>
         public static event Action<LogLevel, string> Message;
 
         private static readonly object _gate = new object();
@@ -31,10 +41,18 @@ namespace Wss.CoreModule
             lock (_gate) { _sink = CreateDefaultSink(); }
         }
 
+        /// <summary>Writes an informational message.</summary>
         public static void Info(string message)  => Write(LogLevel.Info,  message);
+        /// <summary>Writes a warning message.</summary>
         public static void Warn(string message)  => Write(LogLevel.Warn,  message);
+        /// <summary>Writes an error message.</summary>
         public static void Error(string message) => Write(LogLevel.Error, message);
 
+        /// <summary>
+        /// Writes an exception as an error message.
+        /// </summary>
+        /// <param name="ex">Exception to log.</param>
+        /// <param name="prefix">Optional prefix to prepend to the exception string.</param>
         public static void Error(Exception ex, string prefix = null)
         {
             var msg = prefix == null ? ex?.ToString() : (prefix + ": " + ex);

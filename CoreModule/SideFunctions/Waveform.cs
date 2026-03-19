@@ -1,11 +1,8 @@
-
-/// <summary>
-/// Immutable waveform container holding cathodic and anodic shape arrays and
-/// the computed total area used for balanced charge calculations.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Waveform container holding cathodic and anodic shape arrays and a computed total area.
+    /// </summary>
     [System.Serializable]
     public class Waveform
     {
@@ -21,9 +18,7 @@ namespace Wss.CoreModule
         /// Total area under the waveform used for computing recharge amplitude.
         /// </summary>
         public float area;
-        /// <summary>
-        /// Creates a new <see cref="Waveform"/> from catodic and anodic arrays and area value.
-        /// </summary>
+        /// <summary>Creates a new <see cref="Waveform"/> from cathodic/anodic arrays and an area value.</summary>
         /// <param name="catWaveform">Cathodic shape samples.</param>
         /// <param name="anodicWaveform">Anodic shape samples.</param>
         /// <param name="area">Computed total area.</param>

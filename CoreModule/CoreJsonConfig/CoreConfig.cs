@@ -1,10 +1,9 @@
-/// <summary>
-/// Strongly-typed core configuration model persisted in JSON.
-/// Exposes the maximum number of WSS devices and the firmware version string.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Strongly-typed core configuration model persisted in JSON.
+    /// Exposes the maximum number of devices and the firmware version string.
+    /// </summary>
     public sealed class CoreConfig
     {
         /// <summary>Maximum number of WSS devices supported by this app.</summary>

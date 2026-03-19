@@ -1,19 +1,17 @@
 using System;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-
-/// <summary>
-/// Low-level WSS protocol client. Frames commands using an <see cref="IFrameCodec"/>,
-/// sends them over an <see cref="ITransport"/>, and correlates responses by
-/// <c>(target,msgId)</c>. Provides async connect/disconnect and a request/response
-/// pipeline used by higher-level cores and layers.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Low-level protocol client. Frames commands using an <see cref="IFrameCodec"/>,
+    /// sends them over an <see cref="ITransport"/>, and correlates responses by
+    /// <c>(target,msgId)</c>.
+    /// </summary>
     public sealed class WssClient : IDisposable
     {
         private readonly ITransport _transport;
@@ -36,6 +34,7 @@ namespace Wss.CoreModule
         /// <summary>Initializes a new client over the provided transport and frame codec.</summary>
         /// <param name="transport">Underlying byte transport (e.g., serial, BLE).</param>
         /// <param name="codec">Frame codec (escape/unescape + checksum).</param>
+        /// <param name="versionHandler">Firmware version handler used for version-gated commands.</param>
         /// <param name="sender">Sender address byte (defaults to 0x00).</param>
         public WssClient(ITransport transport, IFrameCodec codec, WSSVersionHandler versionHandler, byte sender = 0x00)
         {
@@ -52,7 +51,7 @@ namespace Wss.CoreModule
         /// <param name="ct">The cancellation token to observe.</param>
         /// <returns>A task representing the asynchronous connection operation.</returns>
         /// <exception cref="InvalidOperationException">Thrown if already connected to the target.</exception>
-        /// <exception cref="IOException">Thrown if the connection attempt fails.</exception>
+        /// <exception cref="System.IO.IOException">Thrown if the connection attempt fails.</exception>
         /// <exception cref="OperationCanceledException">Thrown if the operation is canceled.</exception>
         public Task ConnectAsync(CancellationToken ct = default) => _transport.ConnectAsync(ct);
 
@@ -62,7 +61,7 @@ namespace Wss.CoreModule
         /// <param name="ct">The cancellation token to observe.</param>
         /// <returns>A task representing the asynchronous disconnection operation.</returns>
         /// <exception cref="InvalidOperationException">Thrown if not connected to the target.</exception>
-        /// <exception cref="IOException">Thrown if the disconnection fails due to a transport error.</exception>
+        /// <exception cref="System.IO.IOException">Thrown if the disconnection fails due to a transport error.</exception>
         /// <exception cref="OperationCanceledException">Thrown if the operation is canceled.</exception>
         public Task DisconnectAsync(CancellationToken ct = default) => _transport.DisconnectAsync(ct);
 
@@ -109,7 +108,7 @@ namespace Wss.CoreModule
         /// <param name="ct">Cancellation token. A 2s internal timeout is also applied.</param>
         /// <returns>Processed response string.</returns>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="framed"/> is null.</exception>
-        /// <exception cref="IOException">Thrown if the underlying connection encounters an error.</exception>
+        /// <exception cref="System.IO.IOException">Thrown if the underlying connection encounters an error.</exception>
         /// <exception cref="OperationCanceledException">Thrown if the operation is canceled.</exception>
         private async Task<string> SendAwaitOneAsync(
             TaskCompletionSource<byte[]> tcs,
@@ -390,6 +389,8 @@ namespace Wss.CoreModule
         /// Clears groups of resources (0x40): 0=All, 1=Events, 2=Schedules, 3=Contacts.
         /// </summary>
         /// <param name="configIndex">Clear events(1), schedules(2), contacts(3), all(0).</param>
+        /// <param name="target">Target device.</param>
+        /// <param name="ct">Cancellation token.</param>
         public Task<string> Clear(int configIndex, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
         {
             // Validate and convert ints into bytes
@@ -406,6 +407,8 @@ namespace Wss.CoreModule
         /// seeded in the cache so higher layers can decode default unit settings.
         /// </summary>
         /// <param name="moduleIndex">0 = serial number, 1 = settings array.</param>
+        /// <param name="target">Target device.</param>
+        /// <param name="ct">Cancellation token.</param>
         /// <remarks>
         /// - When supported (J+): this method transmits the request and, upon reply, ProcessFrame
         ///   caches the data-only slice under the sender's target address. Use

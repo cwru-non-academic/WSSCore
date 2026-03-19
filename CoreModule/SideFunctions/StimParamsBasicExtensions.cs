@@ -1,16 +1,12 @@
 // StimParamsBasicExtensions.cs
 using System;
 using Wss.CalibrationModule;
-
-/// <summary>
-/// Convenience extension methods over <see cref="IStimParamsCore"/> that forward
-/// to the optional BASIC layer (<see cref="IBasicStimulation"/>). These helpers
-/// make common operations (waveform upload, shape selection, save/load, requests)
-/// concise while preserving the core API surface.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Convenience extension methods over <see cref="IStimParamsCore"/> that forward
+    /// to the optional BASIC layer (<see cref="IBasicStimulation"/>).
+    /// </summary>
     public static class StimParamsBasicExtensions
     {
         /// <summary>Forward to BASIC.UpdateWaveform(WaveformBuilder,...).</summary>
@@ -71,6 +67,14 @@ namespace Wss.CoreModule
 
         // Optional “Try*” variants if you prefer no-throw:
 
+        /// <summary>
+        /// Attempts to forward to BASIC.UpdateWaveform(WaveformBuilder,...) without throwing.
+        /// </summary>
+        /// <param name="s">Stimulation params core instance.</param>
+        /// <param name="wf">Waveform builder to upload.</param>
+        /// <param name="eventId">Event ID to associate with the waveform.</param>
+        /// <param name="t">Target device.</param>
+        /// <returns><c>true</c> if BASIC is available and the call succeeded; otherwise <c>false</c>.</returns>
         public static bool TryUpdateWaveform(this IStimParamsCore s, WaveformBuilder wf, int eventId, WssTarget t)
             => s.TryGetBasic(out var b) && TryCall(() => b.UpdateWaveform(wf, eventId, t));
 

@@ -1,10 +1,8 @@
-/// <summary>
-/// Read-only view of core configuration values loaded from the JSON config file.
-/// Implementations expose firmware information and global limits.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Read-only view of core configuration values loaded from a JSON config file.
+    /// </summary>
     public interface ICoreConfig
     {
         /// <summary>

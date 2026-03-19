@@ -1,16 +1,10 @@
 using Wss.CalibrationModule;
-
-/// <summary>
-/// Model-driven stimulation surface layered over params + core.
-/// Extends params API and adds controller-mode stimulation (P/PD).
-/// </summary>
-/// <remarks>
-/// Fingers may be logical names (e.g., <c>"thumb"</c>, <c>"index"</c>) or channel aliases (e.g., <c>"ch3"</c>),
-/// resolved by your Finger→Channel mapping.
-/// </remarks>
-
 namespace Wss.ModelModule
 {
+    /// <summary>
+    /// Model-driven stimulation surface layered over params + core.
+    /// Extends the params API and adds controller-mode stimulation (P/PD).
+    /// </summary>
     public interface IModelParamsCore : IStimParamsCore
     {
         /// <summary>

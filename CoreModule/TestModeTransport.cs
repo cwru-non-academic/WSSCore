@@ -1,15 +1,13 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-
-/// <summary>
-/// In-memory transport for debugging and unit tests. No real I/O.
-/// Features: artificial latency, jitter, inbound chunking, and drop simulation.
-/// Default auto-responder validates checksum, flips sender/target, and echoes or replaces payload.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// In-memory transport for debugging and unit tests. No real I/O.
+    /// Features: artificial latency, jitter, inbound chunking, and drop simulation.
+    /// Default auto-responder validates checksum, flips sender/target, and echoes or replaces payload.
+    /// </summary>
     public sealed class TestModeTransport : ITransport
     {
         // --- configuration ---
@@ -102,12 +100,10 @@ namespace Wss.CoreModule
         }
 
         /// <inheritdoc/>
-        /// <summary>
-        /// Sends bytes into the transport. The default auto-responder will generate a reply
-        /// based on checksum validation and invoke <see cref="BytesReceived"/>.
-        /// </summary>
-        /// <param name="data">Outbound bytes to simulate sending.</param>
-        /// <param name="ct">Optional cancellation token.</param>
+        /// <remarks>
+        /// The default auto-responder will generate a reply based on checksum validation and
+        /// invoke <see cref="BytesReceived"/>.
+        /// </remarks>
         public Task SendAsync(byte[] data, CancellationToken ct = default)
         {
             ThrowIfDisposed();

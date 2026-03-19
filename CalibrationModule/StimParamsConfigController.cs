@@ -3,15 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json.Linq;
 using Wss.CoreModule;
-
-/// <summary>
-/// Provides high-level access to stimulation parameter configuration.
-/// Automatically seeds channel entries based on max WSS count and ensures safe access.
-/// Supports only dotted keys of form "stim.ch.{N}.{leaf}".
-/// </summary>
-
 namespace Wss.CalibrationModule
 {
+    /// <summary>
+    /// Provides high-level access to stimulation parameter configuration.
+    /// Automatically seeds channel entries based on max device count and ensures safe access.
+    /// Supports dotted keys of form "stim.ch.{N}.{leaf}".
+    /// </summary>
     public sealed class StimParamsConfigController
     {
         /// <summary>Fixed number of channels per WSS hardware unit.</summary>

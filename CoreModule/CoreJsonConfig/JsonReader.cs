@@ -1,15 +1,13 @@
 using System.IO;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-
-/// <summary>
-/// Lightweight helpers for loading and saving JSON configuration files.
-/// Provides typed object and <see cref="Newtonsoft.Json.Linq.JObject"/> utilities and
-/// ensures parent directories exist before writes.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Lightweight helpers for loading and saving JSON configuration files.
+    /// Provides typed object and <see cref="Newtonsoft.Json.Linq.JObject"/> utilities and
+    /// ensures parent directories exist before writes.
+    /// </summary>
     public static class JsonReader
     {
         /// <summary>

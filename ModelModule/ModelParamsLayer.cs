@@ -4,14 +4,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using Wss.CalibrationModule;
 using Wss.CoreModule;
-
-/// <summary>
-/// Model-driven layer (P/PD) that sits on top of an existing params layer.
-/// Computes PW from normalized magnitudes and stimulates via the wrapped core.
-/// </summary>
-
 namespace Wss.ModelModule
 {
+    /// <summary>
+    /// Model-driven layer (P/PD) that sits on top of an existing params layer.
+    /// Computes controller output from magnitudes and stimulates via the wrapped core.
+    /// </summary>
     public sealed class ModelParamsLayer : IModelParamsCore
     {
         private readonly IStimParamsCore _inner;          // params + core underneath
@@ -25,6 +23,12 @@ namespace Wss.ModelModule
         private float[] _tPrev;
         private Stopwatch _timer;
 
+        /// <summary>
+        /// Initializes a model layer over an existing params/core implementation.
+        /// </summary>
+        /// <param name="inner">Wrapped stimulation params core.</param>
+        /// <param name="modelPathOrDir">Model JSON file path or directory.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="inner"/> is null.</exception>
         public ModelParamsLayer(IStimParamsCore inner, string modelPathOrDir)
         {
             _inner    = inner ?? throw new ArgumentNullException(nameof(inner));

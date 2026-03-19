@@ -1,30 +1,27 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-
-/// <summary>
-/// Abstraction over a byte-stream transport (e.g., Serial, Bluetooth, TCP) used by the WSS client.
-/// Implementations should surface incoming bytes via <see cref="BytesReceived"/> and provide
-/// async connect/disconnect/send operations.
-/// </summary>
-/// <remarks>
-/// <para>
-/// This interface is intentionally minimal and transport-agnostic so the higher-level WSS client
-/// can be reused with different physical links (UART/COM, RFCOMM, BLE GATT, sockets).
-/// </para>
-/// <para>
-/// <b>Threading:</b> Implementations typically raise <see cref="BytesReceived"/> from a background thread.
-/// If your application (e.g., Unity) requires main-thread access for processing, marshal the callback
-/// to the main thread before touching UI/GameObjects.
-/// </para>
-/// <para>
-/// <b>Chunking:</b> Incoming chunks may contain partial frames, multiple frames, or arbitrary boundaries.
-/// Always pass chunks to a frame codec/deframer instead of assuming message boundaries align with reads.
-/// </para>
-/// </remarks>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Abstraction over a byte-stream transport (e.g., Serial, Bluetooth, TCP).
+    /// Implementations surface incoming bytes via <see cref="BytesReceived"/> and provide
+    /// async connect/disconnect/send operations.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This interface is intentionally minimal and transport-agnostic so higher-level code
+    /// can be reused with different physical links (UART/COM, RFCOMM, BLE GATT, sockets).
+    /// </para>
+    /// <para>
+    /// <b>Threading:</b> Implementations typically raise <see cref="BytesReceived"/> from a background thread.
+    /// If your application requires main-thread access, marshal the callback to the main thread.
+    /// </para>
+    /// <para>
+    /// <b>Chunking:</b> Incoming chunks may contain partial frames, multiple frames, or arbitrary boundaries.
+    /// Always pass chunks to a frame codec/deframer instead of assuming message boundaries align with reads.
+    /// </para>
+    /// </remarks>
     public interface ITransport : IDisposable
     {
         /// <summary>

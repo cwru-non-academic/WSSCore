@@ -1,16 +1,19 @@
 using Newtonsoft.Json.Linq;
 using Wss.CoreModule;
-
-/// <summary>
-/// JSON-backed stimulation-parameters configuration. Inherits common JSON
-/// handling from <see cref="DictConfigBase"/> and seeds default per-channel
-/// values under the <c>stim.ch</c> hierarchy.
-/// </summary>
-
 namespace Wss.CalibrationModule
 {
+    /// <summary>
+    /// JSON-backed stimulation-parameters configuration. Inherits common JSON
+    /// handling from <see cref="DictConfigBase"/> and seeds default per-channel
+    /// values under the <c>stim.ch</c> hierarchy.
+    /// </summary>
     public sealed class StimParamsConfig : DictConfigBase
     {
+        /// <summary>
+        /// Initializes a stimulation-parameters config backed by the JSON file at <paramref name="path"/>.
+        /// Creates the file with defaults when missing.
+        /// </summary>
+        /// <param name="path">Destination file path.</param>
         public StimParamsConfig(string path)
             : base(path, defaults: new JObject
             {

@@ -1,15 +1,13 @@
 using System;
 using System.Collections.Generic;
 using Wss.CoreModule;
-
-/// <summary>
-/// Layer that wraps an <see cref="IStimulationCore"/> and a <see cref="StimParamsConfigController"/>.
-/// Computes pulse widths from normalized inputs and forwards stimulation to the core.
-/// Also exposes dotted-key parameter access and an optional BASIC capability.
-/// </summary>
-
 namespace Wss.CalibrationModule
 {
+    /// <summary>
+    /// Layer that wraps an <see cref="IStimulationCore"/> and a <see cref="StimParamsConfigController"/>.
+    /// Computes pulse widths from normalized inputs and forwards stimulation to the core.
+    /// Also exposes dotted-key parameter access and an optional BASIC capability.
+    /// </summary>
     public sealed class StimParamsLayer : IStimParamsCore
     {
         private readonly IStimulationCore _core;          // required core
@@ -308,7 +306,7 @@ namespace Wss.CalibrationModule
         /// <inheritdoc cref="IStimulationCore.Ready"/>
         public bool Ready() => _core.Ready();
 
-        /// <inheritdoc cref="IStimulationCore.StimulateAnalog(string,int,float,int)"/>
+        /// <inheritdoc cref="IStimulationCore.StimulateAnalog(int,int,float,int)"/>
         public void StimulateAnalog(int ch, int pw, float amp, int ipi) => _core.StimulateAnalog(ch, pw, amp, ipi);
 
         /// <inheritdoc cref="IStimulationCore.ZeroOutStim(WssTarget)"/>

@@ -1,20 +1,18 @@
 using System;
 using System.Collections.Generic;
-
-/// <summary>
-/// WSS frame codec implementing a SLIP-like protocol:
-/// <list type="bullet">
-/// <item><description><b>END</b> (<c>0xC0</c>) terminates a frame.</description></item>
-/// <item><description><b>ESC</b> (<c>0xDB</c>) escapes special bytes inside the frame.</description></item>
-/// <item><description><b>END_SUB</b> (<c>0xDC</c>) represents END when escaped.</description></item>
-/// <item><description><b>ESC_SUB</b> (<c>0xDD</c>) represents ESC when escaped.</description></item>
-/// </list>
-/// Frames on the wire are <c>[sender][target][payload...][checksum][END]</c>.
-/// The checksum is computed over all bytes except the last two (checksum + END).
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Frame codec implementing a SLIP-like protocol:
+    /// <list type="bullet">
+    /// <item><description><b>END</b> (<c>0xC0</c>) terminates a frame.</description></item>
+    /// <item><description><b>ESC</b> (<c>0xDB</c>) escapes special bytes inside the frame.</description></item>
+    /// <item><description><b>END_SUB</b> (<c>0xDC</c>) represents END when escaped.</description></item>
+    /// <item><description><b>ESC_SUB</b> (<c>0xDD</c>) represents ESC when escaped.</description></item>
+    /// </list>
+    /// Frames on the wire are <c>[sender][target][payload...][checksum][END]</c>.
+    /// The checksum is computed over all bytes except the last two (checksum + END).
+    /// </summary>
     public sealed class WssFrameCodec : IFrameCodec
     {
         // Protocol bytes

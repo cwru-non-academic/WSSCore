@@ -1,38 +1,60 @@
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\WSS_Core_Interface.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\WSS_Core_Interface.pdb
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\Newtonsoft.Json.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\System.Buffers.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\System.Memory.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\System.Numerics.Vectors.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\System.Runtime.CompilerServices.Unsafe.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\net48\WSS_Core_Interface.csproj.AssemblyReference.cache
-A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\net48\WSS_Core_Interface.GeneratedMSBuildEditorConfig.editorconfig
-A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\net48\WSS_Core_Interface.AssemblyInfoInputs.cache
-A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\net48\WSS_Core_Interface.AssemblyInfo.cs
-A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\net48\WSS_Core_Interface.csproj.CoreCompileInputs.cache
-A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\net48\WSS_Core_Interface.sourcelink.json
-A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\net48\WSS_Core_Interface.csproj.CopyComplete
-A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\net48\WSS_Core_Interface.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\obj\Release\net48\WSS_Core_Interface.pdb
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\RJCP.Core.Environment.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\RJCP.Diagnostics.Trace.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\RJCP.IO.Buffer.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\RJCP.IO.Device.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\RJCP.SerialPortStream.dll
-A:\Documents\GIT Projects\WSS_Core_Interface\bin\Release\net48\de\RJCP.Core.Environment.resources.dll
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\WSS_Core_Interface.dll
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\WSS_Core_Interface.pdb
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\Newtonsoft.Json.dll
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\System.Buffers.dll
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\System.Memory.dll
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\System.Numerics.Vectors.dll
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\bin\Release\net48\System.Runtime.CompilerServices.Unsafe.dll
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.csproj.AssemblyReference.cache
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.AssemblyInfoInputs.cache
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.AssemblyInfo.cs
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.csproj.CoreCompileInputs.cache
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.sourcelink.json
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.csproj.CopyComplete
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.dll
-C:\Users\lemfn\Documents\GitHub\WSSCoreInterface\obj\Release\net48\WSS_Core_Interface.pdb
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/WSS_Core_Interface.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/WSS_Core_Interface.pdb
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/Newtonsoft.Json.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/System.Buffers.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/System.Memory.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/System.Numerics.Vectors.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/System.Runtime.CompilerServices.Unsafe.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/obj/Release/net48/WSS_Core_Interface.csproj.AssemblyReference.cache
+A:/Documents/GIT Projects/WSS_Core_Interface/obj/Release/net48/WSS_Core_Interface.GeneratedMSBuildEditorConfig.editorconfig
+A:/Documents/GIT Projects/WSS_Core_Interface/obj/Release/net48/WSS_Core_Interface.AssemblyInfoInputs.cache
+A:/Documents/GIT Projects/WSS_Core_Interface/obj/Release/net48/WSS_Core_Interface.AssemblyInfo.cs
+A:/Documents/GIT Projects/WSS_Core_Interface/obj/Release/net48/WSS_Core_Interface.csproj.CoreCompileInputs.cache
+A:/Documents/GIT Projects/WSS_Core_Interface/obj/Release/net48/WSS_Core_Interface.sourcelink.json
+A:/Documents/GIT Projects/WSS_Core_Interface/obj/Release/net48/WSS_Core_Interface.csproj.CopyComplete
+A:/Documents/GIT Projects/WSS_Core_Interface/obj/Release/net48/WSS_Core_Interface.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/obj/Release/net48/WSS_Core_Interface.pdb
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/RJCP.Core.Environment.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/RJCP.Diagnostics.Trace.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/RJCP.IO.Buffer.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/RJCP.IO.Device.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/RJCP.SerialPortStream.dll
+A:/Documents/GIT Projects/WSS_Core_Interface/bin/Release/net48/de/RJCP.Core.Environment.resources.dll
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/bin/Release/net48/WSS_Core_Interface.dll
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/bin/Release/net48/WSS_Core_Interface.pdb
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/bin/Release/net48/Newtonsoft.Json.dll
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.Buffers.dll
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.Memory.dll
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.Numerics.Vectors.dll
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.Runtime.CompilerServices.Unsafe.dll
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.csproj.AssemblyReference.cache
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.GeneratedMSBuildEditorConfig.editorconfig
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.AssemblyInfoInputs.cache
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.AssemblyInfo.cs
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.csproj.CoreCompileInputs.cache
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.sourcelink.json
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.csproj.CopyComplete
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.dll
+C:/Users/lemfn/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.pdb
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/WSS_Core_Interface.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/WSS_Core_Interface.pdb
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/Newtonsoft.Json.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.Buffers.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.IO.Ports.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.Memory.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.Numerics.Vectors.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.Runtime.CompilerServices.Unsafe.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.Security.AccessControl.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.Security.Permissions.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/System.Security.Principal.Windows.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.csproj.AssemblyReference.cache
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.GeneratedMSBuildEditorConfig.editorconfig
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.AssemblyInfoInputs.cache
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.AssemblyInfo.cs
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.csproj.CoreCompileInputs.cache
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.sourcelink.json
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core.C9F28945.Up2Date
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.dll
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.pdb
+/home/lemf/Documents/GitHub/WSSCoreInterface/obj/Release/net48/WSS_Core_Interface.xml
+/home/lemf/Documents/GitHub/WSSCoreInterface/bin/Release/net48/WSS_Core_Interface.xml

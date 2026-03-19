@@ -1,10 +1,9 @@
-/// <summary>
-/// Protocol message identifiers used by the WSS firmware.
-/// Values correspond to on-wire command codes.
-/// </summary>
-
 namespace Wss.CoreModule
 {
+    /// <summary>
+    /// Protocol message identifiers used by the firmware.
+    /// Values correspond to on-wire command codes.
+    /// </summary>
     public enum WSSMessageIDs : byte
     {
         /// <summary>Error reply or status.</summary>

@@ -1,15 +1,13 @@
 using System.Collections.Generic;
 using Wss.CoreModule;
-
-/// <summary>
-/// Core + parameters surface layered over <see cref="IStimulationCore"/>.
-/// Provides normalized-drive stimulation, per-channel parameter access,
-/// and JSON persistence for stimulation parameters. BASIC is optional and
-/// can be exposed via <see cref="TryGetBasic(out IBasicStimulation)"/>.
-/// </summary>
-
 namespace Wss.CalibrationModule
 {
+    /// <summary>
+    /// Core + parameters surface layered over <see cref="IStimulationCore"/>.
+    /// Provides normalized-drive stimulation, per-channel parameter access,
+    /// and JSON persistence for stimulation parameters. BASIC is optional and
+    /// can be exposed via <see cref="TryGetBasic(out IBasicStimulation)"/>.
+    /// </summary>
     public interface IStimParamsCore : IStimulationCore
     {
         // ---- Normalized stimulation ----
