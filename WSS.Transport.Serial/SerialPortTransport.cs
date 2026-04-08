@@ -1,12 +1,12 @@
+using System;
+using System.IO.Ports;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
+
 namespace Wss.CoreModule
 {
-    ﻿using System;
-    using System.IO.Ports;
-    using System.Linq;
-    using System.Runtime.InteropServices;
-    using System.Threading;
-    using System.Threading.Tasks;
-
     /// <summary>
     /// Serial-port implementation of <see cref="ITransport"/> for WSS communications.
     /// Wraps <see cref="SerialPort"/> and exposes an event-driven receive API that works well in Unity/.NET Standard 2.0.
@@ -101,14 +101,17 @@ namespace Wss.CoreModule
             {
                 _cts?.Cancel();
                 if (_readLoop != null)
-                    await _readLoop.ConfigureAwait(false); // ignore cancellations below
+                    await _readLoop.ConfigureAwait(false);
             }
             catch
             {
                 // ignored
             }
 
-            if (_port.IsOpen) _port.Close();
+            if (_port.IsOpen)
+            {
+                _port.Close();
+            }
         }
 
         /// <inheritdoc/>
@@ -120,7 +123,6 @@ namespace Wss.CoreModule
             if (data == null) throw new ArgumentNullException(nameof(data));
             if (!_port.IsOpen) throw new InvalidOperationException("Transport is not connected.");
 
-            //Log.Info("Out: "+BitConverter.ToString(data).Replace("-", " ").ToLowerInvariant());
             _port.Write(data, 0, data.Length);
             _port.BaseStream.Flush();
             return Task.CompletedTask;
@@ -157,8 +159,14 @@ namespace Wss.CoreModule
                         await Task.Delay(2, token).ConfigureAwait(false);
                     }
                 }
-                catch (OperationCanceledException) { /* normal during shutdown */ }
-                catch (TimeoutException) { /* normal with short read timeouts */ }
+                catch (OperationCanceledException)
+                {
+                    // normal during shutdown
+                }
+                catch (TimeoutException)
+                {
+                    // normal with short read timeouts
+                }
                 catch (Exception)
                 {
                     // TODO Consider surfacing an OnError event or logging this exception.
@@ -172,10 +180,17 @@ namespace Wss.CoreModule
         /// </summary>
         public void Dispose()
         {
-            try { _cts?.Cancel(); } catch { /* ignored */ }
+            try
+            {
+                _cts?.Cancel();
+            }
+            catch
+            {
+                // ignored
+            }
+
             _port?.Dispose();
         }
-
 
         /// <summary>
         /// Selects a serial port. Honors <paramref name="preferredPort"/> if available
@@ -195,6 +210,7 @@ namespace Wss.CoreModule
                     Log.Info($"Using preferred port: {match}");
                     return match;
                 }
+
                 Log.Warn($"Preferred port '{preferredPort}' not found.");
             }
 
@@ -284,7 +300,5 @@ namespace Wss.CoreModule
                 ? trimmed.Substring("/dev/".Length)
                 : trimmed;
         }
-
-
     }
 }

@@ -1,9 +1,62 @@
 {
   "format": 1,
   "restore": {
-    "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS_Core_Interface.csproj": {}
+    "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/WSS.Transport.Serial.csproj": {}
   },
   "projects": {
+    "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/WSS.Transport.Serial.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/WSS.Transport.Serial.csproj",
+        "projectName": "WSS.Transport.Serial",
+        "projectPath": "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/WSS.Transport.Serial.csproj",
+        "packagesPath": "/home/lemf/.nuget/packages/",
+        "outputPath": "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/lemf/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net48"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net48": {
+            "targetAlias": "net48",
+            "projectReferences": {
+              "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS_Core_Interface.csproj": {
+                "projectPath": "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS_Core_Interface.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        }
+      },
+      "frameworks": {
+        "net48": {
+          "targetAlias": "net48",
+          "dependencies": {
+            "Microsoft.NETFramework.ReferenceAssemblies": {
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[1.0.3, )",
+              "autoReferenced": true
+            },
+            "System.IO.Ports": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/lib/dotnet/sdk/8.0.125/RuntimeIdentifierGraph.json"
+        }
+      }
+    },
     "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS_Core_Interface.csproj": {
       "version": "1.0.0",
       "restore": {

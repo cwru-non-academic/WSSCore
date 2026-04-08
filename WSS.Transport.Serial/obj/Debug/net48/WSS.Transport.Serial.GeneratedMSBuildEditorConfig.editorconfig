@@ -1,0 +1,5 @@
+is_global = true
+build_property.RootNamespace = WSS.Transport.Serial
+build_property.ProjectDir = /home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
