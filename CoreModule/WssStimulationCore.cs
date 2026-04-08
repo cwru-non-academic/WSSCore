@@ -16,14 +16,14 @@ namespace Wss.CoreModule
     {
         #region ========== Fields & nested types ==========
         // ---- transport & config ----
+        private readonly ITransport _transport;
         private readonly CoreConfigController _coreConfig;
-        private readonly bool _testMode;
-        private readonly string _comPort = null;
         private readonly string _jsonPath;
         private readonly int _maxSetupTries;
         private readonly int _delayMsBetweenPackets = 10; // radio throttling
         private WssClient _wss;
         private bool _resumeStreamingAfter;
+        private bool _disposed;
 
         // ---- runtime state ----
         private CoreState _state = CoreState.Disconnected;
@@ -59,32 +59,40 @@ namespace Wss.CoreModule
         #endregion
 
         #region ========== Construction ==========
-        /// <summary>Construct with explicit COM port.</summary>
-        public WssStimulationCore(string comPort, string JSONpath, bool testMode = false, int maxSetupTries = 5)
+        /// <summary>
+        /// Initializes a stimulation core over a caller-provided transport.
+        /// </summary>
+        /// <param name="transport">Transport used to communicate with the WSS device(s).</param>
+        /// <param name="JSONpath">
+        /// Core configuration file path, or a directory path. Directory inputs use the default file name
+        /// <c>stimConfig.json</c> inside the directory.
+        /// </param>
+        /// <param name="maxSetupTries">Maximum setup retries before entering the Error state.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="transport"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="JSONpath"/> is null, empty, or whitespace.</exception>
+        /// <remarks>
+        /// The core owns the lifetime of <paramref name="transport"/> and disposes it when the core is disposed.
+        /// Call <see cref="Shutdown"/> to stop streaming/disconnect without disposing the transport.
+        /// </remarks>
+        public WssStimulationCore(ITransport transport, string JSONpath, int maxSetupTries = 5)
         {
-            _comPort = comPort;
+            _transport = transport ?? throw new ArgumentNullException(nameof(transport));
+            if (string.IsNullOrWhiteSpace(JSONpath)) throw new ArgumentException("Invalid config path.", nameof(JSONpath));
             _jsonPath = JSONpath;
             _coreConfig = new CoreConfigController(_jsonPath);
-            _testMode = testMode;
-            _maxSetupTries = maxSetupTries;
-        }
-
-        /// <summary>Construct without specifying COM port (let transport decide).</summary>
-        public WssStimulationCore(string JSONpath, bool testMode = false, int maxSetupTries = 5)
-        {
-            _jsonPath = JSONpath;
-            _comPort = null;
-            _coreConfig = new CoreConfigController(_jsonPath);
-            _testMode = testMode;
             _maxSetupTries = maxSetupTries;
         }
         #endregion
 
         #region ========== Lifecycle (Initialize / Tick / Shutdown) ==========
         /// <inheritdoc/>
+        /// <exception cref="ObjectDisposedException">Thrown when the core has been disposed.</exception>
         public void Initialize()
         {
-            if (_state == CoreState.Ready || _state == CoreState.SettingUp) Shutdown();
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(WssStimulationCore));
+
+            if (_state != CoreState.Disconnected) Shutdown();
 
             _currentSetupTries = 0;
 
@@ -95,18 +103,12 @@ namespace Wss.CoreModule
 
             InitStimArrays();
 
-            //if test mode use fake transport, otheriwse use a serial transport with port if given or auto method if not given.
-            if (_testMode)
-            {
-                _wss = new WssClient(new TestModeTransport(), new WssFrameCodec(), new WSSVersionHandler(_coreConfig.Firmware));
-            } else {
-                if (_comPort != null)
-                {
-                    _wss = new WssClient(new SerialPortTransport(_comPort), new WssFrameCodec(), new WSSVersionHandler(_coreConfig.Firmware));
-                } else {
-                    _wss = new WssClient(new SerialPortTransport(), new WssFrameCodec(), new WSSVersionHandler(_coreConfig.Firmware));
-                }
-            }
+            _wss = new WssClient(
+                _transport,
+                new WssFrameCodec(),
+                new WSSVersionHandler(_coreConfig.Firmware),
+                ownsTransport: false);
+
             _state = CoreState.Connecting;
             _connectTask = _wss.ConnectAsync();
         }
@@ -206,7 +208,17 @@ namespace Wss.CoreModule
         public void LoadConfigFile() => _coreConfig.LoadJson();
 
         /// <inheritdoc/>
-        public void Dispose() => Shutdown();
+        /// <remarks>
+        /// Calls <see cref="Shutdown"/> and then disposes the transport instance provided at construction time.
+        /// Safe to call multiple times.
+        /// </remarks>
+        public void Dispose()
+        {
+            if (_disposed) return;
+            Shutdown();
+            try { _transport.Dispose(); } catch { }
+            _disposed = true;
+        }
         #endregion
 
         #region ========== Status ==========

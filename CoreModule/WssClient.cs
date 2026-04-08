@@ -18,6 +18,7 @@ namespace Wss.CoreModule
         private readonly IFrameCodec _codec;
         private readonly byte _sender;
         private readonly WSSVersionHandler _versionHandler;
+        private readonly bool _ownsTransport;
 
         private readonly ConcurrentDictionary<(byte target, byte msgId), ConcurrentQueue<TaskCompletionSource<byte[]>>> _pending
             = new ConcurrentDictionary<(byte target, byte msgId), ConcurrentQueue<TaskCompletionSource<byte[]>>>();
@@ -31,17 +32,28 @@ namespace Wss.CoreModule
         /// </summary>
         public bool Started { get; private set; }
 
-        /// <summary>Initializes a new client over the provided transport and frame codec.</summary>
-        /// <param name="transport">Underlying byte transport (e.g., serial, BLE).</param>
-        /// <param name="codec">Frame codec (escape/unescape + checksum).</param>
+        /// <summary>
+        /// Creates a low-level protocol client over a caller-provided transport and frame codec.
+        /// </summary>
+        /// <param name="transport">Underlying byte transport (for example, serial or BLE).</param>
+        /// <param name="codec">Frame codec used for escaping/deframing and checksum validation.</param>
         /// <param name="versionHandler">Firmware version handler used for version-gated commands.</param>
         /// <param name="sender">Sender address byte (defaults to 0x00).</param>
-        public WssClient(ITransport transport, IFrameCodec codec, WSSVersionHandler versionHandler, byte sender = 0x00)
+        /// <param name="ownsTransport">
+        /// When true, <see cref="Dispose"/> also disposes the provided <paramref name="transport"/>.
+        /// Set to false when the transport lifetime is owned by a higher-level component.
+        /// </param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="transport"/>, <paramref name="codec"/>, or <paramref name="versionHandler"/> is null.</exception>
+        /// <remarks>
+        /// <see cref="ITransport.BytesReceived"/> may be raised on a background thread depending on the transport implementation.
+        /// </remarks>
+        public WssClient(ITransport transport, IFrameCodec codec, WSSVersionHandler versionHandler, byte sender = 0x00, bool ownsTransport = true)
         {
-            _transport = transport;
-            _codec = codec;
-            _versionHandler = versionHandler;
+            _transport = transport ?? throw new ArgumentNullException(nameof(transport));
+            _codec = codec ?? throw new ArgumentNullException(nameof(codec));
+            _versionHandler = versionHandler ?? throw new ArgumentNullException(nameof(versionHandler));
             _sender = sender;
+            _ownsTransport = ownsTransport;
             _transport.BytesReceived += OnBytes;
         }
 
@@ -304,13 +316,20 @@ namespace Wss.CoreModule
         }
 
         /// <summary>
-        /// Releases all resources used by the <see cref="WssClient"/>.
-        /// Closes the connection and cleans up internal state.
+        /// Unsubscribes from inbound bytes and releases client state.
         /// </summary>
+        /// <remarks>
+        /// Disposes the underlying transport only when this instance was constructed with
+        /// <c>ownsTransport</c> set to <see langword="true"/>. This method does not call
+        /// <see cref="DisconnectAsync"/> automatically.
+        /// </remarks>
         public void Dispose()
         {
             _transport.BytesReceived -= OnBytes;
-            _transport.Dispose();
+            if (_ownsTransport)
+            {
+                _transport.Dispose();
+            }
             _moduleQueryData.Clear();
         }
 
