@@ -52,7 +52,3 @@ When building a separate .NET console/worker app that references the compiled `W
 
 Copy the listed DLLs from this repository’s `bin` output into your app’s `lib` folder (or use NuGet where possible) so the runtime can resolve them when your executable starts.
 
-## How to add a submodule to exiting project
-1. Close other software using the code solution (Unity, Visual Studio, etc)
-2. If using git desktop, open the command prompt by going to `Repository>Open in Command Prompt`
-
