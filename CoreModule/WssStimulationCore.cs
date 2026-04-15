@@ -48,7 +48,7 @@ namespace Wss.CoreModule
         private int _maxWSSChannels = 0;
 
         //defaults vaules used for initial setup
-        private readonly int _defaultIPI=10;
+        private readonly int _defaultIPI = 10;
         private readonly float _defaultAmp = 1.0f;
         private readonly int _defaultSync = 170;
         private readonly int _defaultRatio = 8;
@@ -63,24 +63,29 @@ namespace Wss.CoreModule
         /// Initializes a stimulation core over a caller-provided transport.
         /// </summary>
         /// <param name="transport">Transport used to communicate with the WSS device(s).</param>
-        /// <param name="JSONpath">
-        /// Core configuration file path, or a directory path. Directory inputs use the default file name
-        /// <c>stimConfig.json</c> inside the directory.
-        /// </param>
-        /// <param name="maxSetupTries">Maximum setup retries before entering the Error state.</param>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="transport"/> is null.</exception>
-        /// <exception cref="ArgumentException">Thrown when <paramref name="JSONpath"/> is null, empty, or whitespace.</exception>
+        /// <param name="options">Core configuration path, setup retry behavior, and default stimulation values used during initial setup.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="transport"/> or <paramref name="options"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <see cref="WssStimulationCoreOptions.ConfigPath"/> is null, empty, or whitespace.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <see cref="WssStimulationCoreOptions.MaxSetupTries"/> is less than 1.</exception>
         /// <remarks>
         /// The core owns the lifetime of <paramref name="transport"/> and disposes it when the core is disposed.
         /// Call <see cref="Shutdown"/> to stop streaming/disconnect without disposing the transport.
         /// </remarks>
-        public WssStimulationCore(ITransport transport, string JSONpath, int maxSetupTries = 5)
+        public WssStimulationCore(ITransport transport, WssStimulationCoreOptions options)
         {
+            if (options == null) throw new ArgumentNullException(nameof(options));
             _transport = transport ?? throw new ArgumentNullException(nameof(transport));
-            if (string.IsNullOrWhiteSpace(JSONpath)) throw new ArgumentException("Invalid config path.", nameof(JSONpath));
-            _jsonPath = JSONpath;
+            if (string.IsNullOrWhiteSpace(options.ConfigPath)) throw new ArgumentException("Invalid config path.", nameof(WssStimulationCoreOptions.ConfigPath));
+            if (options.MaxSetupTries < 1) throw new ArgumentOutOfRangeException(nameof(WssStimulationCoreOptions.MaxSetupTries), "Max setup tries must be at least 1.");
+
+            _jsonPath = options.ConfigPath;
             _coreConfig = new CoreConfigController(_jsonPath);
-            _maxSetupTries = maxSetupTries;
+            _maxSetupTries = options.MaxSetupTries;
+            _defaultIPI = options.DefaultIpi;
+            _defaultAmp = options.DefaultAmp;
+            _defaultSync = options.DefaultSync;
+            _defaultRatio = options.DefaultRatio;
+            _defaultIPD = options.DefaultIpd;
         }
         #endregion
 
@@ -107,7 +112,12 @@ namespace Wss.CoreModule
                 _transport,
                 new WssFrameCodec(),
                 new WSSVersionHandler(_coreConfig.Firmware),
-                ownsTransport: false);
+                new WssClientOptions
+                {
+                    OwnsTransport = false,
+                    BroadcastTarget = _coreConfig.BroadcastTarget,
+                    WssTargets = _coreConfig.WssTargets
+                });
 
             _state = CoreState.Connecting;
             _connectTask = _wss.ConnectAsync();
@@ -424,32 +434,53 @@ namespace Wss.CoreModule
                     // capture decoded unit settings (or defaults) and log via StepLogger
                     () => StepLogger(CaptureUnitSettingsAsync(t), $"UnitSettings[{t}]"),
                     // Schedule 1 (Ch1)
-                    () => StepLogger(_wss.CreateSchedule(1, _defaultIPI, _defaultSync, t), $"CreateSchedule#1[{t}]"), //TODO frequewncy from config
-                    () => StepLogger(_wss.CreateContactConfig(1, new[]{1,2,0,0}, new[]{2,1,0,0}, 2, t), $"CreateContactConfig#1[{t}]"),
-                    () => StepLogger(_wss.CreateEvent(1, 0, 1, 0, 0,
-                            new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
-                            new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
-                            new[]{0,0,_defaultIPD}, t), $"CreateEvent#1[{t}]"),
+                    () => StepLogger(_wss.CreateSchedule(new ScheduleDefinition { ScheduleId = 1, DurationMs = _defaultIPI, SyncSignal = _defaultSync }, t), $"CreateSchedule#1[{t}]"), //TODO frequewncy from config
+                    () => StepLogger(_wss.CreateContactConfig(new ContactConfigDefinition { ContactId = 1, StimSetup = new[]{1,2,0,0}, RechargeSetup = new[]{2,1,0,0}, Leds = 2 }, t), $"CreateContactConfig#1[{t}]"),
+                    () => StepLogger(_wss.CreateEvent(new CreateEventRequest
+                        {
+                            EventId = 1,
+                            DelayMs = 0,
+                            ContactConfigId = 1,
+                            StandardShapeId = 0,
+                            RechargeShapeId = 0,
+                            StandardAmplitudes = new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
+                            RechargeAmplitudes = new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
+                            PulseWidths = new EventPulseWidths { StandardPw = 0, RechargePw = 0, Ipd = _defaultIPD }
+                        }, t), $"CreateEvent#1[{t}]"),
                     () => StepLogger(_wss.EditEventRatio(1, _defaultRatio, t), $"EditEventRatio#1[{t}]"),
                     () => StepLogger(_wss.AddEventToSchedule(1, 1, t), $"AddEventToSchedule#1[{t}]"),
 
                     // Schedule 2 (Ch2)
-                    () => StepLogger(_wss.CreateSchedule(2, _defaultIPI, _defaultSync, t), $"CreateSchedule#2[{t}]"),
-                    () => StepLogger(_wss.CreateContactConfig(2, new[]{1,0,2,0}, new[]{2,0,1,0}, 4, t), $"CreateContactConfig#2[{t}]"),
-                    () => StepLogger(_wss.CreateEvent(2, 2, 2, 0, 0,
-                            new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
-                            new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
-                            new[]{0,0,_defaultIPD}, t), $"CreateEvent#2[{t}]"),
+                    () => StepLogger(_wss.CreateSchedule(new ScheduleDefinition { ScheduleId = 2, DurationMs = _defaultIPI, SyncSignal = _defaultSync }, t), $"CreateSchedule#2[{t}]"),
+                    () => StepLogger(_wss.CreateContactConfig(new ContactConfigDefinition { ContactId = 2, StimSetup = new[]{1,0,2,0}, RechargeSetup = new[]{2,0,1,0}, Leds = 4 }, t), $"CreateContactConfig#2[{t}]"),
+                    () => StepLogger(_wss.CreateEvent(new CreateEventRequest
+                        {
+                            EventId = 2,
+                            DelayMs = 2,
+                            ContactConfigId = 2,
+                            StandardShapeId = 0,
+                            RechargeShapeId = 0,
+                            StandardAmplitudes = new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
+                            RechargeAmplitudes = new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
+                            PulseWidths = new EventPulseWidths { StandardPw = 0, RechargePw = 0, Ipd = _defaultIPD }
+                        }, t), $"CreateEvent#2[{t}]"),
                     () => StepLogger(_wss.EditEventRatio(2, _defaultRatio, t), $"EditEventRatio#2[{t}]"),
                     () => StepLogger(_wss.AddEventToSchedule(2, 2, t), $"AddEventToSchedule#2[{t}]"),
 
                     // Schedule 3 (Ch3)
-                    () => StepLogger(_wss.CreateSchedule(3, _defaultIPI, _defaultSync, t), $"CreateSchedule#3[{t}]"),
-                    () => StepLogger(_wss.CreateContactConfig(3, new[]{1,0,0,2}, new[]{2,0,0,1}, 8, t), $"CreateContactConfig#3[{t}]"),
-                    () => StepLogger(_wss.CreateEvent(3, 4, 3, 0, 0,
-                            new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
-                            new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
-                            new[]{0,0,_defaultIPD}, t), $"CreateEvent#3[{t}]"),
+                    () => StepLogger(_wss.CreateSchedule(new ScheduleDefinition { ScheduleId = 3, DurationMs = _defaultIPI, SyncSignal = _defaultSync }, t), $"CreateSchedule#3[{t}]"),
+                    () => StepLogger(_wss.CreateContactConfig(new ContactConfigDefinition { ContactId = 3, StimSetup = new[]{1,0,0,2}, RechargeSetup = new[]{2,0,0,1}, Leds = 8 }, t), $"CreateContactConfig#3[{t}]"),
+                    () => StepLogger(_wss.CreateEvent(new CreateEventRequest
+                        {
+                            EventId = 3,
+                            DelayMs = 4,
+                            ContactConfigId = 3,
+                            StandardShapeId = 0,
+                            RechargeShapeId = 0,
+                            StandardAmplitudes = new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
+                            RechargeAmplitudes = new[]{AmpTo255Convention(_defaultAmp, t),AmpTo255Convention(_defaultAmp, t),0,0},
+                            PulseWidths = new EventPulseWidths { StandardPw = 0, RechargePw = 0, Ipd = _defaultIPD }
+                        }, t), $"CreateEvent#3[{t}]"),
                     () => StepLogger(_wss.EditEventRatio(3, _defaultRatio, t), $"EditEventRatio#3[{t}]"),
                     () => StepLogger(_wss.AddEventToSchedule(3, 3, t), $"AddEventToSchedule#3[{t}]"),
 
@@ -550,7 +581,12 @@ namespace Wss.CoreModule
                         if (anyChanged)
                         {
                             // Send one WSS-level IPI update (array API). This is the only time we send.
-                            _ = _wss.StreamChange(amps, pws, desiredIpis, target);
+                            _ = _wss.StreamChange(new StreamChangeRequest
+                            {
+                                PulseAmplitudes = amps,
+                                PulseWidths = pws,
+                                InterPulseIntervals = desiredIpis
+                            }, target);
 
                             // Update per-channel last-sent memory and start per-WSS cooldown
                             _lastIpiSentPerCh[baseIdx + 0] = desiredIpis[0];
@@ -560,7 +596,11 @@ namespace Wss.CoreModule
                         else
                         {
                             // Do not send any IPI during cooldown or if nothing changed
-                            _ = _wss.StreamChange(amps, pws, null, target);
+                            _ = _wss.StreamChange(new StreamChangeRequest
+                            {
+                                PulseAmplitudes = amps,
+                                PulseWidths = pws
+                            }, target);
                         }
 
                         await Task.Delay(_delayMsBetweenPackets, tk);

@@ -124,6 +124,39 @@ namespace Wss.CoreModule
         }
 
         /// <summary>
+        /// Gets the configured on-wire broadcast receiver address.
+        /// </summary>
+        public byte BroadcastTarget
+        {
+            get { lock (_sync) return _config.broadcastTarget; }
+        }
+
+        /// <summary>
+        /// Gets the configured on-wire receiver addresses for logical Wss1..Wss3.
+        /// A normalized three-entry copy is returned.
+        /// </summary>
+        /// <remarks>
+        /// Missing entries are backfilled with the historical defaults <c>0x81</c>, <c>0x82</c>, and <c>0x83</c>.
+        /// When normalization changes the in-memory configuration, the updated values are immediately persisted.
+        /// </remarks>
+        public byte[] WssTargets
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    var normalized = NormalizeWssTargets(_config.wssTargets);
+                    if (!ReferenceEquals(normalized, _config.wssTargets))
+                    {
+                        _config.wssTargets = normalized;
+                        JsonReader.SaveObject(_configPath, _config);
+                    }
+                    return (byte[])normalized.Clone();
+                }
+            }
+        }
+
+        /// <summary>
         /// When true, the core should use per-WSS amplitude curves from the config file.
         /// </summary>
         public bool UseConfigAmpCurves
@@ -168,6 +201,19 @@ namespace Wss.CoreModule
             if (!verHandler.isVersionSupported(v))
                 throw new ArgumentException($"Firmware version '{v}' is not supported.", nameof(v));
             lock (_sync) { _config.firmware = v; JsonReader.SaveObject(_configPath, _config); }
+        }
+
+        private static byte[] NormalizeWssTargets(byte[] values)
+        {
+            var defaults = new byte[] { 0x81, 0x82, 0x83 };
+            if (values == null || values.Length == 0)
+                return defaults;
+
+            var normalized = new byte[3];
+            for (int i = 0; i < normalized.Length; i++)
+                normalized[i] = i < values.Length ? values[i] : defaults[i];
+
+            return normalized;
         }
     }
 }

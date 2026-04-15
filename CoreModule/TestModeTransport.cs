@@ -44,32 +44,22 @@ namespace Wss.CoreModule
         public event Action<byte[]> BytesReceived;
 
         /// <summary>
-        /// Initializes a new <see cref="TestModeTransport"/> with optional configuration.
+        /// Initializes a new <see cref="TestModeTransport"/> with a single options object.
         /// </summary>
-        /// <param name="baseLatency">Artificial latency applied to inbound delivery (default 0).</param>
-        /// <param name="jitterMs">Random jitter in milliseconds (default 0).</param>
-        /// <param name="maxInboundChunkSize">If &gt;0, splits inbound payloads (default 0).</param>
-        /// <param name="inboundDropProbability">Probability [0..1] of dropping an inbound chunk (default 0.0).</param>
-        /// <param name="rng">Random generator to use (default new Random(1234)).</param>
-        /// <param name="fallbackPayload">Payload used when checksum fails (default {0xE1,0xE2,0xE3}).</param>
-        /// <param name="autoResponderAsync">Optional override auto-responder (default null = built-in).</param>
-        public TestModeTransport(
-            TimeSpan? baseLatency = null,
-            int jitterMs = 0,
-            int maxInboundChunkSize = 0,
-            double inboundDropProbability = 0.0,
-            Random rng = null,
-            byte[] fallbackPayload = null,
-            Func<byte[], Task<byte[]>> autoResponderAsync = null)
+        /// <param name="options">In-memory transport behavior settings.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
+        public TestModeTransport(TestModeTransportOptions options)
         {
-            BaseLatency = baseLatency ?? TimeSpan.Zero;
-            JitterMs = jitterMs;
-            MaxInboundChunkSize = maxInboundChunkSize;
-            InboundDropProbability = inboundDropProbability;
+            if (options == null) throw new ArgumentNullException(nameof(options));
+
+            BaseLatency = options.BaseLatency;
+            JitterMs = options.JitterMs;
+            MaxInboundChunkSize = options.MaxInboundChunkSize;
+            InboundDropProbability = options.InboundDropProbability;
             // Use caller-provided RNG if available; otherwise time-based randomness.
-            Rng = rng ?? new Random();
-            FallbackPayload = fallbackPayload ?? new byte[] { 0xE1, 0xE2, 0xE3 };
-            AutoResponderAsync = autoResponderAsync;
+            Rng = options.Rng ?? new Random();
+            FallbackPayload = options.FallbackPayload ?? new byte[] { 0xE1, 0xE2, 0xE3 };
+            AutoResponderAsync = options.AutoResponderAsync;
         }
 
         /// <inheritdoc/>

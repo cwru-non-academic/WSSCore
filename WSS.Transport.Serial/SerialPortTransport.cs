@@ -26,46 +26,30 @@ namespace Wss.CoreModule
         private Task _readLoop;
 
         /// <summary>
-        /// Creates a serial transport bound to the given port name and parameters.
+        /// Creates a serial transport from a single options object.
         /// </summary>
-        /// <param name="portName">Port name (e.g., <c>"COM5"</c> on Windows, <c>"/dev/ttyUSB0"</c> on Linux/macOS).</param>
-        /// <param name="baud">Baud rate. Default is 115200.</param>
-        /// <param name="parity">Parity setting. Default is <see cref="Parity.None"/>.</param>
-        /// <param name="dataBits">Data bits. Default is 8.</param>
-        /// <param name="stopBits">Stop bits. Default is <see cref="StopBits.One"/>.</param>
-        /// <param name="readTimeoutMs">
-        /// Synchronous read timeout in milliseconds (used by <see cref="SerialPort.Read(byte[], int, int)"/>).
-        /// Typical value is small (e.g., 10ms). Timeouts are caught and ignored in the read loop.
-        /// </param>
-        public SerialPortTransport(string portName, int baud = 115200, Parity parity = Parity.None,
-                                   int dataBits = 8, StopBits stopBits = StopBits.One, int readTimeoutMs = 10)
+        /// <param name="options">Serial transport configuration, including connection settings and port selection mode.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when the port selection settings specify both an explicit port and auto-selection, or neither.</exception>
+        public SerialPortTransport(SerialPortTransportOptions options)
         {
-            if (string.IsNullOrWhiteSpace(portName))
-                throw new ArgumentException("Port name cannot be empty.", nameof(portName));
+            if (options == null) throw new ArgumentNullException(nameof(options));
 
-            _port = new SerialPort(NormalizePortForRuntime(portName), baud, parity, dataBits, stopBits)
+            bool hasPortName = !string.IsNullOrWhiteSpace(options.PortName);
+            if (options.AutoSelectPort == hasPortName)
             {
-                ReadTimeout = readTimeoutMs
-            };
-        }
+                throw new ArgumentException(
+                    "Specify exactly one port selection mode: set AutoSelectPort=true or provide PortName.",
+                    nameof(options));
+            }
 
-        /// <summary>
-        /// Creates a serial transport bound to the given parameters. Th port name is automatically selected as the firts port in the list.
-        /// </summary>
-        /// <param name="baud">Baud rate. Default is 115200.</param>
-        /// <param name="parity">Parity setting. Default is <see cref="Parity.None"/>.</param>
-        /// <param name="dataBits">Data bits. Default is 8.</param>
-        /// <param name="stopBits">Stop bits. Default is <see cref="StopBits.One"/>.</param>
-        /// <param name="readTimeoutMs">
-        /// Synchronous read timeout in milliseconds (used by <see cref="SerialPort.Read(byte[], int, int)"/>).
-        /// Typical value is small (e.g., 10ms). Timeouts are caught and ignored in the read loop.
-        /// </param>
-        public SerialPortTransport(int baud = 115200, Parity parity = Parity.None,
-                                   int dataBits = 8, StopBits stopBits = StopBits.One, int readTimeoutMs = 10)
-        {
-            _port = new SerialPort(GetComPort(), baud, parity, dataBits, stopBits)
+            string portName = options.AutoSelectPort
+                ? GetComPort()
+                : NormalizePortForRuntime(options.PortName);
+
+            _port = new SerialPort(portName, options.Baud, options.Parity, options.DataBits, options.StopBits)
             {
-                ReadTimeout = readTimeoutMs
+                ReadTimeout = options.ReadTimeoutMs
             };
         }
 

@@ -1,8 +1,8 @@
 namespace Wss.CoreModule
 {
     /// <summary>
-    /// Strongly-typed core configuration model persisted in JSON.
-    /// Exposes the maximum number of devices and the firmware version string.
+    /// Represents the core configuration persisted to <c>stimConfig.json</c>.
+    /// Includes device-count, firmware, target-address, and amplitude-curve settings.
     /// </summary>
     public sealed class CoreConfig
     {
@@ -10,6 +10,17 @@ namespace Wss.CoreModule
         public int maxWSS { get; set; } = 1;
         /// <summary>Firmware version string (e.g., "H03", "J03").</summary>
         public string firmware { get; set; } = "H03";
+
+        /// <summary>
+        /// Gets or sets the on-wire broadcast receiver address used when sending to all devices.
+        /// </summary>
+        public byte broadcastTarget { get; set; } = 0x8F;
+
+        /// <summary>
+        /// Gets or sets the on-wire receiver addresses for logical <c>Wss1</c>, <c>Wss2</c>, and <c>Wss3</c>.
+        /// Index 0 maps to <c>Wss1</c>, index 1 to <c>Wss2</c>, and index 2 to <c>Wss3</c>.
+        /// </summary>
+        public byte[] wssTargets { get; set; } = new byte[] { 0x81, 0x82, 0x83 };
 
         /// <summary>
         /// When true, use per-WSS amplitude curve parameters from this config.
