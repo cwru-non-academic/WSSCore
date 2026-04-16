@@ -1,0 +1,287 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>WSS.Transport.BLE</name>
+    </assembly>
+    <members>
+        <member name="T:HFI.Wss.BleNusTransport">
+            <summary>
+            BLE transport backed by the Nordic UART Service (NUS).
+            </summary>
+            <remarks>
+            This is a low-level byte transport only. Outbound messages are written with response
+            to the NUS RX characteristic, inbound messages arrive as notifications from the NUS
+            TX characteristic, and writes are serialized so only one GATT write is in flight at a time.
+            Device selection follows <see cref="P:HFI.Wss.BleNusTransportOptions.AutoSelectDevice"/>:
+            when enabled, the transport scans for compatible BLE devices and chooses the best
+            valid candidate; otherwise it requires an explicit <see cref="P:HFI.Wss.BleNusTransportOptions.DeviceId"/>
+            or <see cref="P:HFI.Wss.BleNusTransportOptions.DeviceName"/>.
+            </remarks>
+        </member>
+        <member name="F:HFI.Wss.BleNusTransport.DefaultServiceUuid">
+            <summary>
+            Gets the default Nordic UART Service UUID used to discover compatible BLE devices.
+            </summary>
+        </member>
+        <member name="F:HFI.Wss.BleNusTransport.DefaultWriteCharacteristicUuid">
+            <summary>
+            Gets the default Nordic UART Service write characteristic UUID used for outbound bytes.
+            </summary>
+        </member>
+        <member name="F:HFI.Wss.BleNusTransport.DefaultNotifyCharacteristicUuid">
+            <summary>
+            Gets the default Nordic UART Service notification characteristic UUID used for inbound bytes.
+            </summary>
+        </member>
+        <member name="M:HFI.Wss.BleNusTransport.#ctor(HFI.Wss.BleNusTransportOptions)">
+            <summary>
+            Creates a BLE transport from a fully specified options object.
+            </summary>
+            <param name="options">BLE transport configuration including device selection and required UUIDs.</param>
+            <exception cref="T:System.ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when the supplied options are invalid.</exception>
+        </member>
+        <member name="M:HFI.Wss.BleNusTransport.#ctor(System.String)">
+            <summary>
+            Creates a BLE transport that connects to a device with the specified advertised name.
+            </summary>
+            <param name="deviceName">Exact BLE device name to scan for.</param>
+        </member>
+        <member name="P:HFI.Wss.BleNusTransport.IsConnected">
+            <summary>
+            Gets whether the transport currently has an active BLE session and both required GATT characteristics.
+            </summary>
+        </member>
+        <member name="E:HFI.Wss.BleNusTransport.BytesReceived">
+            <summary>
+            Raised when raw bytes are received from the BLE notification characteristic.
+            </summary>
+            <remarks>
+            Handlers may be invoked on a background thread supplied by the underlying BLE stack.
+            Marshal to the required context before touching thread-affine state.
+            </remarks>
+        </member>
+        <member name="M:HFI.Wss.BleNusTransport.ConnectAsync(System.Threading.CancellationToken)">
+            <summary>
+            Asynchronously scans for and connects to the configured BLE device.
+            </summary>
+            <param name="ct">Cancellation token.</param>
+            <returns>A task that completes when the BLE session and required characteristics are ready.</returns>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the transport has been disposed.</exception>
+            <exception cref="T:System.InvalidOperationException">Thrown when no compatible BLE device can be resolved or the required service and characteristics are unavailable.</exception>
+            <exception cref="T:System.OperationCanceledException">Thrown when the operation is canceled.</exception>
+        </member>
+        <member name="M:HFI.Wss.BleNusTransport.DisconnectAsync(System.Threading.CancellationToken)">
+            <summary>
+            Asynchronously disconnects the active BLE session and stops inbound notifications.
+            </summary>
+            <param name="ct">Cancellation token.</param>
+            <returns>A task that completes when platform-specific BLE resources have been released.</returns>
+            <exception cref="T:System.OperationCanceledException">Thrown when the operation is canceled.</exception>
+        </member>
+        <member name="M:HFI.Wss.BleNusTransport.SendAsync(System.Byte[],System.Threading.CancellationToken)">
+            <summary>
+            Sends a block of raw bytes over the BLE write characteristic.
+            </summary>
+            <param name="data">Raw payload bytes to write.</param>
+            <param name="ct">Cancellation token.</param>
+            <returns>A task that completes when the write has been handed off to the platform BLE stack.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown when <paramref name="data"/> is null.</exception>
+            <exception cref="T:System.ObjectDisposedException">Thrown when the transport has been disposed.</exception>
+            <exception cref="T:System.InvalidOperationException">Thrown when the transport is not connected.</exception>
+            <exception cref="T:System.OperationCanceledException">Thrown when the operation is canceled.</exception>
+            <remarks>
+            Writes are serialized so only one GATT write is in flight at a time.
+            </remarks>
+        </member>
+        <member name="M:HFI.Wss.BleNusTransport.Dispose">
+            <summary>
+            Disconnects the transport and releases managed resources.
+            </summary>
+            <remarks>
+            This method performs a best-effort synchronous disconnect and logs disconnect failures instead of rethrowing them.
+            </remarks>
+        </member>
+        <member name="M:HFI.Wss.BleNusTransport.CreateDefaultOptions(System.String)">
+            <summary>
+            Creates a default options object that resolves a BLE device by advertised name.
+            </summary>
+            <param name="deviceName">Exact BLE device name to scan for.</param>
+            <returns>A new options object with <see cref="P:HFI.Wss.BleNusTransportOptions.DeviceName"/> set.</returns>
+        </member>
+        <member name="T:HFI.Wss.BleNusTransportOptions">
+            <summary>
+            Configuration for <see cref="T:HFI.Wss.BleNusTransport"/>.
+            </summary>
+            <remarks>
+            When <see cref="P:HFI.Wss.BleNusTransportOptions.AutoSelectDevice"/> is <see langword="false"/>, callers must provide either
+            <see cref="P:HFI.Wss.BleNusTransportOptions.DeviceId"/> or <see cref="P:HFI.Wss.BleNusTransportOptions.DeviceName"/>. Scan-based operations honor <see cref="P:HFI.Wss.BleNusTransportOptions.ScanTimeout"/>
+            when a timeout is configured.
+            </remarks>
+        </member>
+        <member name="P:HFI.Wss.BleNusTransportOptions.DeviceId">
+            <summary>
+            Explicit BLE device identifier to connect to when <see cref="P:HFI.Wss.BleNusTransportOptions.AutoSelectDevice"/> is disabled.
+            When provided, it takes precedence over <see cref="P:HFI.Wss.BleNusTransportOptions.DeviceName"/>.
+            </summary>
+        </member>
+        <member name="P:HFI.Wss.BleNusTransportOptions.DeviceName">
+            <summary>
+            Exact BLE device name to scan for when <see cref="P:HFI.Wss.BleNusTransportOptions.AutoSelectDevice"/> is disabled and
+            <see cref="P:HFI.Wss.BleNusTransportOptions.DeviceId"/> is not provided.
+            </summary>
+        </member>
+        <member name="P:HFI.Wss.BleNusTransportOptions.ServiceUuid">
+            <summary>
+            Required BLE service UUID. Auto-select only considers devices that expose this service.
+            </summary>
+        </member>
+        <member name="P:HFI.Wss.BleNusTransportOptions.WriteCharacteristicUuid">
+            <summary>
+            Required BLE write characteristic UUID. Auto-select rejects devices that do not expose it
+            with write-with-response support.
+            </summary>
+        </member>
+        <member name="P:HFI.Wss.BleNusTransportOptions.NotifyCharacteristicUuid">
+            <summary>
+            Required BLE notification characteristic UUID. Auto-select rejects devices that do not expose it
+            with notify or indicate support.
+            </summary>
+        </member>
+        <member name="P:HFI.Wss.BleNusTransportOptions.ScanTimeout">
+            <summary>
+            Maximum scan duration used for configured-name lookup and auto-selection.
+            </summary>
+        </member>
+        <member name="P:HFI.Wss.BleNusTransportOptions.AutoSelectDevice">
+            <summary>
+            When true, scans for compatible BLE devices and auto-selects the best valid candidate.
+            Auto-selection only accepts devices that expose the configured service and both required
+            characteristics with the expected properties, then prefers stronger RSSI.
+            When false, the caller must provide <see cref="P:HFI.Wss.BleNusTransportOptions.DeviceId"/> or <see cref="P:HFI.Wss.BleNusTransportOptions.DeviceName"/>.
+            </summary>
+        </member>
+        <member name="T:Wss.CoreModule.SerialPortTransport">
+            <summary>
+            Serial-port implementation of <see cref="T:Wss.CoreModule.ITransport"/> for WSS communications.
+            Wraps <see cref="T:System.IO.Ports.SerialPort"/> and exposes an event-driven receive API that works well in Unity/.NET Standard 2.0.
+            </summary>
+            <remarks>
+            <para><b>Threading:</b> <see cref="E:Wss.CoreModule.SerialPortTransport.BytesReceived"/> is raised from a background task. If your app (e.g., Unity)
+            requires main-thread processing, marshal the callback to the main thread before touching UI/GameObjects.</para>
+            <para><b>Chunking:</b> Serial I/O does not preserve message boundaries. Each chunk may contain partial frames or
+            multiple frames. Always pass chunks to a frame codec/deframer.</para>
+            <para><b>Timeouts:</b> The read loop polls <see cref="P:System.IO.Ports.SerialPort.BytesToRead"/> and catches <see cref="T:System.TimeoutException"/>s,
+            which are normal with short read timeouts.</para>
+            </remarks>
+        </member>
+        <member name="M:Wss.CoreModule.SerialPortTransport.#ctor(Wss.CoreModule.SerialPortTransportOptions)">
+            <summary>
+            Creates a serial transport from a single options object.
+            </summary>
+            <param name="options">Serial transport configuration, including connection settings and port selection mode.</param>
+            <exception cref="T:System.ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
+            <exception cref="T:System.ArgumentException">Thrown when the port selection settings specify both an explicit port and auto-selection, or neither.</exception>
+            <remarks>
+            Exactly one port selection mode must be configured: either set <see cref="P:Wss.CoreModule.SerialPortTransportOptions.AutoSelectPort"/>
+            to <see langword="true"/> or provide a non-empty <see cref="P:Wss.CoreModule.SerialPortTransportOptions.PortName"/>.
+            </remarks>
+        </member>
+        <member name="P:Wss.CoreModule.SerialPortTransport.IsConnected">
+            <inheritdoc/>
+        </member>
+        <member name="E:Wss.CoreModule.SerialPortTransport.BytesReceived">
+            <inheritdoc/>
+            <remarks>
+            This event is typically raised on a background thread by the internal read loop.
+            Consumers should copy the buffer if it needs to be retained beyond the callback.
+            </remarks>
+        </member>
+        <member name="M:Wss.CoreModule.SerialPortTransport.ConnectAsync(System.Threading.CancellationToken)">
+            <inheritdoc/>
+            <remarks>
+            Opens the serial port and starts a background read loop that forwards incoming data to <see cref="E:Wss.CoreModule.SerialPortTransport.BytesReceived"/>.
+            </remarks>
+        </member>
+        <member name="M:Wss.CoreModule.SerialPortTransport.DisconnectAsync(System.Threading.CancellationToken)">
+            <inheritdoc/>
+            <remarks>
+            Stops the background read loop and closes the serial port.
+            </remarks>
+        </member>
+        <member name="M:Wss.CoreModule.SerialPortTransport.SendAsync(System.Byte[],System.Threading.CancellationToken)">
+            <inheritdoc/>
+            <remarks>
+            Writes the buffer synchronously to the underlying <see cref="T:System.IO.Ports.SerialPort"/> and flushes the base stream.
+            </remarks>
+        </member>
+        <member name="M:Wss.CoreModule.SerialPortTransport.ReadLoopAsync">
+            <summary>
+            Background task that polls the serial port and raises <see cref="E:Wss.CoreModule.SerialPortTransport.BytesReceived"/> when data arrives.
+            </summary>
+            <remarks>
+            The loop polls <see cref="P:System.IO.Ports.SerialPort.BytesToRead"/> and performs short delays (2ms) when idle
+            to reduce CPU usage. It exits on cancellation or unexpected exceptions.
+            </remarks>
+        </member>
+        <member name="M:Wss.CoreModule.SerialPortTransport.Dispose">
+            <summary>
+            Disposes the serial port and stops the read loop.
+            </summary>
+        </member>
+        <member name="M:Wss.CoreModule.SerialPortTransport.GetComPort(System.String)">
+            <summary>
+            Selects a serial port. Honors <paramref name="preferredPort"/> if available
+            and falls back to platform-appropriate defaults.
+            </summary>
+        </member>
+        <member name="T:Wss.CoreModule.SerialPortTransportOptions">
+            <summary>
+            Holds connection settings for <see cref="T:Wss.CoreModule.SerialPortTransport"/>.
+            </summary>
+            <remarks>
+            Exactly one port selection mode must be used: either set <see cref="P:Wss.CoreModule.SerialPortTransportOptions.AutoSelectPort"/> to true,
+            or provide a non-empty <see cref="P:Wss.CoreModule.SerialPortTransportOptions.PortName"/>.
+            </remarks>
+        </member>
+        <member name="P:Wss.CoreModule.SerialPortTransportOptions.PortName">
+            <summary>
+            Gets or sets the explicit port name.
+            Use values such as <c>COM5</c> on Windows or <c>/dev/ttyUSB0</c> on Linux/macOS.
+            This must be provided when <see cref="P:Wss.CoreModule.SerialPortTransportOptions.AutoSelectPort"/> is false.
+            </summary>
+        </member>
+        <member name="P:Wss.CoreModule.SerialPortTransportOptions.AutoSelectPort">
+            <summary>
+            Gets or sets whether the transport should automatically select the best available serial port.
+            When true, <see cref="P:Wss.CoreModule.SerialPortTransportOptions.PortName"/> must be left empty.
+            </summary>
+        </member>
+        <member name="P:Wss.CoreModule.SerialPortTransportOptions.Baud">
+            <summary>
+            Gets or sets the baud rate. The default is 115200.
+            </summary>
+        </member>
+        <member name="P:Wss.CoreModule.SerialPortTransportOptions.Parity">
+            <summary>
+            Gets or sets the parity mode. The default is <see cref="F:System.IO.Ports.Parity.None"/>.
+            </summary>
+        </member>
+        <member name="P:Wss.CoreModule.SerialPortTransportOptions.DataBits">
+            <summary>
+            Gets or sets the number of data bits. The default is 8.
+            </summary>
+        </member>
+        <member name="P:Wss.CoreModule.SerialPortTransportOptions.StopBits">
+            <summary>
+            Gets or sets the stop-bit configuration. The default is <see cref="F:System.IO.Ports.StopBits.One"/>.
+            </summary>
+        </member>
+        <member name="P:Wss.CoreModule.SerialPortTransportOptions.ReadTimeoutMs">
+            <summary>
+            Gets or sets the synchronous serial read timeout, in milliseconds.
+            The default is 10.
+            </summary>
+        </member>
+    </members>
+</doc>

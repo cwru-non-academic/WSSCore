@@ -31,6 +31,10 @@ namespace Wss.CoreModule
         /// <param name="options">Serial transport configuration, including connection settings and port selection mode.</param>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
         /// <exception cref="ArgumentException">Thrown when the port selection settings specify both an explicit port and auto-selection, or neither.</exception>
+        /// <remarks>
+        /// Exactly one port selection mode must be configured: either set <see cref="SerialPortTransportOptions.AutoSelectPort"/>
+        /// to <see langword="true"/> or provide a non-empty <see cref="SerialPortTransportOptions.PortName"/>.
+        /// </remarks>
         public SerialPortTransport(SerialPortTransportOptions options)
         {
             if (options == null) throw new ArgumentNullException(nameof(options));

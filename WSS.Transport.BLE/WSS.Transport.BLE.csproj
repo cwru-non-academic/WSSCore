@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>WSS.Transport.BLE</AssemblyName>
+    <RootNamespace>WSS.Transport.BLE</RootNamespace>
+    <Platforms>AnyCPU</Platforms>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="bin/**/*.cs" />
+    <Compile Remove="obj/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../WSS_Core_Interface.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../BleNusTransport.cs" Link="BleNusTransport.cs" />
+    <Compile Include="../WSS.Transport.Serial/SerialPortTransport.cs" Link="SerialPortTransport.cs" />
+    <Compile Include="../WSS.Transport.Serial/SerialPortTransportOptions.cs" Link="SerialPortTransportOptions.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.IO.Ports" Version="9.0.0" />
+    <PackageReference Include="InTheHand.BluetoothLE" Version="4.0.44" />
+    <PackageReference Include="Linux.Bluetooth" Version="5.67.1" />
+  </ItemGroup>
+</Project>

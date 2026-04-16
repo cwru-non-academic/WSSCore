@@ -5,7 +5,8 @@ namespace Wss.CoreModule
     /// </summary>
     /// <remarks>
     /// The protocol supports omitting at most one of the three groups. Each supplied array must contain exactly
-    /// three values, one per streamed schedule slot.
+    /// three values, one per streamed schedule slot. The request itself is required by
+    /// <see cref="WssClient.StreamChange(StreamChangeRequest, WssTarget, System.Threading.CancellationToken)"/>.
     /// </remarks>
     public sealed class StreamChangeRequest
     {

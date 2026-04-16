@@ -7,6 +7,10 @@ namespace Wss.CoreModule
     /// This request supports the same payload shapes as the previous overload set:
     /// basic event, event with explicit shape IDs, event with amplitude and pulse-width data,
     /// or event with both shape and amplitude data.
+    /// <see cref="StandardShapeId"/> and <see cref="RechargeShapeId"/> must be supplied together.
+    /// <see cref="StandardAmplitudes"/> and <see cref="RechargeAmplitudes"/> must be supplied together.
+    /// <see cref="PulseWidths"/> is required when amplitude arrays are supplied, and amplitude arrays are required
+    /// when <see cref="PulseWidths"/> is supplied.
     /// </remarks>
     public sealed class CreateEventRequest
     {

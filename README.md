@@ -52,3 +52,20 @@ When building a separate .NET console/worker app that references the compiled `W
 
 Copy the listed DLLs from this repository’s `bin` output into your app’s `lib` folder (or use NuGet where possible) so the runtime can resolve them when your executable starts.
 
+## Transport project layout
+- `WSS_Core_Interface.csproj` remains the transport-agnostic core library targeting `netstandard2.0`.
+- `WSS.Transport.Serial/WSS.Transport.Serial.csproj` remains the legacy serial transport package targeting `net48`.
+- `WSS.Transport.BLE/WSS.Transport.BLE.csproj` is the new modern transport package targeting `net9.0`.
+
+## Choosing a transport build
+- Use `WSS.Transport.Serial` when you need the legacy `net48`/Unity-compatible serial-only build.
+- Use `WSS.Transport.BLE` when your app targets `.NET 9` and needs BLE support.
+- `WSS.Transport.BLE` also includes the existing serial transport implementation, so modern desktop apps can choose either `BleNusTransport` or `SerialPortTransport` from the same package.
+
+## Building the transport projects
+```bash
+dotnet build "WSS.Transport.Serial/WSS.Transport.Serial.csproj" -c Release --nologo
+dotnet build "WSS.Transport.BLE/WSS.Transport.BLE.csproj" -c Release --nologo
+```
+
+The `.NET 9` transport project restores BLE-specific dependencies such as `InTheHand.BluetoothLE` and `Linux.Bluetooth`. If you deploy the built DLLs directly instead of consuming them through NuGet, copy the resolved dependency assemblies alongside `WSS.Transport.BLE.dll`.

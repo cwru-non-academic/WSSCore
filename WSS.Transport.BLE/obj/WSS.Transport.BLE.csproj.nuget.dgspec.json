@@ -1,0 +1,173 @@
+{
+  "format": 1,
+  "restore": {
+    "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.BLE/WSS.Transport.BLE.csproj": {}
+  },
+  "projects": {
+    "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.BLE/WSS.Transport.BLE.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.BLE/WSS.Transport.BLE.csproj",
+        "projectName": "WSS.Transport.BLE",
+        "projectPath": "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.BLE/WSS.Transport.BLE.csproj",
+        "packagesPath": "/home/lemf/.nuget/packages/",
+        "outputPath": "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.BLE/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/lemf/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net9.0"
+        ],
+        "sources": {
+          "/usr/lib/dotnet/library-packs": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net9.0": {
+            "targetAlias": "net9.0",
+            "projectReferences": {
+              "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS_Core_Interface.csproj": {
+                "projectPath": "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS_Core_Interface.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.100"
+      },
+      "frameworks": {
+        "net9.0": {
+          "targetAlias": "net9.0",
+          "dependencies": {
+            "InTheHand.BluetoothLE": {
+              "target": "Package",
+              "version": "[4.0.44, )"
+            },
+            "Linux.Bluetooth": {
+              "target": "Package",
+              "version": "[5.67.1, )"
+            },
+            "System.IO.Ports": {
+              "target": "Package",
+              "version": "[9.0.0, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/lib/dotnet/sdk/9.0.115/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS_Core_Interface.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS_Core_Interface.csproj",
+        "projectName": "WSS_Core_Interface",
+        "projectPath": "/home/lemf/Documents/GitHub/WSSCoreInterface/WSS_Core_Interface.csproj",
+        "packagesPath": "/home/lemf/.nuget/packages/",
+        "outputPath": "/home/lemf/Documents/GitHub/WSSCoreInterface/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/lemf/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "netstandard2.0"
+        ],
+        "sources": {
+          "/usr/lib/dotnet/library-packs": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "netstandard2.0": {
+            "targetAlias": "netstandard2.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.100"
+      },
+      "frameworks": {
+        "netstandard2.0": {
+          "targetAlias": "netstandard2.0",
+          "dependencies": {
+            "NETStandard.Library": {
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[2.0.3, )",
+              "autoReferenced": true
+            },
+            "Newtonsoft.Json": {
+              "target": "Package",
+              "version": "[13.0.3, )"
+            },
+            "System.Buffers": {
+              "target": "Package",
+              "version": "[4.5.1, )"
+            },
+            "System.Memory": {
+              "target": "Package",
+              "version": "[4.5.5, )"
+            },
+            "System.Numerics.Vectors": {
+              "target": "Package",
+              "version": "[4.5.0, )"
+            },
+            "System.Runtime.CompilerServices.Unsafe": {
+              "target": "Package",
+              "version": "[6.0.0, )"
+            },
+            "System.Security.Permissions": {
+              "target": "Package",
+              "version": "[6.0.0, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "runtimeIdentifierGraphPath": "/usr/lib/dotnet/sdk/9.0.115/RuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

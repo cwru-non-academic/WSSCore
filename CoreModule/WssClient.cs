@@ -41,11 +41,14 @@ namespace Wss.CoreModule
         /// <param name="transport">Underlying byte transport (for example, serial or BLE).</param>
         /// <param name="codec">Frame codec used for escaping/deframing and checksum validation.</param>
         /// <param name="versionHandler">Firmware version handler used for version-gated commands.</param>
-        /// <param name="options">Client options including sender address, transport ownership, and reply timeout.</param>
+        /// <param name="options">Client options including sender address, transport ownership, reply timeout, and logical target address mapping.</param>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="transport"/>, <paramref name="codec"/>, <paramref name="versionHandler"/>, or <paramref name="options"/> is null.</exception>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when the configured response timeout is not positive.</exception>
         /// <remarks>
         /// <see cref="ITransport.BytesReceived"/> may be raised on a background thread depending on the transport implementation.
+        /// Reply correlation primarily matches responses by <c>(target,msgId)</c>, with additional handling for
+        /// protocol error replies and firmware paths that answer <see cref="WSSMessageIDs.ModuleQuery"/> using
+        /// <see cref="WSSMessageIDs.RequestAnalog"/>.
         /// </remarks>
         public WssClient(ITransport transport, IFrameCodec codec, WSSVersionHandler versionHandler, WssClientOptions options)
         {
@@ -183,51 +186,75 @@ namespace Wss.CoreModule
                 if (frame[2] == 0x05 && frame.Length >= 6)
                 {
                     var key = (frame[0], frame[5]); // sender, offendingCmd
-                    if (_pending.TryGetValue(key, out var q))
+                    bool handled = TryCompletePending(key, frame);
+                    if (!handled && frame[4] == 0x02)
+                        handled = TryCompleteWrongReceiverFallback(frame);
+
+                    if (!handled)
                     {
-                        while (q.TryDequeue(out var waiter))
-                            if (waiter.TrySetResult(frame)) break;
-                        if (q.IsEmpty) _pending.TryRemove(key, out _);
-                    }
-                    else
-                    {
-                        Log.Warn("Unpaired error: " + BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant());
+                        Log.Warn($"Unpaired error: {ProcessFrame(frame)} ({FormatFrame(frame)})");
                     }
                     continue;
                 }
 
-                // 2) Exptions to paired replies
+                // 2) Exceptions to paired replies
                 if (frame[2] == 0x02 && frame.Length >= 16)//querry msg
                 {
                     //force to serach using querry msg id and the reply is unpaired
                     var key = (frame[0], (byte)WSSMessageIDs.ModuleQuery); // sender, querryCommandID
-                    if (_pending.TryGetValue(key, out var q))
+                    if (!TryCompletePending(key, frame))
                     {
-                        while (q.TryDequeue(out var waiter))
-                            if (waiter.TrySetResult(frame)) break;
-                        if (q.IsEmpty) _pending.TryRemove(key, out _);
-                    }
-                    else
-                    {
-                        Log.Warn("Unpaired error: " + BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant());
+                        Log.Warn("Unpaired reply: " + FormatFrame(frame));
                     }
                     continue;
                 }
 
                 // 3) Normal replies: route by msgId
                 var normalKey = (frame[0], frame[2]); // sender, msgId
-                if (_pending.TryGetValue(normalKey, out var nq))
+                if (!TryCompletePending(normalKey, frame))
                 {
-                    while (nq.TryDequeue(out var waiter))
-                        if (waiter.TrySetResult(frame)) break;
-                    if (nq.IsEmpty) _pending.TryRemove(normalKey, out _);
-                }
-                else
-                {
-                    Log.Info("Unpaired reply: " + BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant());
+                    Log.Info("Unpaired reply: " + FormatFrame(frame));
                 }
             }
         }
+
+        private bool TryCompletePending((byte target, byte msgId) key, byte[] frame)
+        {
+            if (!_pending.TryGetValue(key, out var queue))
+                return false;
+
+            while (queue.TryDequeue(out var waiter))
+            {
+                if (waiter.TrySetResult(frame))
+                {
+                    if (queue.IsEmpty)
+                        _pending.TryRemove(key, out _);
+                    return true;
+                }
+            }
+
+            if (queue.IsEmpty)
+                _pending.TryRemove(key, out _);
+
+            return false;
+        }
+
+        private bool TryCompleteWrongReceiverFallback(byte[] frame)
+        {
+            var offendingCmd = frame[5];
+            var candidates = _pending
+                .Where(kvp => kvp.Key.msgId == offendingCmd && kvp.Value.Count == 1)
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            if (candidates.Count != 1)
+                return false;
+
+            return TryCompletePending(candidates[0], frame);
+        }
+
+        private static string FormatFrame(byte[] frame)
+            => BitConverter.ToString(frame).Replace("-", " ").ToLowerInvariant();
 
 
         /// <summary>
@@ -246,6 +273,8 @@ namespace Wss.CoreModule
                 case (byte)WSSMessageIDs.Error:
                     var code = frame.ElementAtOrDefault(4);
                     var cmd = frame.ElementAtOrDefault(5);
+                    var replySender = frame.ElementAtOrDefault(0);
+                    var replyTarget = frame.ElementAtOrDefault(1);
                     var text = code switch
                     {
                         0x00 => "No Error",
@@ -276,6 +305,9 @@ namespace Wss.CoreModule
                         0x81 => "Output Invalid",
                         _ => "Unknown"
                     };
+                    if (code == 0x02)
+                        return $"Error: {text} in Command: {cmd:x} (reply sender: {replySender:x2}, reply target: {replyTarget:x2})";
+
                     return $"Error: {text} in Command: {cmd:x}";
                 case (byte)WSSMessageIDs.ModuleQuery:
                 case (byte)WSSMessageIDs.RequestAnalog://Module Queery replies with request analog msg id
@@ -309,8 +341,11 @@ namespace Wss.CoreModule
         /// Gets the last cached ModuleQuery data (data-only slice) for a target, if present.
         /// </summary>
         /// <param name="target">Target device that produced the ModuleQuery reply.</param>
-        /// <param name="data">The cached data bytes (snapshot reference).</param>
+        /// <param name="data">The cached data bytes for the most recent reply from <paramref name="target"/>.</param>
         /// <returns>True if cached data exists; otherwise false.</returns>
+        /// <remarks>
+        /// The returned array is the cached in-memory instance for the latest reply, not a defensive copy.
+        /// </remarks>
         public bool TryGetModuleQueryData(WssTarget target, out byte[] data)
             => _moduleQueryData.TryGetValue(target, out data);
 
@@ -552,32 +587,15 @@ namespace Wss.CoreModule
         /// Creates a contact configuration for the stimulator.
         /// Defines the sources and sinks for stimulation and recharge phases.
         /// </summary>
-        /// <param name="contactId">
-        /// ID for the contact configuration (0–255).
+        /// <param name="definition">
+        /// Contact configuration values to encode and send, including the contact id, four-output stimulation setup,
+        /// four-output recharge setup, and optional LED bitmask.
         /// </param>
-        /// <param name="stimSetup">
-        /// Array of 4 integers (0 = not used, 1 = source, 2 = sink) representing
-        /// the stimulation phase for each output on the stimulator.  
-        /// Index 0 = closest to switch, index 3 = farthest from switch.
-        /// </param>
-        /// <param name="rechargeSetup">
-        /// Array of 4 integers (0 = not used, 1 = source, 2 = sink) representing
-        /// the recharge phase for each output on the stimulator.  
-        /// Index 0 = closest to switch, index 3 = farthest from switch.
-        /// </param>
-        /// /// <param name="LEDs">
-        /// Optional int representing LED locations to light during stimulation
-        /// Index int read as binary so 0011 or 3 is both the first and second LEDs (first is clossest to the switch).
-        /// 1 in binary is on and 0 is off. The trigering of the event will trigger the on LEDs
-        /// Ignored if not supported by firmware.
-        /// Pass -1 to indicate no LED configuration.
-        /// </param>
-        /// <param name="definition">Contact configuration values to encode and send.</param>
         /// <param name="target">The WSS target device to send the configuration to.</param>
         /// <param name="ct">Optional cancellation token.</param>
         /// <returns>Processed response string from the WSS target.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="definition"/> is null.</exception>
-        /// <exception cref="ArgumentException">Thrown when either setup array is null or does not contain exactly 4 elements.</exception>
+        /// <exception cref="ArgumentException">Thrown when either setup array in <paramref name="definition"/> is null or does not contain exactly four entries.</exception>
         public Task<string> CreateContactConfig(ContactConfigDefinition definition, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
         {
             if (definition == null) throw new ArgumentNullException(nameof(definition));
@@ -969,6 +987,7 @@ namespace Wss.CoreModule
         /// <param name="ct">Cancellation token.</param>
         /// <returns>Processed response string from the WSS target.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="definition"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when a value in <paramref name="definition"/> falls outside the protocol-supported range.</exception>
         public Task<string> CreateSchedule(ScheduleDefinition definition, WssTarget target = WssTarget.Wss1, CancellationToken ct = default)
         {
             if (definition == null) throw new ArgumentNullException(nameof(definition));

@@ -48,6 +48,10 @@ namespace Wss.CoreModule
         /// </summary>
         /// <param name="options">In-memory transport behavior settings.</param>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
+        /// <remarks>
+        /// Null <see cref="TestModeTransportOptions.Rng"/> and <see cref="TestModeTransportOptions.FallbackPayload"/>
+        /// values are replaced with safe defaults.
+        /// </remarks>
         public TestModeTransport(TestModeTransportOptions options)
         {
             if (options == null) throw new ArgumentNullException(nameof(options));

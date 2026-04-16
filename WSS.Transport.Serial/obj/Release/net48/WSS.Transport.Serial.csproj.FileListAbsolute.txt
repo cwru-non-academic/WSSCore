@@ -20,3 +20,6 @@
 /home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/obj/Release/net48/WSS.Transport.Serial.dll
 /home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/obj/Release/net48/WSS.Transport.Serial.pdb
 /home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/obj/Release/net48/WSS.Tran.E395A221.Up2Date
+/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/bin/Release/net48/WSS.Transport.Serial.xml
+/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/bin/Release/net48/WSS_Core_Interface.xml
+/home/lemf/Documents/GitHub/WSSCoreInterface/WSS.Transport.Serial/obj/Release/net48/WSS.Transport.Serial.xml

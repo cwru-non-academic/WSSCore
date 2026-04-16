@@ -13,14 +13,16 @@ namespace Wss.CoreModule
 
         /// <summary>
         /// Gets or sets the on-wire broadcast receiver address used when sending to all devices.
+        /// The value is persisted as a hexadecimal string such as <c>0x8F</c>.
         /// </summary>
-        public byte broadcastTarget { get; set; } = 0x8F;
+        public string broadcastTarget { get; set; } = "0x8F";
 
         /// <summary>
         /// Gets or sets the on-wire receiver addresses for logical <c>Wss1</c>, <c>Wss2</c>, and <c>Wss3</c>.
         /// Index 0 maps to <c>Wss1</c>, index 1 to <c>Wss2</c>, and index 2 to <c>Wss3</c>.
+        /// Each entry is persisted as a hexadecimal string such as <c>0x81</c>.
         /// </summary>
-        public byte[] wssTargets { get; set; } = new byte[] { 0x81, 0x82, 0x83 };
+        public string[] wssTargets { get; set; } = new[] { "0x81", "0x82", "0x83" };
 
         /// <summary>
         /// When true, use per-WSS amplitude curve parameters from this config.

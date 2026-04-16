@@ -6,6 +6,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WSS_Core_Interface", "WSS_C
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WSS.Transport.Serial", "WSS.Transport.Serial\WSS.Transport.Serial.csproj", "{9253AFB4-3AC2-4D61-8624-2E986E3D24A4}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WSS.Transport.BLE", "WSS.Transport.BLE\WSS.Transport.BLE.csproj", "{7FDD5E72-BBCB-4E82-9FCB-9B0EAEAFF5D6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,6 +22,10 @@ Global
 		{9253AFB4-3AC2-4D61-8624-2E986E3D24A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9253AFB4-3AC2-4D61-8624-2E986E3D24A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9253AFB4-3AC2-4D61-8624-2E986E3D24A4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7FDD5E72-BBCB-4E82-9FCB-9B0EAEAFF5D6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7FDD5E72-BBCB-4E82-9FCB-9B0EAEAFF5D6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7FDD5E72-BBCB-4E82-9FCB-9B0EAEAFF5D6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7FDD5E72-BBCB-4E82-9FCB-9B0EAEAFF5D6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

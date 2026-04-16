@@ -5,6 +5,10 @@ namespace Wss.CoreModule
     /// <summary>
     /// Holds behavioral settings for <see cref="WssClient"/>.
     /// </summary>
+    /// <remarks>
+    /// The constructor requires a non-null options instance and validates <see cref="ResponseTimeout"/> to ensure it is
+    /// greater than zero. Address settings control how logical targets map to on-wire receiver addresses.
+    /// </remarks>
     public sealed class WssClientOptions
     {
         /// <summary>

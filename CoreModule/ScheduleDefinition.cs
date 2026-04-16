@@ -3,6 +3,10 @@ namespace Wss.CoreModule
     /// <summary>
     /// Describes a schedule to create on the WSS device.
     /// </summary>
+    /// <remarks>
+    /// <see cref="ScheduleId"/>, <see cref="DurationMs"/>, and <see cref="SyncSignal"/> use the same protocol
+    /// validation and encoding rules as the previous positional overload.
+    /// </remarks>
     public sealed class ScheduleDefinition
     {
         /// <summary>

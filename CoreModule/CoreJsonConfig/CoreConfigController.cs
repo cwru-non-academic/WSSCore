@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 namespace Wss.CoreModule
@@ -66,7 +67,7 @@ namespace Wss.CoreModule
 
         /// <summary>
         /// Loads the core configuration from disk at the specified <paramref name="path"/>.
-        /// If <paramref name="path"/> is a directory, the file name <c>core.json</c> is appended.
+        /// If <paramref name="path"/> is a directory, the file name <c>stimConfig.json</c> is appended.
         /// If the file does not exist or is invalid, a default configuration is created and saved.
         /// Safe to call multiple times; the operation is thread-safe.
         /// </summary>
@@ -126,9 +127,25 @@ namespace Wss.CoreModule
         /// <summary>
         /// Gets the configured on-wire broadcast receiver address.
         /// </summary>
+        /// <remarks>
+        /// The value is read from the persisted hexadecimal string in <see cref="CoreConfig.broadcastTarget"/>.
+        /// If the stored value is missing or invalid, the historical default <c>0x8F</c> is returned and
+        /// the normalized value is immediately persisted back to disk.
+        /// </remarks>
         public byte BroadcastTarget
         {
-            get { lock (_sync) return _config.broadcastTarget; }
+            get
+            {
+                lock (_sync)
+                {
+                    if (TryParseHexByte(_config.broadcastTarget, out var value))
+                        return value;
+
+                    _config.broadcastTarget = FormatHexByte(DefaultBroadcastTarget);
+                    JsonReader.SaveObject(_configPath, _config);
+                    return DefaultBroadcastTarget;
+                }
+            }
         }
 
         /// <summary>
@@ -145,10 +162,10 @@ namespace Wss.CoreModule
             {
                 lock (_sync)
                 {
-                    var normalized = NormalizeWssTargets(_config.wssTargets);
-                    if (!ReferenceEquals(normalized, _config.wssTargets))
+                    var normalized = NormalizeWssTargets(_config.wssTargets, out var normalizedStrings);
+                    if (!HaveSameTargets(_config.wssTargets, normalizedStrings))
                     {
-                        _config.wssTargets = normalized;
+                        _config.wssTargets = normalizedStrings;
                         JsonReader.SaveObject(_configPath, _config);
                     }
                     return (byte[])normalized.Clone();
@@ -167,6 +184,11 @@ namespace Wss.CoreModule
         /// <summary>
         /// Returns the configured amplitude curve parameters per WSS (index 0..2 maps to Wss1..Wss3).
         /// </summary>
+        /// <remarks>
+        /// The returned array is the live in-memory configuration array, not a defensive copy.
+        /// Mutating the returned array or its entries changes the loaded configuration until it is reloaded.
+        /// Call <see cref="SaveJson"/> to persist those changes.
+        /// </remarks>
         public AmpCurveParams[] AmpCurves
         {
             get { lock (_sync) return _config.ampCurves; }
@@ -179,6 +201,7 @@ namespace Wss.CoreModule
         /// <param name="v">
         /// New maximum WSS count. Must be greater than zero.
         /// </param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="v"/> is less than or equal to zero.</exception>
         public void SetMaxWss(int v)
         {
             if (v <= 0) throw new ArgumentOutOfRangeException(nameof(v));
@@ -195,6 +218,8 @@ namespace Wss.CoreModule
         /// <param name="verHandler">
         /// Version handler used to validate whether the supplied firmware string is supported.
         /// </param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="verHandler"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="v"/> is not supported by <paramref name="verHandler"/>.</exception>
         public void SetFirmware(string v, WSSVersionHandler verHandler)
         {
             if (verHandler == null) throw new ArgumentNullException(nameof(verHandler));
@@ -203,17 +228,56 @@ namespace Wss.CoreModule
             lock (_sync) { _config.firmware = v; JsonReader.SaveObject(_configPath, _config); }
         }
 
-        private static byte[] NormalizeWssTargets(byte[] values)
+        private static readonly byte DefaultBroadcastTarget = 0x8F;
+
+        private static byte[] NormalizeWssTargets(string[] values, out string[] normalizedStrings)
         {
             var defaults = new byte[] { 0x81, 0x82, 0x83 };
-            if (values == null || values.Length == 0)
-                return defaults;
-
             var normalized = new byte[3];
+            normalizedStrings = new string[3];
             for (int i = 0; i < normalized.Length; i++)
-                normalized[i] = i < values.Length ? values[i] : defaults[i];
+            {
+                var fallback = defaults[i];
+                if (values != null && i < values.Length && TryParseHexByte(values[i], out var parsed))
+                    fallback = parsed;
+
+                normalized[i] = fallback;
+                normalizedStrings[i] = FormatHexByte(fallback);
+            }
 
             return normalized;
+        }
+
+        private static bool TryParseHexByte(string value, out byte parsed)
+        {
+            parsed = 0;
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            var text = value.Trim();
+            if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                text = text.Substring(2);
+
+            return byte.TryParse(text, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out parsed);
+        }
+
+        private static string FormatHexByte(byte value)
+            => $"0x{value:X2}";
+
+        private static bool HaveSameTargets(string[] current, string[] normalized)
+        {
+            if (ReferenceEquals(current, normalized))
+                return true;
+            if (current == null || normalized == null || current.Length != normalized.Length)
+                return false;
+
+            for (int i = 0; i < current.Length; i++)
+            {
+                if (!string.Equals(current[i], normalized[i], StringComparison.Ordinal))
+                    return false;
+            }
+
+            return true;
         }
     }
 }

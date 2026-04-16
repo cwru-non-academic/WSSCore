@@ -7,6 +7,8 @@ namespace Wss.CoreModule
     /// These values affect configuration loading, setup retry behavior, and the default schedule/event values used
     /// during the core's initial device setup. Packet spacing is intentionally not exposed here because it remains a
     /// fixed hardware/radio constraint in the core implementation.
+    /// The core constructor requires a non-empty <see cref="ConfigPath"/> and validates that
+    /// <see cref="MaxSetupTries"/> is at least 1.
     /// </remarks>
     public sealed class WssStimulationCoreOptions
     {

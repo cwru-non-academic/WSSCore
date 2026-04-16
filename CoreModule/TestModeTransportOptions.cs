@@ -6,6 +6,10 @@ namespace Wss.CoreModule
     /// <summary>
     /// Holds behavior settings for <see cref="TestModeTransport"/>.
     /// </summary>
+    /// <remarks>
+    /// The transport constructor requires a non-null options instance. When <see cref="Rng"/> or
+    /// <see cref="FallbackPayload"/> is left null, <see cref="TestModeTransport"/> substitutes safe defaults.
+    /// </remarks>
     public sealed class TestModeTransportOptions
     {
         /// <summary>
