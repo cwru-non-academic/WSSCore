@@ -1,0 +1,12 @@
+# Generated package staging directories (tracked build outputs are intentionally retained).
+/artifacts/core/
+/artifacts/serial/
+/artifacts/ble-linux-x64/
+
+# Build output from the artifact utility.
+/tools/ArtifactBuild/bin/
+/tools/ArtifactBuild/obj/
+
+# Generated build output from artifact consumer smoke projects.
+/tests/ArtifactConsumers/**/bin/
+/tests/ArtifactConsumers/**/obj/

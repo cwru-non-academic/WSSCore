@@ -1,0 +1,27 @@
+{
+  "primaryAssembly": "WSS_Core_Interface.dll",
+  "primaryTargetFramework": ".NETStandard,Version=v2.0",
+  "files": [
+    "WSS_Core_Interface.dll", "Newtonsoft.Json.dll", "System.Buffers.dll", "System.Memory.dll",
+    "System.Numerics.Vectors.dll", "System.Runtime.CompilerServices.Unsafe.dll", "System.Security.AccessControl.dll",
+    "System.Security.Permissions.dll", "System.Security.Principal.Windows.dll"
+  ],
+  "requiredAssemblies": [
+    "Newtonsoft.Json.dll", "System.Buffers.dll", "System.Memory.dll", "System.Numerics.Vectors.dll",
+    "System.Runtime.CompilerServices.Unsafe.dll", "System.Security.AccessControl.dll", "System.Security.Permissions.dll",
+    "System.Security.Principal.Windows.dll"
+  ],
+  "managedAssemblies": {
+    "WSS_Core_Interface.dll": { "identity": "WSS_Core_Interface", "version": "1.0.0.0", "culture": "neutral", "publicKeyToken": "null", "targetFramework": ".NETStandard,Version=v2.0" },
+    "Newtonsoft.Json.dll": { "identity": "Newtonsoft.Json", "version": "13.0.0.0", "culture": "neutral", "publicKeyToken": "30ad4fe6b2a6aeed", "targetFramework": ".NETStandard,Version=v2.0" },
+    "System.Buffers.dll": { "identity": "System.Buffers", "version": "4.0.3.0", "culture": "neutral", "publicKeyToken": "cc7b13ffcd2ddd51", "targetFramework": "" },
+    "System.Memory.dll": { "identity": "System.Memory", "version": "4.0.1.2", "culture": "neutral", "publicKeyToken": "cc7b13ffcd2ddd51", "targetFramework": "" },
+    "System.Numerics.Vectors.dll": { "identity": "System.Numerics.Vectors", "version": "4.1.4.0", "culture": "neutral", "publicKeyToken": "b03f5f7f11d50a3a", "targetFramework": "" },
+    "System.Runtime.CompilerServices.Unsafe.dll": { "identity": "System.Runtime.CompilerServices.Unsafe", "version": "6.0.0.0", "culture": "neutral", "publicKeyToken": "b03f5f7f11d50a3a", "targetFramework": "" },
+    "System.Security.AccessControl.dll": { "identity": "System.Security.AccessControl", "version": "6.0.0.0", "culture": "neutral", "publicKeyToken": "b03f5f7f11d50a3a", "targetFramework": ".NETStandard,Version=v2.0" },
+    "System.Security.Permissions.dll": { "identity": "System.Security.Permissions", "version": "6.0.0.0", "culture": "neutral", "publicKeyToken": "cc7b13ffcd2ddd51", "targetFramework": ".NETStandard,Version=v2.0" },
+    "System.Security.Principal.Windows.dll": { "identity": "System.Security.Principal.Windows", "version": "5.0.0.0", "culture": "neutral", "publicKeyToken": "b03f5f7f11d50a3a", "targetFramework": ".NETStandard,Version=v2.0" }
+  },
+  "nativeFiles": [],
+  "forbiddenAssemblies": [ "WSS.Transport.Serial.dll", "WSS.Transport.BLE.dll" ]
+}

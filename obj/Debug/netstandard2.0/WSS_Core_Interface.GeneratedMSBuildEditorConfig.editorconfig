@@ -1,6 +1,6 @@
 is_global = true
 build_property.RootNamespace = WSS_Core_Interface
-build_property.ProjectDir = /home/lemf/Documents/GitHub/WSSCoreInterface/
+build_property.ProjectDir = C:\Users\Owner\Documents\Github\WSSCore\
 build_property.EnableComHosting = 
 build_property.EnableGeneratedComInterfaceComImportInterop = 
 build_property.CsWinRTUseWindowsUIXamlProjections = false

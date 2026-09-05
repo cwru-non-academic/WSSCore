@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ArtifactDependency Include="WSS_Core_Interface.dll" />
+    <ArtifactDependency Include="Newtonsoft.Json.dll" />
+    <ArtifactDependency Include="System.Buffers.dll" />
+    <ArtifactDependency Include="System.Memory.dll" />
+    <ArtifactDependency Include="System.Numerics.Vectors.dll" />
+    <ArtifactDependency Include="System.Runtime.CompilerServices.Unsafe.dll" />
+    <ArtifactDependency Include="System.Security.AccessControl.dll" />
+    <ArtifactDependency Include="System.Security.Permissions.dll" />
+    <ArtifactDependency Include="System.Security.Principal.Windows.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="WSS_Core_Interface"><HintPath>$(WSS_ARTIFACT_DIR)/WSS_Core_Interface.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(WSS_ARTIFACT_DIR)/Newtonsoft.Json.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="System.Buffers"><HintPath>$(WSS_ARTIFACT_DIR)/System.Buffers.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="System.Memory"><HintPath>$(WSS_ARTIFACT_DIR)/System.Memory.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="System.Numerics.Vectors"><HintPath>$(WSS_ARTIFACT_DIR)/System.Numerics.Vectors.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe"><HintPath>$(WSS_ARTIFACT_DIR)/System.Runtime.CompilerServices.Unsafe.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="System.Security.AccessControl"><HintPath>$(WSS_ARTIFACT_DIR)/System.Security.AccessControl.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="System.Security.Permissions"><HintPath>$(WSS_ARTIFACT_DIR)/System.Security.Permissions.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="System.Security.Principal.Windows"><HintPath>$(WSS_ARTIFACT_DIR)/System.Security.Principal.Windows.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+
+  <Target Name="ValidateWssArtifact" BeforeTargets="Build">
+    <Error Condition="'$(WSS_ARTIFACT_DIR)' == ''" Text="WSS_ARTIFACT_DIR MSBuild property is required; pass -p:WSS_ARTIFACT_DIR=&lt;staged artifact directory&gt;." />
+    <Error Condition="'$(WSS_ARTIFACT_DIR)' != '' and !Exists('$(WSS_ARTIFACT_DIR)')" Text="WSS_ARTIFACT_DIR directory does not exist: $(WSS_ARTIFACT_DIR)" />
+    <Error Condition="'$(WSS_ARTIFACT_DIR)' != '' and !Exists('$(WSS_ARTIFACT_DIR)/%(ArtifactDependency.Identity)')" Text="Required staged artifact DLL is missing: $(WSS_ARTIFACT_DIR)/%(ArtifactDependency.Identity)" />
+  </Target>
+</Project>
