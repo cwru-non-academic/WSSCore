@@ -69,3 +69,112 @@ dotnet build "WSS.Transport.BLE/WSS.Transport.BLE.csproj" -c Release --nologo
 ```
 
 The `.NET 9` transport project restores BLE-specific dependencies such as `InTheHand.BluetoothLE` and `Linux.Bluetooth`. If you deploy the built DLLs directly instead of consuming them through NuGet, copy the resolved dependency assemblies alongside `WSS.Transport.BLE.dll`.
+
+## CI, testing, and release workflow
+
+GitHub Actions builds and validates the distributable WSS artifacts. Normal feature-branch pushes do not run the full workflow.
+
+The workflow runs automatically when:
+
+- A pull request targets `dev` or `main`.
+- A Git tag beginning with `v` is pushed, such as `v0.3.0-rc.4` or `v0.3.0`.
+- The workflow is manually started with `workflow_dispatch`.
+
+A normal push or merge to `main` does not create a version tag and does not create a release. Git tags are created explicitly when a particular commit is ready to be tested as a release candidate or release.
+
+### Pull request validation
+
+Before merging changes into `main`, open a pull request targeting `main`.
+
+The CI workflow builds and stages the Core, Serial, and BLE distributions and runs external consumer smoke tests against the staged DLLs rather than against the WSS source projects.
+
+The current consumer matrix is:
+
+| Artifact | Windows | Linux | macOS |
+| --- | --- | --- | --- |
+| Core | Yes | Yes | Yes |
+| Serial | Yes | Yes | Yes |
+| BLE Linux x64 | — | Yes | — |
+
+A pull request should not be merged until its required artifact and consumer jobs pass.
+
+### Creating a release candidate
+
+After the desired commit has passed pull-request validation and is on the branch/commit that should be released, create a new prerelease tag.
+
+For example:
+
+```bash
+git checkout main
+git pull
+git log -1 --oneline --decorate
+
+git tag -a v0.3.0-rc.4 -m "v0.3.0-rc.4"
+git push origin v0.3.0-rc.4
+```
+
+Always use a new release-candidate number for a new commit. Do not move or reuse a release-candidate tag that has already been pushed.
+
+Pushing the `v*` tag automatically runs the artifact workflow against the exact tagged commit.
+
+If all required jobs succeed, the release job publishes the already-tested artifacts. The release job does not rebuild WSS.
+
+Release assets are:
+
+```text
+WSS-Core-<TAG>.zip
+WSS-Serial-<TAG>.zip
+WSS-BLE-Linux-x64-<TAG>.zip
+SHA256SUMS.txt
+```
+
+For example:
+
+```text
+WSS-Core-v0.3.0-rc.4.zip
+WSS-Serial-v0.3.0-rc.4.zip
+WSS-BLE-Linux-x64-v0.3.0-rc.4.zip
+SHA256SUMS.txt
+```
+
+Tags containing a hyphen, such as:
+
+```text
+v0.3.0-rc.4
+```
+
+are published as GitHub prereleases.
+
+A stable tag such as:
+
+```text
+v0.3.0
+```
+
+is published as a normal GitHub release.
+
+### Release principle
+
+The release pipeline follows this sequence:
+
+```text
+source/tagged commit
+        ↓
+clean build
+        ↓
+stage exact distributable files
+        ↓
+validate staged artifacts
+        ↓
+consumer tests
+        ↓
+upload workflow artifacts
+        ↓
+release job downloads the same tested artifacts
+        ↓
+ZIP + SHA-256 checksums
+        ↓
+GitHub Release
+```
+
+The release job must not rebuild or restage WSS. This ensures the files published in a GitHub Release are the same files that passed the artifact consumer tests.
