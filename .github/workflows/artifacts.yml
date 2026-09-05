@@ -1,0 +1,223 @@
+name: Build runtime artifacts
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Clean, restore, and build Core
+        run: |
+          rm -rf bin obj tools/ArtifactBuild/bin tools/ArtifactBuild/obj
+          dotnet restore WSS_Core_Interface.csproj --locked-mode --nologo
+          dotnet build WSS_Core_Interface.csproj -c Release --no-restore --nologo
+          dotnet restore tools/ArtifactBuild/ArtifactBuild.csproj --locked-mode --nologo
+          dotnet build tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-restore --nologo
+      - name: Stage and validate Core
+        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-build -- stage --manifest tools/ArtifactBuild/manifests/core.json --source bin/Release/netstandard2.0 --destination artifacts/core
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core
+          path: artifacts/core
+          if-no-files-found: error
+
+  serial:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Clean, restore, and build Serial net48
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue bin, obj, WSS.Transport.Serial/bin, WSS.Transport.Serial/obj, tools/ArtifactBuild/bin, tools/ArtifactBuild/obj
+          dotnet restore WSS.Transport.Serial/WSS.Transport.Serial.csproj --locked-mode --nologo
+          dotnet build WSS.Transport.Serial/WSS.Transport.Serial.csproj -c Release --no-restore --nologo
+          dotnet restore tools/ArtifactBuild/ArtifactBuild.csproj --locked-mode --nologo
+          dotnet build tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-restore --nologo
+      - name: Stage and validate Serial
+        shell: pwsh
+        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-build -- stage --manifest tools/ArtifactBuild/manifests/serial.json --source WSS.Transport.Serial/bin/Release/net48 --destination artifacts/serial
+      - uses: actions/upload-artifact@v4
+        with:
+          name: serial
+          path: artifacts/serial
+          if-no-files-found: error
+
+  ble-linux-x64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Clean, restore, and build BLE before Linux x64 staging
+        run: |
+          rm -rf bin obj WSS.Transport.BLE/bin WSS.Transport.BLE/obj tools/ArtifactBuild/bin tools/ArtifactBuild/obj
+          dotnet restore WSS.Transport.BLE/WSS.Transport.BLE.csproj --locked-mode --nologo
+          dotnet build WSS.Transport.BLE/WSS.Transport.BLE.csproj -c Release --no-restore --nologo
+          dotnet restore tools/ArtifactBuild/ArtifactBuild.csproj --locked-mode --nologo
+          dotnet build tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-restore --nologo
+      - name: Stage and validate BLE Linux x64
+        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-build -- stage --manifest tools/ArtifactBuild/manifests/ble-linux-x64.json --source WSS.Transport.BLE/bin/Release/net9.0 --destination artifacts/ble-linux-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ble-linux-x64
+          path: artifacts/ble-linux-x64
+          if-no-files-found: error
+
+  core-consumer:
+    needs: core
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: core
+          path: ${{ runner.temp }}/wss-core
+      - name: Restore, build, and run Core consumer
+        run: |
+          dotnet restore tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core"
+          dotnet build tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core"
+          dotnet run --project tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core"
+
+  serial-consumer:
+    needs: serial
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: serial
+          path: ${{ runner.temp }}/wss-serial
+      - name: Restore, build, and run Serial consumer
+        run: |
+          dotnet restore tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-serial"
+          dotnet build tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-serial"
+          dotnet run --project tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-serial"
+
+  ble-consumer:
+    needs: ble-linux-x64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: ble-linux-x64
+          path: ${{ runner.temp }}/wss-ble-linux-x64
+      - name: Restore, build, and run BLE consumer
+        run: |
+          dotnet restore tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-linux-x64"
+          dotnet build tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-linux-x64"
+          dotnet run --project tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-linux-x64"
+
+  release:
+    needs:
+      - core-consumer
+      - serial-consumer
+      - ble-consumer
+    if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Download Core artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: core
+          path: ${{ runner.temp }}/release-input/core
+      - name: Download Serial artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: serial
+          path: ${{ runner.temp }}/release-input/serial
+      - name: Download BLE Linux x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ble-linux-x64
+          path: ${{ runner.temp }}/release-input/ble-linux-x64
+      - name: Package release assets and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          assets="$RUNNER_TEMP/release-assets"
+          mkdir -p "$assets"
+
+          (
+            cd "$RUNNER_TEMP/release-input/core"
+            zip -q -r "$assets/WSS-Core-${TAG}.zip" .
+          )
+          (
+            cd "$RUNNER_TEMP/release-input/serial"
+            zip -q -r "$assets/WSS-Serial-${TAG}.zip" .
+          )
+          (
+            cd "$RUNNER_TEMP/release-input/ble-linux-x64"
+            zip -q -r "$assets/WSS-BLE-Linux-x64-${TAG}.zip" .
+          )
+
+          (
+            cd "$assets"
+            sha256sum \
+              "WSS-Core-${TAG}.zip" \
+              "WSS-Serial-${TAG}.zip" \
+              "WSS-BLE-Linux-x64-${TAG}.zip" \
+              > SHA256SUMS.txt
+          )
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          cd "$RUNNER_TEMP/release-assets"
+
+          prerelease_args=()
+          if [[ "$TAG" == *-* ]]; then
+            prerelease_args+=(--prerelease)
+          fi
+
+          gh release create "$TAG" \
+            "WSS-Core-${TAG}.zip" \
+            "WSS-Serial-${TAG}.zip" \
+            "WSS-BLE-Linux-x64-${TAG}.zip" \
+            SHA256SUMS.txt \
+            --verify-tag \
+            --generate-notes \
+            "${prerelease_args[@]}"

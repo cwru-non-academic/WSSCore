@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ArtifactDependency Include="WSS.Transport.BLE.dll" />
+    <ArtifactDependency Include="WSS_Core_Interface.dll" />
+    <ArtifactDependency Include="InTheHand.BluetoothLE.dll" />
+    <ArtifactDependency Include="Linux.Bluetooth.dll" />
+    <ArtifactDependency Include="Tmds.DBus.dll" />
+    <ArtifactDependency Include="Newtonsoft.Json.dll" />
+    <ArtifactDependency Include="System.IO.Ports.dll" />
+    <ArtifactDependency Include="System.Security.Permissions.dll" />
+    <ArtifactDependency Include="System.Windows.Extensions.dll" />
+    <ArtifactDependency Include="System.Drawing.Common.dll" />
+    <ArtifactDependency Include="Microsoft.Win32.SystemEvents.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="WSS.Transport.BLE"><HintPath>$(WSS_ARTIFACT_DIR)/WSS.Transport.BLE.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="WSS_Core_Interface"><HintPath>$(WSS_ARTIFACT_DIR)/WSS_Core_Interface.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="InTheHand.BluetoothLE"><HintPath>$(WSS_ARTIFACT_DIR)/InTheHand.BluetoothLE.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Linux.Bluetooth"><HintPath>$(WSS_ARTIFACT_DIR)/Linux.Bluetooth.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Tmds.DBus"><HintPath>$(WSS_ARTIFACT_DIR)/Tmds.DBus.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(WSS_ARTIFACT_DIR)/Newtonsoft.Json.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="System.IO.Ports"><HintPath>$(WSS_ARTIFACT_DIR)/System.IO.Ports.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="System.Security.Permissions"><HintPath>$(WSS_ARTIFACT_DIR)/System.Security.Permissions.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="System.Windows.Extensions"><HintPath>$(WSS_ARTIFACT_DIR)/System.Windows.Extensions.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="System.Drawing.Common"><HintPath>$(WSS_ARTIFACT_DIR)/System.Drawing.Common.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Microsoft.Win32.SystemEvents"><HintPath>$(WSS_ARTIFACT_DIR)/Microsoft.Win32.SystemEvents.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(WSS_ARTIFACT_DIR)/runtimes/**" Link="runtimes/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="ValidateWssArtifact" BeforeTargets="Build">
+    <Error Condition="'$(WSS_ARTIFACT_DIR)' == ''" Text="WSS_ARTIFACT_DIR MSBuild property is required; pass -p:WSS_ARTIFACT_DIR=&lt;staged artifact directory&gt;." />
+    <Error Condition="'$(WSS_ARTIFACT_DIR)' != '' and !Exists('$(WSS_ARTIFACT_DIR)')" Text="WSS_ARTIFACT_DIR directory does not exist: $(WSS_ARTIFACT_DIR)" />
+    <Error Condition="'$(WSS_ARTIFACT_DIR)' != '' and !Exists('$(WSS_ARTIFACT_DIR)/%(ArtifactDependency.Identity)')" Text="Required staged artifact DLL is missing: $(WSS_ARTIFACT_DIR)/%(ArtifactDependency.Identity)" />
+    <Error Condition="'$(WSS_ARTIFACT_DIR)' != '' and !Exists('$(WSS_ARTIFACT_DIR)/runtimes')" Text="Required staged BLE runtimes directory is missing: $(WSS_ARTIFACT_DIR)/runtimes" />
+  </Target>
+</Project>

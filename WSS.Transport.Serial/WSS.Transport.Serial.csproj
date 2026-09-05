@@ -6,6 +6,7 @@
     <RootNamespace>WSS.Transport.Serial</RootNamespace>
     <Platforms>AnyCPU</Platforms>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <ItemGroup>

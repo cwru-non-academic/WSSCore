@@ -1,0 +1,33 @@
+{
+  "primaryAssembly": "WSS.Transport.BLE.dll",
+  "primaryTargetFramework": ".NETCoreApp,Version=v9.0",
+  "files": [
+    "WSS.Transport.BLE.dll", "WSS_Core_Interface.dll", "InTheHand.BluetoothLE.dll", "Linux.Bluetooth.dll",
+    "Tmds.DBus.dll", "Newtonsoft.Json.dll", "System.IO.Ports.dll", "System.Security.Permissions.dll",
+    "System.Windows.Extensions.dll", "System.Drawing.Common.dll", "Microsoft.Win32.SystemEvents.dll",
+    "runtimes/unix/lib/net9.0/System.IO.Ports.dll", "runtimes/unix/lib/net6.0/System.Drawing.Common.dll",
+    "runtimes/linux-x64/native/libSystem.IO.Ports.Native.so"
+  ],
+  "requiredAssemblies": [
+    "WSS_Core_Interface.dll", "InTheHand.BluetoothLE.dll", "Linux.Bluetooth.dll", "Tmds.DBus.dll",
+    "Newtonsoft.Json.dll", "System.IO.Ports.dll", "System.Security.Permissions.dll", "System.Windows.Extensions.dll",
+    "System.Drawing.Common.dll", "Microsoft.Win32.SystemEvents.dll"
+  ],
+  "managedAssemblies": {
+    "WSS.Transport.BLE.dll": { "identity": "WSS.Transport.BLE", "version": "1.0.0.0", "culture": "neutral", "publicKeyToken": "null", "targetFramework": ".NETCoreApp,Version=v9.0" },
+    "WSS_Core_Interface.dll": { "identity": "WSS_Core_Interface", "version": "1.0.0.0", "culture": "neutral", "publicKeyToken": "null", "targetFramework": ".NETStandard,Version=v2.0" },
+    "InTheHand.BluetoothLE.dll": { "identity": "InTheHand.BluetoothLE", "version": "4.0.0.0", "culture": "neutral", "publicKeyToken": "ea38caa273134499", "targetFramework": ".NETCoreApp,Version=v9.0" },
+    "Linux.Bluetooth.dll": { "identity": "Linux.Bluetooth", "version": "5.67.1.0", "culture": "neutral", "publicKeyToken": "null", "targetFramework": ".NETStandard,Version=v2.0" },
+    "Tmds.DBus.dll": { "identity": "Tmds.DBus", "version": "0.20.0.0", "culture": "neutral", "publicKeyToken": "9abd76e9812c1bca", "targetFramework": ".NETCoreApp,Version=v6.0" },
+    "Newtonsoft.Json.dll": { "identity": "Newtonsoft.Json", "version": "13.0.0.0", "culture": "neutral", "publicKeyToken": "30ad4fe6b2a6aeed", "targetFramework": ".NETCoreApp,Version=v6.0" },
+    "System.IO.Ports.dll": { "identity": "System.IO.Ports", "version": "9.0.0.0", "culture": "neutral", "publicKeyToken": "cc7b13ffcd2ddd51", "targetFramework": ".NETCoreApp,Version=v9.0" },
+    "System.Security.Permissions.dll": { "identity": "System.Security.Permissions", "version": "6.0.0.0", "culture": "neutral", "publicKeyToken": "cc7b13ffcd2ddd51", "targetFramework": ".NETCoreApp,Version=v6.0" },
+    "System.Windows.Extensions.dll": { "identity": "System.Windows.Extensions", "version": "6.0.0.0", "culture": "neutral", "publicKeyToken": "cc7b13ffcd2ddd51", "targetFramework": ".NETCoreApp,Version=v6.0" },
+    "System.Drawing.Common.dll": { "identity": "System.Drawing.Common", "version": "6.0.0.0", "culture": "neutral", "publicKeyToken": "cc7b13ffcd2ddd51", "targetFramework": ".NETCoreApp,Version=v6.0" },
+    "Microsoft.Win32.SystemEvents.dll": { "identity": "Microsoft.Win32.SystemEvents", "version": "6.0.0.0", "culture": "neutral", "publicKeyToken": "cc7b13ffcd2ddd51", "targetFramework": ".NETCoreApp,Version=v6.0" },
+    "runtimes/unix/lib/net9.0/System.IO.Ports.dll": { "identity": "System.IO.Ports", "version": "9.0.0.0", "culture": "neutral", "publicKeyToken": "cc7b13ffcd2ddd51", "targetFramework": ".NETCoreApp,Version=v9.0" },
+    "runtimes/unix/lib/net6.0/System.Drawing.Common.dll": { "identity": "System.Drawing.Common", "version": "6.0.0.0", "culture": "neutral", "publicKeyToken": "cc7b13ffcd2ddd51", "targetFramework": ".NETCoreApp,Version=v6.0" }
+  },
+  "nativeFiles": [ "runtimes/linux-x64/native/libSystem.IO.Ports.Native.so" ],
+  "forbiddenAssemblies": [ "WSS.Transport.Serial.dll" ]
+}
