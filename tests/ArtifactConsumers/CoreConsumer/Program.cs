@@ -1,4 +1,5 @@
 using Wss.CoreModule;
+using Wss.Transports;
 
 var options = new WssClientOptions();
 var target = WssTarget.Wss1;
@@ -27,6 +28,31 @@ var result = await client.StartStim(WssTarget.Wss1);
 if (result != "Start Acknowledged")
 {
     throw new InvalidOperationException("TestModeTransport did not complete the deterministic core operation.");
+}
+
+var configDirectory = Path.Combine(Path.GetTempPath(), $"wss-core-consumer-{Guid.NewGuid():N}");
+Directory.CreateDirectory(configDirectory);
+try
+{
+    using var coreTransport = new TestModeTransport(new TestModeTransportOptions
+    {
+        Rng = new Random(0)
+    });
+    using var core = new WssStimulationCore(
+        coreTransport,
+        new WssStimulationCoreOptions
+        {
+            ConfigPath = configDirectory
+        });
+
+    if (core is not IAdvancedEventProgrammer)
+    {
+        throw new InvalidOperationException("Advanced event programming capability is unavailable.");
+    }
+}
+finally
+{
+    Directory.Delete(configDirectory, recursive: true);
 }
 
 Console.WriteLine("Core artifact consumer passed.");

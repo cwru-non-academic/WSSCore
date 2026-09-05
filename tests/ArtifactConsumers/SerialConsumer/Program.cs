@@ -1,4 +1,4 @@
-using Wss.CoreModule;
+using Wss.Transports;
 
 var assembly = typeof(SerialPortTransport).Assembly;
 if (assembly.GetName().Name != "WSS.Transport.Serial")

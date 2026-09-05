@@ -1,5 +1,5 @@
 using System.Reflection;
-using HFI.Wss;
+using Wss.Transports;
 
 foreach (var assemblyName in new[] { "WSS.Transport.BLE", "InTheHand.BluetoothLE", "Linux.Bluetooth", "Tmds.DBus" })
 {
