@@ -19,6 +19,9 @@ namespace Wss.CalibrationModule
         /// </summary>
         /// <param name="channel">1-based logical channel.</param>
         /// <param name="normalizedValue">Normalized drive in [0,1].</param>
+        /// <exception cref="System.ArgumentOutOfRangeException">
+        /// Thrown when <paramref name="channel"/> is outside the configured 1-based channel range.
+        /// </exception>
         void StimulateNormalized(int channel, float normalizedValue);
 
         /// <summary>
@@ -28,6 +31,9 @@ namespace Wss.CalibrationModule
         /// </summary>
         /// <param name="channel">1-based logical channel.</param>
         /// <returns>Most recent intensity value (µs or mA depending on mode).</returns>
+        /// <exception cref="System.ArgumentOutOfRangeException">
+        /// Thrown when <paramref name="channel"/> is outside the configured 1-based channel range.
+        /// </exception>
         float GetStimIntensity(int channel);
 
         // ---- Params persistence ----
@@ -56,6 +62,7 @@ namespace Wss.CalibrationModule
         /// </summary>
         /// <param name="key">Dotted parameter key.</param>
         /// <param name="value">Value to set.</param>
+        /// <remarks>Implementations may persist the change immediately to the backing JSON file.</remarks>
         void AddOrUpdateStimParam(string key, float value);
 
         /// <summary>
@@ -124,11 +131,17 @@ namespace Wss.CalibrationModule
 
         /// <summary>Sets the amplitude-control mode ("PW"/"PA") for a channel.</summary>
         /// <param name="ch">1-based logical channel.</param>
-        /// <param name="mode">Target amplitude mode string.</param>
+        /// <param name="mode">
+        /// Target amplitude mode string. Valid values are <c>"PW"</c> and <c>"PA"</c>, case-insensitive;
+        /// invalid values may be normalized to <c>"PW"</c> with a warning by the backing controller.
+        /// </param>
         void SetChannelAmpMode(int ch, string mode);
 
         /// <summary>Sets the same amplitude-control mode for all channels.</summary>
-        /// <param name="mode">Target amplitude mode string.</param>
+        /// <param name="mode">
+        /// Target amplitude mode string. Valid values are <c>"PW"</c> and <c>"PA"</c>, case-insensitive;
+        /// invalid values may be normalized to <c>"PW"</c> with a warning by the backing controller.
+        /// </param>
         void SetAllChannelsAmpMode(string mode);
 
         /// <summary>
@@ -222,5 +235,13 @@ namespace Wss.CalibrationModule
         /// <param name="basic">Out parameter for the BASIC interface.</param>
         /// <returns><c>true</c> when BASIC is available, otherwise <c>false</c>.</returns>
         bool TryGetBasic(out IBasicStimulation basic);
+
+        /// <summary>
+        /// Exposes the optional advanced event programmer capability if available from the wrapped core.
+        /// Returns <c>true</c> and sets <paramref name="programmer"/> if supported.
+        /// </summary>
+        /// <param name="programmer">Out parameter for the advanced event programmer interface.</param>
+        /// <returns><c>true</c> when advanced event programming is available, otherwise <c>false</c>.</returns>
+        bool TryGetAdvancedEventProgrammer(out IAdvancedEventProgrammer programmer);
     }
 }

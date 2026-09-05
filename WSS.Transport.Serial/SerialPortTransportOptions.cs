@@ -1,6 +1,6 @@
 using System.IO.Ports;
 
-namespace Wss.CoreModule
+namespace Wss.Transports
 {
     /// <summary>
     /// Holds connection settings for <see cref="SerialPortTransport"/>.

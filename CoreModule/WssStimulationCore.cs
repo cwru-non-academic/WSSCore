@@ -6,13 +6,15 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
+using Wss.Transports;
+
 namespace Wss.CoreModule
 {
     /// <summary>
     /// Stimulation core that manages connection, setup (via a queued step runner), and a background
     /// streaming loop. Public mutator methods enqueue device edits and return immediately.
     /// </summary>
-    public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
+    public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation, IAdvancedEventProgrammer
     {
         #region ========== Fields & nested types ==========
         // ---- transport & config ----
@@ -342,7 +344,30 @@ namespace Wss.CoreModule
                 () => StepLogger(_wss.EditEventPw(eventID, new[] { 0, 0, _currentIPD }, targetWSS), $"UpdateIPD[{targetWSS}], Event[{eventID}]")
             );
         }
-        
+
+        /// <inheritdoc/>
+        public void UpdateEventRatio(int ratio, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            if (ratio != 1 && ratio != 2 && ratio != 4 && ratio != 8)
+                throw new ArgumentOutOfRangeException(nameof(ratio), "Ratio must be one of {1,2,4,8}.");
+
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventRatio(1, ratio, targetWSS), $"UpdateEventRatio[{targetWSS}], Event[1]"),
+                () => StepLogger(_wss.EditEventRatio(2, ratio, targetWSS), $"UpdateEventRatio[{targetWSS}], Event[2]"),
+                () => StepLogger(_wss.EditEventRatio(3, ratio, targetWSS), $"UpdateEventRatio[{targetWSS}], Event[3]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventRatio(int ratio, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            if (ratio != 1 && ratio != 2 && ratio != 4 && ratio != 8)
+                throw new ArgumentOutOfRangeException(nameof(ratio), "Ratio must be one of {1,2,4,8}.");
+
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventRatio(eventID, ratio, targetWSS), $"UpdateEventRatio[{targetWSS}], Event[{eventID}]")
+            );
+        }
 
         /// <inheritdoc/>
         public void UpdateWaveform(int[] waveform, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
@@ -410,6 +435,197 @@ namespace Wss.CoreModule
         {
             return _coreConfig;
         }
+
+        // ---- IBasicStimulation (setup edits) ----
+
+        /// <inheritdoc/>
+        public void UpdateEventDelay(int delayMs, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventDelay(eventID, delayMs, targetWSS), $"UpdateEventDelay[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventDelay(int delayMs, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventDelay(1, delayMs, targetWSS), $"UpdateEventDelay[{targetWSS}], Event[1]"),
+                () => StepLogger(_wss.EditEventDelay(2, delayMs, targetWSS), $"UpdateEventDelay[{targetWSS}], Event[2]"),
+                () => StepLogger(_wss.EditEventDelay(3, delayMs, targetWSS), $"UpdateEventDelay[{targetWSS}], Event[3]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SetEventEnabled(int eventID, bool enabled, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventEnableBit(eventID, enabled ? 1 : 0, targetWSS), $"SetEventEnabled[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SetEventEnabled(bool enabled, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventEnableBit(1, enabled ? 1 : 0, targetWSS), $"SetEventEnabled[{targetWSS}], Event[1]"),
+                () => StepLogger(_wss.EditEventEnableBit(2, enabled ? 1 : 0, targetWSS), $"SetEventEnabled[{targetWSS}], Event[2]"),
+                () => StepLogger(_wss.EditEventEnableBit(3, enabled ? 1 : 0, targetWSS), $"SetEventEnabled[{targetWSS}], Event[3]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void CreateContactConfig(ContactConfigDefinition definition, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            if (definition == null) throw new ArgumentNullException(nameof(definition));
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.CreateContactConfig(definition, targetWSS), $"CreateContactConfig[{targetWSS}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void DeleteContactConfig(int contactConfigID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.DeleteContactConfig(contactConfigID, targetWSS), $"DeleteContactConfig[{targetWSS}], ID[{contactConfigID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventContactConfig(int eventID, int contactConfigID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventContactConfig(eventID, contactConfigID, targetWSS), $"UpdateEventContactConfig[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventContactConfig(int contactConfigID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventContactConfig(1, contactConfigID, targetWSS), $"UpdateEventContactConfig[{targetWSS}], Event[1]"),
+                () => StepLogger(_wss.EditEventContactConfig(2, contactConfigID, targetWSS), $"UpdateEventContactConfig[{targetWSS}], Event[2]"),
+                () => StepLogger(_wss.EditEventContactConfig(3, contactConfigID, targetWSS), $"UpdateEventContactConfig[{targetWSS}], Event[3]")
+            );
+        }
+
+        // ---- IAdvancedEventProgrammer ----
+
+        /// <inheritdoc/>
+        public void CreateEvent(CreateEventRequest request, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.CreateEvent(request, targetWSS), $"CreateEvent[{targetWSS}], Event[{request.EventId}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void DeleteEvent(int eventID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.DeleteEvent(eventID, targetWSS), $"DeleteEvent[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventPulseWidths(int eventID, int standardPw, int rechargePw, int ipd, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventPw(eventID, new[] { standardPw, rechargePw, ipd }, targetWSS), $"UpdateEventPulseWidths[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventAmplitudes(int eventID, int[] standardAmplitudes, int[] rechargeAmplitudes, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventAmp(eventID, standardAmplitudes, rechargeAmplitudes, targetWSS), $"UpdateEventAmplitudes[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void CreateSchedule(ScheduleDefinition definition, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            if (definition == null) throw new ArgumentNullException(nameof(definition));
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.CreateSchedule(definition, targetWSS), $"CreateSchedule[{targetWSS}], Schedule[{definition.ScheduleId}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void DeleteSchedule(int scheduleID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.DeleteSchedule(scheduleID, targetWSS), $"DeleteSchedule[{targetWSS}], Schedule[{scheduleID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateScheduleDuration(int scheduleID, int durationMs, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.ChangeScheduleDuration(scheduleID, durationMs, targetWSS), $"UpdateScheduleDuration[{targetWSS}], Schedule[{scheduleID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void AddEventToSchedule(int eventID, int scheduleID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.AddEventToSchedule(eventID, scheduleID, targetWSS), $"AddEventToSchedule[{targetWSS}], Event[{eventID}], Schedule[{scheduleID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void RemoveEventFromSchedule(int eventID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.DeleteEventFromSchedule(eventID, targetWSS), $"RemoveEventFromSchedule[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void MoveEventToSchedule(int eventID, int scheduleID, int delayMs, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.MoveEventToSchedule(eventID, scheduleID, delayMs, targetWSS), $"MoveEventToSchedule[{targetWSS}], Event[{eventID}], Schedule[{scheduleID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SetScheduleGroup(int scheduleID, int syncSignal, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.ChangeScheduleGroup(scheduleID, syncSignal, targetWSS), $"SetScheduleGroup[{targetWSS}], Schedule[{scheduleID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SetScheduleState(int scheduleID, ScheduleState state, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            ValidateScheduleState(state);
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.ChangeScheduleState(scheduleID, (int)state, targetWSS), $"SetScheduleState[{targetWSS}], Schedule[{scheduleID}], State[{state}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SetGroupState(int syncSignal, ScheduleState state, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            ValidateScheduleState(state);
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.ChangeGroupState(syncSignal, (int)state, targetWSS), $"SetGroupState[{targetWSS}], SyncSignal[{syncSignal}], State[{state}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SyncGroup(int syncSignal, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.SyncGroup(syncSignal, targetWSS), $"SyncGroup[{targetWSS}], SyncSignal[{syncSignal}]")
+            );
+        }
         #endregion
 
         #region ========== Setup seeding (NormalSetup) ==========
@@ -417,7 +633,7 @@ namespace Wss.CoreModule
         /// Seeds the per-target setup step lists for a full initial configuration and starts
         /// the setup runner. Used once after connect.
         /// </summary>
-        public void NormalSetup()
+        private void NormalSetup()
         {
             var tgts = Targets(_maxWSS);
             foreach (var t in tgts)
@@ -863,6 +1079,12 @@ namespace Wss.CoreModule
             if (!_wss.TryGetModuleQueryData(target, out var data) || data == null)
                 return false;
             return ModuleSettings.TryDecode(data, out settings);
+        }
+
+        private static void ValidateScheduleState(ScheduleState state)
+        {
+            if (state != ScheduleState.Active && state != ScheduleState.Ready && state != ScheduleState.Suspend)
+                throw new ArgumentOutOfRangeException(nameof(state), "State must be Active, Ready, or Suspend.");
         }
         #endregion
     }

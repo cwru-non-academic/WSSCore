@@ -29,6 +29,7 @@ namespace Wss.ModelModule
         /// <param name="inner">Wrapped stimulation params core.</param>
         /// <param name="modelPathOrDir">Model JSON file path or directory.</param>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="inner"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="modelPathOrDir"/> is null or whitespace.</exception>
         public ModelParamsLayer(IStimParamsCore inner, string modelPathOrDir)
         {
             _inner    = inner ?? throw new ArgumentNullException(nameof(inner));
@@ -128,6 +129,9 @@ namespace Wss.ModelModule
 
         /// <inheritdoc/>
         public bool TryGetBasic(out IBasicStimulation basic) => _inner.TryGetBasic(out basic);
+
+        /// <inheritdoc/>
+        public bool TryGetAdvancedEventProgrammer(out IAdvancedEventProgrammer programmer) => _inner.TryGetAdvancedEventProgrammer(out programmer);
 
         // ===== IStimulationCore (lifecycle/core → delegate) =====
         /// <inheritdoc/>

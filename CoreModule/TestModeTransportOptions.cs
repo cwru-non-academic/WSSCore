@@ -1,7 +1,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace Wss.CoreModule
+namespace Wss.Transports
 {
     /// <summary>
     /// Holds behavior settings for <see cref="TestModeTransport"/>.

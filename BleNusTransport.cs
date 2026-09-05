@@ -16,7 +16,7 @@ using LinuxDevice = Linux.Bluetooth.Device;
 using LinuxGattCharacteristic = Linux.Bluetooth.GattCharacteristic;
 using LinuxGattCharacteristicValueEventArgs = Linux.Bluetooth.GattCharacteristicValueEventArgs;
 
-namespace HFI.Wss;
+namespace Wss.Transports;
 
 /// <summary>
 /// BLE transport backed by the Nordic UART Service (NUS).
