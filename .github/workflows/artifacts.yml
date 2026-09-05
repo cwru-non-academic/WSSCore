@@ -2,8 +2,15 @@ name: Build runtime artifacts
 
 on:
   push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   core:
@@ -133,3 +140,82 @@ jobs:
           dotnet restore tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-linux-x64"
           dotnet build tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-linux-x64"
           dotnet run --project tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-linux-x64"
+
+  release:
+    needs:
+      - core-consumer
+      - serial-consumer
+      - ble-consumer
+    if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Download Core artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: core
+          path: ${{ runner.temp }}/release-input/core
+      - name: Download Serial artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: serial
+          path: ${{ runner.temp }}/release-input/serial
+      - name: Download BLE Linux x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ble-linux-x64
+          path: ${{ runner.temp }}/release-input/ble-linux-x64
+      - name: Package release assets and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          assets="$RUNNER_TEMP/release-assets"
+          mkdir -p "$assets"
+
+          (
+            cd "$RUNNER_TEMP/release-input/core"
+            zip -q -r "$assets/WSS-Core-${TAG}.zip" .
+          )
+          (
+            cd "$RUNNER_TEMP/release-input/serial"
+            zip -q -r "$assets/WSS-Serial-${TAG}.zip" .
+          )
+          (
+            cd "$RUNNER_TEMP/release-input/ble-linux-x64"
+            zip -q -r "$assets/WSS-BLE-Linux-x64-${TAG}.zip" .
+          )
+
+          (
+            cd "$assets"
+            sha256sum \
+              "WSS-Core-${TAG}.zip" \
+              "WSS-Serial-${TAG}.zip" \
+              "WSS-BLE-Linux-x64-${TAG}.zip" \
+              > SHA256SUMS.txt
+          )
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          cd "$RUNNER_TEMP/release-assets"
+
+          prerelease_args=()
+          if [[ "$TAG" == *-* ]]; then
+            prerelease_args+=(--prerelease)
+          fi
+
+          gh release create "$TAG" \
+            "WSS-Core-${TAG}.zip" \
+            "WSS-Serial-${TAG}.zip" \
+            "WSS-BLE-Linux-x64-${TAG}.zip" \
+            SHA256SUMS.txt \
+            --verify-tag \
+            --generate-notes \
+            "${prerelease_args[@]}"
