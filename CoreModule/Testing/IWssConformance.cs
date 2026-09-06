@@ -16,5 +16,11 @@ namespace Wss.Testing
         /// Gets a snapshot of rejected protocol input in receive order.
         /// </summary>
         IReadOnlyList<WssProtocolError> ProtocolErrors { get; }
+
+        /// <summary>
+        /// Validates the observed messages against the deterministic normal initialization contract.
+        /// </summary>
+        /// <returns>Structured required-message, ordering, protocol-error, and failure results.</returns>
+        InitializationConformanceResult ValidateInitialization();
     }
 }

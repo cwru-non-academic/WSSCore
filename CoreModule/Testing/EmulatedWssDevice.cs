@@ -20,6 +20,7 @@ namespace Wss.Testing
         private readonly List<byte> _accumulator = new List<byte>(256);
         private readonly List<WssMessageObservation> _messageHistory = new List<WssMessageObservation>();
         private readonly List<WssProtocolError> _protocolErrors = new List<WssProtocolError>();
+        private readonly Dictionary<byte, TargetState> _targetStates = new Dictionary<byte, TargetState>();
         private readonly WssFrameCodec _codec = new WssFrameCodec();
         private long _messageSequence;
         private long _errorSequence;
@@ -144,6 +145,8 @@ namespace Wss.Testing
                 payload,
                 rawFrame));
 
+            RecordTargetState(target, messageId, payload);
+
             if (messageId >= (byte)WSSMessageIDs.StreamChangeAll &&
                 messageId <= (byte)WSSMessageIDs.StreamChangeNoPA)
             {
@@ -160,6 +163,11 @@ namespace Wss.Testing
             {
                 case (byte)WSSMessageIDs.ModuleQuery:
                     return BuildModuleQueryPayload();
+
+                case (byte)WSSMessageIDs.Clear:
+                case (byte)WSSMessageIDs.SyncGroup:
+                    // The Arduino reference acknowledges these commands by echoing their payload.
+                    return Clone(requestPayload);
 
                 case (byte)WSSMessageIDs.StimulationSwitch:
                 {
@@ -184,6 +192,87 @@ namespace Wss.Testing
                 default:
                     return Clone(requestPayload);
             }
+        }
+
+        private void RecordTargetState(byte target, byte messageId, byte[] payload)
+        {
+            if (!_targetStates.TryGetValue(target, out var state))
+            {
+                state = new TargetState();
+                _targetStates[target] = state;
+            }
+
+            switch (messageId)
+            {
+                case (byte)WSSMessageIDs.Clear:
+                    if (HasData(payload, 1) && payload[2] == 0x00)
+                    {
+                        state.Reset();
+                        state.Cleared = true;
+                    }
+                    break;
+
+                case (byte)WSSMessageIDs.ModuleQuery:
+                    if (HasData(payload, 1) && payload[2] == 0x01)
+                        state.ModuleQueried = true;
+                    break;
+
+                case (byte)WSSMessageIDs.CreateSchedule:
+                    if (HasData(payload, 4))
+                        state.ScheduleIds.Add(payload[2]);
+                    break;
+
+                case (byte)WSSMessageIDs.CreateContactConfig:
+                    if (HasData(payload, 3))
+                        state.ContactConfigurationIds.Add(payload[2]);
+                    break;
+
+                case (byte)WSSMessageIDs.CreateEvent:
+                    if (HasData(payload, 16))
+                    {
+                        state.EventIds.Add(payload[2]);
+                        state.EventContactConfigurationIds[payload[2]] = payload[4];
+                    }
+                    break;
+
+                case (byte)WSSMessageIDs.EditEventConfig:
+                    if (HasData(payload, 3) && payload[3] == 0x07)
+                        state.EventRatioIds.Add(payload[2]);
+                    break;
+
+                case (byte)WSSMessageIDs.AddEventToSchedule:
+                    if (HasData(payload, 2))
+                        state.EventScheduleIds[payload[2]] = payload[3];
+                    break;
+
+                case (byte)WSSMessageIDs.SyncGroup:
+                    if (HasData(payload, 1))
+                    {
+                        state.SynchronizationConfigured = true;
+                        state.SyncSignal = payload[2];
+                    }
+                    break;
+
+                case (byte)WSSMessageIDs.StimulationSwitch:
+                    if (HasData(payload, 1))
+                    {
+                        if (payload[2] == 0x03) state.StimulationStarted = true;
+                        else if (payload[2] == 0x04) state.StimulationStarted = false;
+                    }
+                    break;
+
+                case (byte)WSSMessageIDs.StreamChangeAll:
+                case (byte)WSSMessageIDs.StreamChangeNoIPI:
+                case (byte)WSSMessageIDs.StreamChangeNoPW:
+                case (byte)WSSMessageIDs.StreamChangeNoPA:
+                    state.StreamingObserved = true;
+                    break;
+            }
+        }
+
+        private static bool HasData(byte[] payload, int dataLength)
+        {
+            return payload.Length == dataLength + 2 && payload[1] == dataLength;
         }
 
         private byte[] BuildModuleQueryPayload()
@@ -222,6 +311,38 @@ namespace Wss.Testing
             var copy = new byte[value.Length];
             Buffer.BlockCopy(value, 0, copy, 0, value.Length);
             return copy;
+        }
+
+        private sealed class TargetState
+        {
+            internal bool Cleared { get; set; }
+            internal bool ModuleQueried { get; set; }
+            internal HashSet<byte> ScheduleIds { get; } = new HashSet<byte>();
+            internal HashSet<byte> ContactConfigurationIds { get; } = new HashSet<byte>();
+            internal HashSet<byte> EventIds { get; } = new HashSet<byte>();
+            internal Dictionary<byte, byte> EventContactConfigurationIds { get; } = new Dictionary<byte, byte>();
+            internal HashSet<byte> EventRatioIds { get; } = new HashSet<byte>();
+            internal Dictionary<byte, byte> EventScheduleIds { get; } = new Dictionary<byte, byte>();
+            internal bool SynchronizationConfigured { get; set; }
+            internal byte SyncSignal { get; set; }
+            internal bool StimulationStarted { get; set; }
+            internal bool StreamingObserved { get; set; }
+
+            internal void Reset()
+            {
+                Cleared = false;
+                ModuleQueried = false;
+                ScheduleIds.Clear();
+                ContactConfigurationIds.Clear();
+                EventIds.Clear();
+                EventContactConfigurationIds.Clear();
+                EventRatioIds.Clear();
+                EventScheduleIds.Clear();
+                SynchronizationConfigured = false;
+                SyncSignal = 0;
+                StimulationStarted = false;
+                StreamingObserved = false;
+            }
         }
     }
 }

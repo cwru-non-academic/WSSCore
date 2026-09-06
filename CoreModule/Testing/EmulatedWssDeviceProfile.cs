@@ -12,6 +12,9 @@ namespace Wss.Testing
         /// <summary>Gets the shared deterministic emulator profile.</summary>
         public static EmulatedWssDeviceProfile Default { get; } = new EmulatedWssDeviceProfile();
 
+        /// <summary>Gets the target address expected by initialization conformance validation.</summary>
+        public byte InitializationTarget => 0x81;
+
         /// <summary>Gets the module type value reported in the first ModuleQuery settings byte.</summary>
         public byte ModuleType => 0x01;
 
