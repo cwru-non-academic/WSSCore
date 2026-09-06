@@ -29,6 +29,9 @@ namespace Wss.Testing
         public IReadOnlyList<WssProtocolError> ProtocolErrors => _device.GetProtocolErrorsSnapshot();
 
         /// <inheritdoc/>
+        public IReadOnlyList<WssStimulationObservation> StimulationHistory => _device.GetStimulationHistorySnapshot();
+
+        /// <inheritdoc/>
         public InitializationConformanceResult ValidateInitialization()
         {
             var history = _device.GetMessageHistorySnapshot();
@@ -44,6 +47,128 @@ namespace Wss.Testing
                 $"Protocol error #{error.SequenceNumber}: {error.Kind}: {error.Description}"));
 
             return new InitializationConformanceResult(requiredChecks, orderingChecks, protocolErrors, failures);
+        }
+
+        /// <inheritdoc/>
+        public WssStimulationBaseline CaptureStimulationBaseline()
+            => _device.CaptureStimulationBaseline();
+
+        /// <inheritdoc/>
+        public StimulationConformanceResult ValidateStimulation(
+            WssStimulationExpectation expectation,
+            WssStimulationBaseline baseline)
+        {
+            if (expectation == null) throw new ArgumentNullException(nameof(expectation));
+            if (baseline == null) throw new ArgumentNullException(nameof(baseline));
+
+            var history = _device.GetStimulationHistorySnapshot();
+            var candidate = history.LastOrDefault(item =>
+                item.SequenceNumber > baseline.SequenceNumber &&
+                item.Target == expectation.Target &&
+                item.Channel == expectation.Channel &&
+                item.MessageId == expectation.MessageId);
+            if (candidate == null)
+            {
+                candidate = history.LastOrDefault(item =>
+                    item.SequenceNumber > baseline.SequenceNumber &&
+                    item.Channel == expectation.Channel &&
+                    item.MessageId == expectation.MessageId);
+            }
+            if (candidate == null)
+            {
+                candidate = history.LastOrDefault(item =>
+                    item.SequenceNumber > baseline.SequenceNumber &&
+                    item.Target == expectation.Target &&
+                    item.Channel == expectation.Channel);
+            }
+
+            var checks = new List<StimulationConformanceCheck>();
+            if (candidate == null)
+            {
+                AddCheck(checks, "Observation", false, "post-baseline stream message", "none", expectation.Target, null);
+            }
+            else
+            {
+                AddCheck(checks, "Target", candidate.Target == expectation.Target,
+                    $"0x{expectation.Target:X2}", $"0x{candidate.Target:X2}", expectation.Target, candidate.SequenceNumber);
+                AddCheck(checks, "Channel", candidate.Channel == expectation.Channel,
+                    expectation.Channel.ToString(), candidate.Channel.ToString(), expectation.Target, candidate.SequenceNumber);
+                AddCheck(checks, "MessageId", candidate.MessageId == expectation.MessageId,
+                    $"0x{expectation.MessageId:X2}", $"0x{candidate.MessageId:X2}", expectation.Target, candidate.SequenceNumber);
+                AddCheck(checks, "PulseAmplitude", candidate.PulseAmplitude == expectation.PulseAmplitude,
+                    expectation.PulseAmplitude.ToString(), candidate.PulseAmplitude.ToString(), expectation.Target, candidate.SequenceNumber);
+                AddCheck(checks, "PulseWidth", candidate.PulseWidth == expectation.PulseWidth,
+                    expectation.PulseWidth.ToString(), candidate.PulseWidth.ToString(), expectation.Target, candidate.SequenceNumber);
+                AddCheck(checks, "IPI", candidate.InterPulseInterval == expectation.InterPulseInterval,
+                    expectation.InterPulseInterval.ToString(), candidate.InterPulseInterval.ToString(), expectation.Target, candidate.SequenceNumber);
+
+                if (expectation.RequireUnrelatedChannelsUnchanged)
+                    AddUnrelatedChannelChecks(checks, history, baseline, expectation, candidate);
+            }
+
+            var failures = checks.Where(check => !check.Passed).Select(check => check.Details).ToList();
+            failures.AddRange(_device.GetProtocolErrorsSnapshot()
+                .Where(error => error.SequenceNumber > baseline.ProtocolErrorSequence)
+                .Select(error => $"Protocol error #{error.SequenceNumber}: {error.Kind}: {error.Description}"));
+
+            return new StimulationConformanceResult(expectation, candidate, checks, failures);
+        }
+
+        private static void AddUnrelatedChannelChecks(
+            ICollection<StimulationConformanceCheck> checks,
+            IReadOnlyList<WssStimulationObservation> history,
+            WssStimulationBaseline baseline,
+            WssStimulationExpectation expectation,
+            WssStimulationObservation candidate)
+        {
+            for (int channel = 1; channel <= 3; channel++)
+            {
+                if (channel == expectation.Channel)
+                    continue;
+
+                var observed = history.LastOrDefault(item =>
+                    item.SequenceNumber == candidate.SequenceNumber &&
+                    item.Target == expectation.Target &&
+                    item.Channel == channel);
+                if (!baseline.TryGetState(expectation.Target, channel, out var expected) || observed == null)
+                {
+                    AddCheck(checks, $"Channel{channel}Unchanged", false,
+                        "baseline state", observed == null ? "no same-frame state" : "no baseline state",
+                        expectation.Target, candidate.SequenceNumber);
+                    continue;
+                }
+
+                AddCheck(checks, $"Channel{channel}.PulseAmplitude",
+                    observed.PulseAmplitude == expected.PulseAmplitude,
+                    expected.PulseAmplitude.ToString(), observed.PulseAmplitude.ToString(),
+                    expectation.Target, candidate.SequenceNumber);
+                AddCheck(checks, $"Channel{channel}.PulseWidth",
+                    observed.PulseWidth == expected.PulseWidth,
+                    expected.PulseWidth.ToString(), observed.PulseWidth.ToString(),
+                    expectation.Target, candidate.SequenceNumber);
+                AddCheck(checks, $"Channel{channel}.IPI",
+                    observed.InterPulseInterval == expected.InterPulseInterval,
+                    expected.InterPulseInterval.ToString(), observed.InterPulseInterval.ToString(),
+                    expectation.Target, candidate.SequenceNumber);
+            }
+        }
+
+        private static void AddCheck(
+            ICollection<StimulationConformanceCheck> checks,
+            string name,
+            bool passed,
+            string expected,
+            string observed,
+            byte target,
+            long? sequenceNumber)
+        {
+            string details =
+                $"{name}: {(passed ? "PASS" : "FAIL")}\n" +
+                $"Target: 0x{target:X2}\n" +
+                $"Expected: {expected}\n" +
+                $"Observed: {observed}\n" +
+                $"Observed sequence: {(sequenceNumber.HasValue ? "#" + sequenceNumber.Value : "none")}";
+            checks.Add(new StimulationConformanceCheck(name, passed, expected, observed, details));
         }
 
         private static IReadOnlyList<InitializationConformanceCheck> BuildRequiredMessageChecks(

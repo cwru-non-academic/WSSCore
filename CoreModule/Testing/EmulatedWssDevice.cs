@@ -19,6 +19,7 @@ namespace Wss.Testing
         private readonly object _gate = new object();
         private readonly List<byte> _accumulator = new List<byte>(256);
         private readonly List<WssMessageObservation> _messageHistory = new List<WssMessageObservation>();
+        private readonly List<WssStimulationObservation> _stimulationHistory = new List<WssStimulationObservation>();
         private readonly List<WssProtocolError> _protocolErrors = new List<WssProtocolError>();
         private readonly Dictionary<byte, TargetState> _targetStates = new Dictionary<byte, TargetState>();
         private readonly WssFrameCodec _codec = new WssFrameCodec();
@@ -102,6 +103,35 @@ namespace Wss.Testing
             }
         }
 
+        internal IReadOnlyList<WssStimulationObservation> GetStimulationHistorySnapshot()
+        {
+            lock (_gate)
+            {
+                return _stimulationHistory.ToArray();
+            }
+        }
+
+        internal WssStimulationBaseline CaptureStimulationBaseline()
+        {
+            lock (_gate)
+            {
+                var states = new List<WssStimulationObservation>();
+                foreach (var target in _targetStates)
+                {
+                    foreach (var eventState in target.Value.EventStates)
+                    {
+                        states.Add(eventState.Value.ToObservation(
+                            _messageSequence,
+                            target.Key,
+                            eventState.Key,
+                            eventState.Value.LastMessageId));
+                    }
+                }
+
+                return new WssStimulationBaseline(_messageSequence, _errorSequence, states);
+            }
+        }
+
         private byte[] ProcessFrame(byte[] preEscaped, byte[] rawFrame)
         {
             if (!WssFrameCodec.TryUnescapeAndValidate(preEscaped, out var frame))
@@ -137,15 +167,16 @@ namespace Wss.Testing
             byte sender = frame[0];
             byte target = frame[1];
             byte messageId = payload[0];
+            long sequenceNumber = ++_messageSequence;
             _messageHistory.Add(new WssMessageObservation(
-                ++_messageSequence,
+                sequenceNumber,
                 sender,
                 target,
                 messageId,
                 payload,
                 rawFrame));
 
-            RecordTargetState(target, messageId, payload);
+            RecordTargetState(target, messageId, payload, sequenceNumber);
 
             if (messageId >= (byte)WSSMessageIDs.StreamChangeAll &&
                 messageId <= (byte)WSSMessageIDs.StreamChangeNoPA)
@@ -194,7 +225,7 @@ namespace Wss.Testing
             }
         }
 
-        private void RecordTargetState(byte target, byte messageId, byte[] payload)
+        private void RecordTargetState(byte target, byte messageId, byte[] payload, long sequenceNumber)
         {
             if (!_targetStates.TryGetValue(target, out var state))
             {
@@ -219,7 +250,12 @@ namespace Wss.Testing
 
                 case (byte)WSSMessageIDs.CreateSchedule:
                     if (HasData(payload, 4))
+                    {
                         state.ScheduleIds.Add(payload[2]);
+                        int duration = (payload[3] << 8) | payload[4];
+                        state.ScheduleDurations[payload[2]] = duration;
+                        ApplyScheduleDuration(state, payload[2], duration);
+                    }
                     break;
 
                 case (byte)WSSMessageIDs.CreateContactConfig:
@@ -233,16 +269,32 @@ namespace Wss.Testing
                         state.EventIds.Add(payload[2]);
                         state.EventContactConfigurationIds[payload[2]] = payload[4];
                     }
+                    RecordCreatedEventState(state, payload);
                     break;
 
                 case (byte)WSSMessageIDs.EditEventConfig:
                     if (HasData(payload, 3) && payload[3] == 0x07)
                         state.EventRatioIds.Add(payload[2]);
+                    RecordEditedEventState(state, payload);
                     break;
 
                 case (byte)WSSMessageIDs.AddEventToSchedule:
                     if (HasData(payload, 2))
+                    {
                         state.EventScheduleIds[payload[2]] = payload[3];
+                        if (state.ScheduleDurations.TryGetValue(payload[3], out int duration))
+                            state.GetEventState(payload[2]).InterPulseInterval = duration;
+                    }
+                    break;
+
+                case (byte)WSSMessageIDs.ChangeScheduleConfig:
+                    if (HasData(payload, 3) && payload[2] == 0x03)
+                    {
+                        byte scheduleId = payload[3];
+                        int duration = payload[4];
+                        state.ScheduleDurations[scheduleId] = duration;
+                        ApplyScheduleDuration(state, scheduleId, duration);
+                    }
                     break;
 
                 case (byte)WSSMessageIDs.SyncGroup:
@@ -265,8 +317,83 @@ namespace Wss.Testing
                 case (byte)WSSMessageIDs.StreamChangeNoIPI:
                 case (byte)WSSMessageIDs.StreamChangeNoPW:
                 case (byte)WSSMessageIDs.StreamChangeNoPA:
-                    state.StreamingObserved = true;
+                    RecordStreamState(state, target, messageId, payload, sequenceNumber);
                     break;
+            }
+        }
+
+        private void RecordStreamState(
+            TargetState state,
+            byte target,
+            byte messageId,
+            byte[] payload,
+            long sequenceNumber)
+        {
+            if (!HasData(payload, 9))
+                return;
+
+            bool updatePa = messageId != (byte)WSSMessageIDs.StreamChangeNoPA;
+            bool updatePw = messageId != (byte)WSSMessageIDs.StreamChangeNoPW;
+            bool updateIpi = messageId != (byte)WSSMessageIDs.StreamChangeNoIPI;
+            state.StreamingObserved = true;
+
+            for (int channel = 1; channel <= 3; channel++)
+            {
+                int offset = channel - 1;
+                var eventState = state.GetEventState((byte)channel);
+                if (updatePa) eventState.PulseAmplitude = payload[2 + offset];
+                if (updatePw) eventState.PulseWidth = payload[5 + offset];
+                if (updateIpi) eventState.InterPulseInterval = payload[8 + offset];
+                eventState.LastMessageId = messageId;
+
+                _stimulationHistory.Add(eventState.ToObservation(
+                    sequenceNumber,
+                    target,
+                    channel,
+                    messageId));
+            }
+        }
+
+        private static void RecordCreatedEventState(TargetState state, byte[] payload)
+        {
+            int dataLength = payload[1];
+            if (dataLength != 14 && dataLength != 16 && dataLength != 17 && dataLength != 19)
+                return;
+
+            byte eventId = payload[2];
+            var eventState = state.GetEventState(eventId);
+            eventState.PulseAmplitude = payload[5];
+            eventState.PulseWidth = dataLength == 17 || dataLength == 19
+                ? (payload[13] << 8) | payload[14]
+                : payload[13];
+        }
+
+        private static void RecordEditedEventState(TargetState state, byte[] payload)
+        {
+            if (payload.Length < 4)
+                return;
+
+            var eventState = state.GetEventState(payload[2]);
+            byte subcommand = payload[3];
+            if (subcommand == 0x02)
+            {
+                if (HasData(payload, 5))
+                    eventState.PulseWidth = payload[4];
+                else if (HasData(payload, 8))
+                    eventState.PulseWidth = (payload[4] << 8) | payload[5];
+            }
+            else if (subcommand == 0x04 && HasData(payload, 10))
+            {
+                eventState.PulseAmplitude = payload[4];
+            }
+        }
+
+        private static void ApplyScheduleDuration(TargetState state, byte scheduleId, int duration)
+        {
+            foreach (var assignment in state.EventScheduleIds)
+            {
+                if (assignment.Value == scheduleId)
+                    state.GetEventState(assignment.Key).InterPulseInterval = duration;
             }
         }
 
@@ -323,6 +450,8 @@ namespace Wss.Testing
             internal Dictionary<byte, byte> EventContactConfigurationIds { get; } = new Dictionary<byte, byte>();
             internal HashSet<byte> EventRatioIds { get; } = new HashSet<byte>();
             internal Dictionary<byte, byte> EventScheduleIds { get; } = new Dictionary<byte, byte>();
+            internal Dictionary<byte, int> ScheduleDurations { get; } = new Dictionary<byte, int>();
+            internal Dictionary<byte, EventState> EventStates { get; } = new Dictionary<byte, EventState>();
             internal bool SynchronizationConfigured { get; set; }
             internal byte SyncSignal { get; set; }
             internal bool StimulationStarted { get; set; }
@@ -338,10 +467,47 @@ namespace Wss.Testing
                 EventContactConfigurationIds.Clear();
                 EventRatioIds.Clear();
                 EventScheduleIds.Clear();
+                ScheduleDurations.Clear();
+                EventStates.Clear();
                 SynchronizationConfigured = false;
                 SyncSignal = 0;
                 StimulationStarted = false;
                 StreamingObserved = false;
+            }
+
+            internal EventState GetEventState(byte eventId)
+            {
+                if (!EventStates.TryGetValue(eventId, out var state))
+                {
+                    state = new EventState();
+                    EventStates[eventId] = state;
+                }
+
+                return state;
+            }
+        }
+
+        private sealed class EventState
+        {
+            internal int PulseAmplitude { get; set; }
+            internal int PulseWidth { get; set; }
+            internal int InterPulseInterval { get; set; }
+            internal byte LastMessageId { get; set; }
+
+            internal WssStimulationObservation ToObservation(
+                long sequenceNumber,
+                byte target,
+                int channel,
+                byte messageId)
+            {
+                return new WssStimulationObservation(
+                    sequenceNumber,
+                    target,
+                    channel,
+                    messageId,
+                    PulseAmplitude,
+                    PulseWidth,
+                    InterPulseInterval);
             }
         }
     }

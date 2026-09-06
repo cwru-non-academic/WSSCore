@@ -199,6 +199,116 @@ namespace WSS.Core.Tests
             });
         }
 
+        [Test]
+        public async Task StreamVariantsDecodeEffectiveStateAndRetainOmittedFields()
+        {
+            using var transport = new EmulatedWssTransport();
+            using var client = new WssClient(
+                transport,
+                new WssFrameCodec(),
+                new WSSVersionHandler("J03"),
+                new WssClientOptions { OwnsTransport = false });
+            await transport.ConnectAsync();
+
+            var initialBaseline = transport.Conformance.CaptureStimulationBaseline();
+            await client.StreamChange(new StreamChangeRequest
+            {
+                PulseAmplitudes = new[] { 11, 12, 13 },
+                PulseWidths = new[] { 21, 22, 23 },
+                InterPulseIntervals = new[] { 31, 32, 33 }
+            }, WssTarget.Wss1);
+            AssertConforms(
+                transport,
+                initialBaseline,
+                WSSMessageIDs.StreamChangeAll,
+                new[] { 11, 12, 13 },
+                new[] { 21, 22, 23 },
+                new[] { 31, 32, 33 });
+
+            var noIpiBaseline = transport.Conformance.CaptureStimulationBaseline();
+            await client.StreamChange(new StreamChangeRequest
+            {
+                PulseAmplitudes = new[] { 14, 15, 16 },
+                PulseWidths = new[] { 24, 25, 26 }
+            }, WssTarget.Wss1);
+            AssertConforms(
+                transport,
+                noIpiBaseline,
+                WSSMessageIDs.StreamChangeNoIPI,
+                new[] { 14, 15, 16 },
+                new[] { 24, 25, 26 },
+                new[] { 31, 32, 33 });
+
+            var noPwBaseline = transport.Conformance.CaptureStimulationBaseline();
+            await client.StreamChange(new StreamChangeRequest
+            {
+                PulseAmplitudes = new[] { 17, 18, 19 },
+                InterPulseIntervals = new[] { 34, 35, 36 }
+            }, WssTarget.Wss1);
+            AssertConforms(
+                transport,
+                noPwBaseline,
+                WSSMessageIDs.StreamChangeNoPW,
+                new[] { 17, 18, 19 },
+                new[] { 24, 25, 26 },
+                new[] { 34, 35, 36 });
+
+            var noPaBaseline = transport.Conformance.CaptureStimulationBaseline();
+            await client.StreamChange(new StreamChangeRequest
+            {
+                PulseWidths = new[] { 27, 28, 29 },
+                InterPulseIntervals = new[] { 37, 38, 39 }
+            }, WssTarget.Wss1);
+            AssertConforms(
+                transport,
+                noPaBaseline,
+                WSSMessageIDs.StreamChangeNoPA,
+                new[] { 17, 18, 19 },
+                new[] { 27, 28, 29 },
+                new[] { 37, 38, 39 });
+        }
+
+        [Test]
+        public async Task StimulationMismatchReportsFieldTargetValuesAndSequence()
+        {
+            using var transport = new EmulatedWssTransport();
+            using var client = new WssClient(
+                transport,
+                new WssFrameCodec(),
+                new WSSVersionHandler("J03"),
+                new WssClientOptions { OwnsTransport = false });
+            await transport.ConnectAsync();
+            var baseline = transport.Conformance.CaptureStimulationBaseline();
+            await client.StreamChange(new StreamChangeRequest
+            {
+                PulseAmplitudes = new[] { 11, 12, 13 },
+                PulseWidths = new[] { 21, 22, 23 },
+                InterPulseIntervals = new[] { 31, 32, 33 }
+            }, WssTarget.Wss1);
+
+            var result = transport.Conformance.ValidateStimulation(
+                new WssStimulationExpectation(
+                    0x81,
+                    1,
+                    11,
+                    99,
+                    31,
+                    (byte)WSSMessageIDs.StreamChangeAll,
+                    false),
+                baseline);
+            var failure = result.FieldChecks.Single(item => item.Name == "PulseWidth");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Passed, Is.False);
+                Assert.That(failure.Details, Does.Contain("PulseWidth: FAIL"));
+                Assert.That(failure.Details, Does.Contain("Target: 0x81"));
+                Assert.That(failure.Details, Does.Contain("Expected: 99"));
+                Assert.That(failure.Details, Does.Contain("Observed: 21"));
+                Assert.That(failure.Details, Does.Contain("Observed sequence: #1"));
+            });
+        }
+
         private static async Task<byte[]> QueryModuleAsync()
         {
             using var transport = new EmulatedWssTransport();
@@ -212,6 +322,31 @@ namespace WSS.Core.Tests
 
             await transport.SendAsync(request);
             return reply;
+        }
+
+        private static void AssertConforms(
+            EmulatedWssTransport transport,
+            WssStimulationBaseline baseline,
+            WSSMessageIDs messageId,
+            int[] pulseAmplitudes,
+            int[] pulseWidths,
+            int[] interPulseIntervals)
+        {
+            for (int channel = 1; channel <= 3; channel++)
+            {
+                var result = transport.Conformance.ValidateStimulation(
+                    new WssStimulationExpectation(
+                        0x81,
+                        channel,
+                        pulseAmplitudes[channel - 1],
+                        pulseWidths[channel - 1],
+                        interPulseIntervals[channel - 1],
+                        (byte)messageId,
+                        false),
+                    baseline);
+
+                Assert.That(result.Passed, Is.True, string.Join(Environment.NewLine, result.Failures));
+            }
         }
 
         private static bool ContainsSequence(byte[] bytes, byte first, byte second)
