@@ -23,9 +23,9 @@ namespace Wss.Testing
         IReadOnlyList<WssStimulationObservation> StimulationHistory { get; }
 
         /// <summary>
-        /// Validates the observed messages against the deterministic normal initialization contract.
+        /// Validates observed configuration relationships and stimulation lifecycle ordering per target.
         /// </summary>
-        /// <returns>Structured required-message, ordering, protocol-error, and failure results.</returns>
+        /// <returns>Structured informational, warning, unverifiable, error, and protocol-error results.</returns>
         InitializationConformanceResult ValidateInitialization();
 
         /// <summary>

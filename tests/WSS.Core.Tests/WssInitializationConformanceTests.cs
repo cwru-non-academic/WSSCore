@@ -66,60 +66,61 @@ namespace WSS.Core.Tests
         }
 
         [Test]
-        public async Task MissingRequiredMessageReportsTargetAndOperation()
+        public async Task CreateEventBeforeModuleQueryFailsForKnownFreshCapableDevice()
         {
             using var transport = new EmulatedWssTransport();
             await transport.ConnectAsync();
             var codec = new WssFrameCodec();
-            await transport.SendAsync(codec.Frame(
-                0x00,
-                0x81,
-                new byte[] { (byte)WSSMessageIDs.Clear, 0x01, 0x00 }));
+            await SendAsync(transport, codec, WSSMessageIDs.Clear, 0x00);
+            await SendAsync(transport, codec, WSSMessageIDs.CreateContactConfig, 0x01, 0x00, 0x00);
+            await SendAsync(transport, codec, WSSMessageIDs.CreateEvent, 0x01, 0x00, 0x01);
 
             var result = transport.Conformance.ValidateInitialization();
-            var check = result.RequiredMessageChecks.Single(item => item.Name == "ModuleQuerySettings");
+            var check = result.Errors.Single(item => item.Name == "ModuleQueryBeforeEventCreation");
 
             Assert.Multiple(() =>
             {
                 Assert.That(result.Passed, Is.False);
-                Assert.That(check.Passed, Is.False);
-                Assert.That(check.Details, Is.EqualTo("Target 0x81 did not receive ModuleQuery(settings)."));
+                Assert.That(check.Severity, Is.EqualTo(WssConformanceSeverity.Error));
+                Assert.That(check.Details, Does.Contain("CreateEvent 1 requires ModuleQuery(settings) first"));
+                Assert.That(check.Target, Is.EqualTo(0x81));
             });
         }
 
         [Test]
-        public async Task InvalidOrderReportsBothObservedSequenceNumbers()
+        public async Task ModuleQueryAfterEventDoesNotRepairInvalidOrdering()
         {
             using var transport = new EmulatedWssTransport();
             await transport.ConnectAsync();
             var codec = new WssFrameCodec();
-            await transport.SendAsync(codec.Frame(
-                0x00,
-                0x81,
-                new byte[] { (byte)WSSMessageIDs.Clear, 0x01, 0x00 }));
-
-            var eventPayload = new byte[18];
-            eventPayload[0] = (byte)WSSMessageIDs.CreateEvent;
-            eventPayload[1] = 16;
-            eventPayload[2] = 1;
-            eventPayload[4] = 1;
-            await transport.SendAsync(codec.Frame(0x00, 0x81, eventPayload));
-            await transport.SendAsync(codec.Frame(
-                0x00,
-                0x81,
-                new byte[] { (byte)WSSMessageIDs.ModuleQuery, 0x01, 0x01 }));
+            await SendAsync(transport, codec, WSSMessageIDs.Clear, 0x00);
+            await SendAsync(transport, codec, WSSMessageIDs.CreateContactConfig, 0x01, 0x00, 0x00);
+            await SendAsync(transport, codec, WSSMessageIDs.CreateEvent, 0x01, 0x00, 0x01);
+            await SendAsync(transport, codec, WSSMessageIDs.ModuleQuery, 0x01);
 
             var result = transport.Conformance.ValidateInitialization();
-            var check = result.OrderingChecks.Single(item => item.Name == "ModuleQueryBeforeEventCreation");
+            var check = result.Errors.Single(item => item.Name == "ModuleQueryBeforeEventCreation");
 
             Assert.Multiple(() =>
             {
                 Assert.That(result.Passed, Is.False);
                 Assert.That(check.Passed, Is.False);
-                Assert.That(check.Details, Does.Contain("ModuleQuery target 0x81 observed at #3"));
-                Assert.That(check.Details, Does.Contain("CreateEvent observed at #2"));
-                Assert.That(check.Details, Does.Contain("Expected ModuleQuery before CreateEvent"));
+                Assert.That(check.SequenceNumber, Is.EqualTo(3));
+                Assert.That(check.Details, Does.Contain("Observed sequence: #3"));
             });
+        }
+
+        private static Task SendAsync(
+            EmulatedWssTransport transport,
+            WssFrameCodec codec,
+            WSSMessageIDs messageId,
+            params byte[] data)
+        {
+            var payload = new byte[data.Length + 2];
+            payload[0] = (byte)messageId;
+            payload[1] = (byte)data.Length;
+            Buffer.BlockCopy(data, 0, payload, 2, data.Length);
+            return transport.SendAsync(codec.Frame(0x00, 0x81, payload));
         }
 
         private static bool HasStreamingObservation(EmulatedWssTransport transport)

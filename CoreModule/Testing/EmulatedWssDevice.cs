@@ -21,6 +21,7 @@ namespace Wss.Testing
         private readonly List<WssMessageObservation> _messageHistory = new List<WssMessageObservation>();
         private readonly List<WssStimulationObservation> _stimulationHistory = new List<WssStimulationObservation>();
         private readonly List<WssProtocolError> _protocolErrors = new List<WssProtocolError>();
+        private readonly List<WssConfigurationTransition> _configurationTransitions = new List<WssConfigurationTransition>();
         private readonly Dictionary<byte, TargetState> _targetStates = new Dictionary<byte, TargetState>();
         private readonly WssFrameCodec _codec = new WssFrameCodec();
         private long _messageSequence;
@@ -30,8 +31,18 @@ namespace Wss.Testing
         /// Creates a device using the fixed deterministic emulator profile.
         /// </summary>
         public EmulatedWssDevice()
+            : this(EmulatedWssDeviceProfile.Default)
         {
-            Profile = EmulatedWssDeviceProfile.Default;
+        }
+
+        /// <summary>
+        /// Creates a device using the specified deterministic capability profile.
+        /// </summary>
+        /// <param name="profile">Capability profile reported by the emulated device.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="profile"/> is null.</exception>
+        public EmulatedWssDevice(EmulatedWssDeviceProfile profile)
+        {
+            Profile = profile ?? throw new ArgumentNullException(nameof(profile));
         }
 
         /// <summary>Gets the capability profile reported by this device.</summary>
@@ -111,6 +122,14 @@ namespace Wss.Testing
             }
         }
 
+        internal IReadOnlyList<WssConfigurationTransition> GetConfigurationTransitionsSnapshot()
+        {
+            lock (_gate)
+            {
+                return _configurationTransitions.ToArray();
+            }
+        }
+
         internal WssStimulationBaseline CaptureStimulationBaseline()
         {
             lock (_gate)
@@ -168,15 +187,16 @@ namespace Wss.Testing
             byte target = frame[1];
             byte messageId = payload[0];
             long sequenceNumber = ++_messageSequence;
-            _messageHistory.Add(new WssMessageObservation(
+            var observation = new WssMessageObservation(
                 sequenceNumber,
                 sender,
                 target,
                 messageId,
                 payload,
-                rawFrame));
+                rawFrame);
+            _messageHistory.Add(observation);
 
-            RecordTargetState(target, messageId, payload, sequenceNumber);
+            RecordTargetState(target, messageId, payload, sequenceNumber, observation);
 
             if (messageId >= (byte)WSSMessageIDs.StreamChangeAll &&
                 messageId <= (byte)WSSMessageIDs.StreamChangeNoPA)
@@ -225,7 +245,12 @@ namespace Wss.Testing
             }
         }
 
-        private void RecordTargetState(byte target, byte messageId, byte[] payload, long sequenceNumber)
+        private void RecordTargetState(
+            byte target,
+            byte messageId,
+            byte[] payload,
+            long sequenceNumber,
+            WssMessageObservation observation)
         {
             if (!_targetStates.TryGetValue(target, out var state))
             {
@@ -233,14 +258,34 @@ namespace Wss.Testing
                 _targetStates[target] = state;
             }
 
+            var before = state.ToConfigurationSnapshot();
+
             switch (messageId)
             {
                 case (byte)WSSMessageIDs.Clear:
-                    if (HasData(payload, 1) && payload[2] == 0x00)
+                    if (HasData(payload, 1))
                     {
-                        state.Reset();
-                        state.Cleared = true;
+                        switch (payload[2])
+                        {
+                            case 0x00:
+                                state.Reset(true);
+                                break;
+                            case 0x01:
+                                state.ClearEvents();
+                                break;
+                            case 0x02:
+                                state.ClearSchedules();
+                                break;
+                            case 0x03:
+                                state.ClearContacts();
+                                break;
+                        }
                     }
+                    break;
+
+                case (byte)WSSMessageIDs.Reset:
+                    if (HasData(payload, 0))
+                        state.Reset(false);
                     break;
 
                 case (byte)WSSMessageIDs.ModuleQuery:
@@ -254,17 +299,19 @@ namespace Wss.Testing
                         state.ScheduleIds.Add(payload[2]);
                         int duration = (payload[3] << 8) | payload[4];
                         state.ScheduleDurations[payload[2]] = duration;
+                        state.ScheduleSyncSignals[payload[2]] = payload[5];
+                        state.SynchronizedScheduleIds.Remove(payload[2]);
                         ApplyScheduleDuration(state, payload[2], duration);
                     }
                     break;
 
                 case (byte)WSSMessageIDs.CreateContactConfig:
-                    if (HasData(payload, 3))
+                    if (HasData(payload, 3) || HasData(payload, 4))
                         state.ContactConfigurationIds.Add(payload[2]);
                     break;
 
                 case (byte)WSSMessageIDs.CreateEvent:
-                    if (HasData(payload, 16))
+                    if (IsCreateEventPayload(payload))
                     {
                         state.EventIds.Add(payload[2]);
                         state.EventContactConfigurationIds[payload[2]] = payload[4];
@@ -275,6 +322,9 @@ namespace Wss.Testing
                 case (byte)WSSMessageIDs.EditEventConfig:
                     if (HasData(payload, 3) && payload[3] == 0x07)
                         state.EventRatioIds.Add(payload[2]);
+                    if (HasData(payload, 3) && payload[3] == 0x01)
+                        state.EventContactConfigurationIds[payload[2]] = payload[4];
+                    InvalidateEventSynchronization(state, payload.Length >= 3 ? payload[2] : (byte)0);
                     RecordEditedEventState(state, payload);
                     break;
 
@@ -282,13 +332,49 @@ namespace Wss.Testing
                     if (HasData(payload, 2))
                     {
                         state.EventScheduleIds[payload[2]] = payload[3];
+                        state.SynchronizedScheduleIds.Remove(payload[3]);
                         if (state.ScheduleDurations.TryGetValue(payload[3], out int duration))
                             state.GetEventState(payload[2]).InterPulseInterval = duration;
                     }
                     break;
 
+                case (byte)WSSMessageIDs.DeleteContactConfig:
+                    if (HasData(payload, 1))
+                        state.ContactConfigurationIds.Remove(payload[2]);
+                    break;
+
+                case (byte)WSSMessageIDs.DeleteEvent:
+                    if (HasData(payload, 1))
+                        state.RemoveEvent(payload[2]);
+                    break;
+
+                case (byte)WSSMessageIDs.RemoveEventFromSchedule:
+                    if (HasData(payload, 1))
+                        state.RemoveAssignment(payload[2]);
+                    break;
+
+                case (byte)WSSMessageIDs.MoveEventToSchedule:
+                    if (HasData(payload, 3))
+                    {
+                        state.RemoveAssignment(payload[2]);
+                        state.EventScheduleIds[payload[2]] = payload[3];
+                        state.SynchronizedScheduleIds.Remove(payload[3]);
+                    }
+                    break;
+
+                case (byte)WSSMessageIDs.DeleteSchedule:
+                    if (HasData(payload, 1))
+                        state.RemoveSchedule(payload[2]);
+                    break;
+
                 case (byte)WSSMessageIDs.ChangeScheduleConfig:
-                    if (HasData(payload, 3) && payload[2] == 0x03)
+                    if (HasData(payload, 3) && payload[2] == 0x02)
+                    {
+                        byte scheduleId = payload[3];
+                        state.ScheduleSyncSignals[scheduleId] = payload[4];
+                        state.SynchronizedScheduleIds.Remove(scheduleId);
+                    }
+                    else if (HasData(payload, 3) && payload[2] == 0x03)
                     {
                         byte scheduleId = payload[3];
                         int duration = payload[4];
@@ -302,6 +388,12 @@ namespace Wss.Testing
                     {
                         state.SynchronizationConfigured = true;
                         state.SyncSignal = payload[2];
+                        state.ObservedSyncSignals.Add(payload[2]);
+                        foreach (var schedule in state.ScheduleSyncSignals)
+                        {
+                            if (schedule.Value == payload[2] && state.ScheduleIds.Contains(schedule.Key))
+                                state.SynchronizedScheduleIds.Add(schedule.Key);
+                        }
                     }
                     break;
 
@@ -320,6 +412,26 @@ namespace Wss.Testing
                     RecordStreamState(state, target, messageId, payload, sequenceNumber);
                     break;
             }
+
+
+            _configurationTransitions.Add(new WssConfigurationTransition(
+                observation,
+                before,
+                state.ToConfigurationSnapshot()));
+        }
+
+        private static bool IsCreateEventPayload(byte[] payload)
+        {
+            int dataLength = payload.Length >= 2 ? payload[1] : -1;
+            return HasData(payload, dataLength) &&
+                   (dataLength == 3 || dataLength == 5 || dataLength == 14 ||
+                    dataLength == 16 || dataLength == 17 || dataLength == 19);
+        }
+
+        private static void InvalidateEventSynchronization(TargetState state, byte eventId)
+        {
+            if (state.EventScheduleIds.TryGetValue(eventId, out byte scheduleId))
+                state.SynchronizedScheduleIds.Remove(scheduleId);
         }
 
         private void RecordStreamState(
@@ -442,7 +554,10 @@ namespace Wss.Testing
 
         private sealed class TargetState
         {
-            internal bool Cleared { get; set; }
+            internal bool ContactsKnown { get; set; }
+            internal bool EventsKnown { get; set; }
+            internal bool SchedulesKnown { get; set; }
+            internal bool AssignmentsKnown { get; set; }
             internal bool ModuleQueried { get; set; }
             internal HashSet<byte> ScheduleIds { get; } = new HashSet<byte>();
             internal HashSet<byte> ContactConfigurationIds { get; } = new HashSet<byte>();
@@ -451,15 +566,21 @@ namespace Wss.Testing
             internal HashSet<byte> EventRatioIds { get; } = new HashSet<byte>();
             internal Dictionary<byte, byte> EventScheduleIds { get; } = new Dictionary<byte, byte>();
             internal Dictionary<byte, int> ScheduleDurations { get; } = new Dictionary<byte, int>();
+            internal Dictionary<byte, byte> ScheduleSyncSignals { get; } = new Dictionary<byte, byte>();
+            internal HashSet<byte> SynchronizedScheduleIds { get; } = new HashSet<byte>();
+            internal HashSet<byte> ObservedSyncSignals { get; } = new HashSet<byte>();
             internal Dictionary<byte, EventState> EventStates { get; } = new Dictionary<byte, EventState>();
             internal bool SynchronizationConfigured { get; set; }
             internal byte SyncSignal { get; set; }
             internal bool StimulationStarted { get; set; }
             internal bool StreamingObserved { get; set; }
 
-            internal void Reset()
+            internal void Reset(bool knownClean)
             {
-                Cleared = false;
+                ContactsKnown = knownClean;
+                EventsKnown = knownClean;
+                SchedulesKnown = knownClean;
+                AssignmentsKnown = knownClean;
                 ModuleQueried = false;
                 ScheduleIds.Clear();
                 ContactConfigurationIds.Clear();
@@ -468,11 +589,103 @@ namespace Wss.Testing
                 EventRatioIds.Clear();
                 EventScheduleIds.Clear();
                 ScheduleDurations.Clear();
+                ScheduleSyncSignals.Clear();
+                SynchronizedScheduleIds.Clear();
+                ObservedSyncSignals.Clear();
                 EventStates.Clear();
                 SynchronizationConfigured = false;
                 SyncSignal = 0;
                 StimulationStarted = false;
                 StreamingObserved = false;
+            }
+
+            internal void ClearEvents()
+            {
+                EventsKnown = true;
+                AssignmentsKnown = true;
+                EventIds.Clear();
+                EventContactConfigurationIds.Clear();
+                EventRatioIds.Clear();
+                EventScheduleIds.Clear();
+                EventStates.Clear();
+                SynchronizedScheduleIds.Clear();
+                StimulationStarted = false;
+                StreamingObserved = false;
+            }
+
+            internal void ClearSchedules()
+            {
+                SchedulesKnown = true;
+                AssignmentsKnown = true;
+                ScheduleIds.Clear();
+                ScheduleDurations.Clear();
+                ScheduleSyncSignals.Clear();
+                SynchronizedScheduleIds.Clear();
+                EventScheduleIds.Clear();
+                StimulationStarted = false;
+                StreamingObserved = false;
+            }
+
+            internal void ClearContacts()
+            {
+                ContactsKnown = true;
+                ContactConfigurationIds.Clear();
+                SynchronizedScheduleIds.Clear();
+                StimulationStarted = false;
+                StreamingObserved = false;
+            }
+
+            internal void RemoveEvent(byte eventId)
+            {
+                RemoveAssignment(eventId);
+                EventIds.Remove(eventId);
+                EventContactConfigurationIds.Remove(eventId);
+                EventRatioIds.Remove(eventId);
+                EventStates.Remove(eventId);
+            }
+
+            internal void RemoveAssignment(byte eventId)
+            {
+                if (EventScheduleIds.TryGetValue(eventId, out byte scheduleId))
+                    SynchronizedScheduleIds.Remove(scheduleId);
+                EventScheduleIds.Remove(eventId);
+            }
+
+            internal void RemoveSchedule(byte scheduleId)
+            {
+                ScheduleIds.Remove(scheduleId);
+                ScheduleDurations.Remove(scheduleId);
+                ScheduleSyncSignals.Remove(scheduleId);
+                SynchronizedScheduleIds.Remove(scheduleId);
+
+                var assignedEvents = new List<byte>();
+                foreach (var assignment in EventScheduleIds)
+                {
+                    if (assignment.Value == scheduleId)
+                        assignedEvents.Add(assignment.Key);
+                }
+                foreach (byte eventId in assignedEvents)
+                    EventScheduleIds.Remove(eventId);
+            }
+
+            internal WssConfigurationSnapshot ToConfigurationSnapshot()
+            {
+                return new WssConfigurationSnapshot(
+                    ContactsKnown,
+                    EventsKnown,
+                    SchedulesKnown,
+                    AssignmentsKnown,
+                    ModuleQueried,
+                    StimulationStarted,
+                    StreamingObserved,
+                    ContactConfigurationIds,
+                    EventIds,
+                    ScheduleIds,
+                    EventContactConfigurationIds,
+                    EventScheduleIds,
+                    ScheduleSyncSignals,
+                    SynchronizedScheduleIds,
+                    ObservedSyncSignals);
             }
 
             internal EventState GetEventState(byte eventId)

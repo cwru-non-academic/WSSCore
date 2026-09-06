@@ -5,12 +5,16 @@ namespace Wss.Testing
     /// </summary>
     public sealed class EmulatedWssDeviceProfile
     {
-        private EmulatedWssDeviceProfile()
+        private EmulatedWssDeviceProfile(bool supportsModuleQuery)
         {
+            SupportsModuleQuery = supportsModuleQuery;
         }
 
         /// <summary>Gets the shared deterministic emulator profile.</summary>
-        public static EmulatedWssDeviceProfile Default { get; } = new EmulatedWssDeviceProfile();
+        public static EmulatedWssDeviceProfile Default { get; } = new EmulatedWssDeviceProfile(true);
+
+        /// <summary>Gets a deterministic legacy profile that uses default unit capabilities.</summary>
+        public static EmulatedWssDeviceProfile Legacy { get; } = new EmulatedWssDeviceProfile(false);
 
         /// <summary>Gets the target address expected by initialization conformance validation.</summary>
         public byte InitializationTarget => 0x81;
@@ -29,6 +33,9 @@ namespace Wss.Testing
 
         /// <summary>Gets whether the profile reports pulse-guard capability.</summary>
         public bool SupportsPulseGuard => true;
+
+        /// <summary>Gets whether initialization uses a module settings query before event encoding.</summary>
+        public bool SupportsModuleQuery { get; }
 
         /// <summary>Gets the reported pulse-amplitude limit.</summary>
         public byte PaLimit => 10;

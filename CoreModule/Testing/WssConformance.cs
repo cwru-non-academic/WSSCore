@@ -34,19 +34,14 @@ namespace Wss.Testing
         /// <inheritdoc/>
         public InitializationConformanceResult ValidateInitialization()
         {
-            var history = _device.GetMessageHistorySnapshot();
+            var transitions = _device.GetConfigurationTransitionsSnapshot();
             var protocolErrors = _device.GetProtocolErrorsSnapshot();
-            byte target = _device.Profile.InitializationTarget;
-            var requiredChecks = BuildRequiredMessageChecks(history, target);
-            var orderingChecks = BuildOrderingChecks(history, target);
-            var failures = new List<string>();
+            var checks = new List<InitializationConformanceCheck>();
 
-            failures.AddRange(requiredChecks.Where(check => !check.Passed).Select(check => check.Details));
-            failures.AddRange(orderingChecks.Where(check => !check.Passed).Select(check => check.Details));
-            failures.AddRange(protocolErrors.Select(error =>
-                $"Protocol error #{error.SequenceNumber}: {error.Kind}: {error.Description}"));
+            foreach (var targetTransitions in transitions.GroupBy(item => item.Message.Target))
+                ValidateTarget(targetTransitions.Key, targetTransitions.ToArray(), checks);
 
-            return new InitializationConformanceResult(requiredChecks, orderingChecks, protocolErrors, failures);
+            return new InitializationConformanceResult(checks, protocolErrors);
         }
 
         /// <inheritdoc/>
@@ -171,301 +166,312 @@ namespace Wss.Testing
             checks.Add(new StimulationConformanceCheck(name, passed, expected, observed, details));
         }
 
-        private static IReadOnlyList<InitializationConformanceCheck> BuildRequiredMessageChecks(
-            IReadOnlyList<WssMessageObservation> history,
-            byte target)
-        {
-            var checks = new List<InitializationConformanceCheck>();
-            AddExactCheck(checks, history, target, "ClearAll", "Clear(All)", WSSMessageIDs.Clear,
-                item => IsData(item, WSSMessageIDs.Clear, 0x00));
-            AddExactCheck(checks, history, target, "ModuleQuerySettings", "ModuleQuery(settings)", WSSMessageIDs.ModuleQuery,
-                item => IsData(item, WSSMessageIDs.ModuleQuery, 0x01));
-            AddIdSetCheck(checks, history, target, "CreateSchedules", "schedule", WSSMessageIDs.CreateSchedule,
-                item => HasDataLength(item, WSSMessageIDs.CreateSchedule, 4), 2);
-            AddIdSetCheck(checks, history, target, "CreateContactConfigurations", "contact configuration", WSSMessageIDs.CreateContactConfig,
-                item => HasDataLength(item, WSSMessageIDs.CreateContactConfig, 4), 2);
-            AddIdSetCheck(checks, history, target, "CreateEvents", "event", WSSMessageIDs.CreateEvent,
-                item => HasDataLength(item, WSSMessageIDs.CreateEvent, 16), 2);
-            AddEventContactCheck(checks, history, target);
-            AddIdSetCheck(checks, history, target, "ConfigureEventRatios", "event ratio", WSSMessageIDs.EditEventConfig,
-                item => HasDataLength(item, WSSMessageIDs.EditEventConfig, 3) && item.Payload[3] == 0x07, 2);
-            AddAssignmentCheck(checks, history, target);
-            AddExactCheck(checks, history, target, "ConfigureSynchronization", "SyncGroup", WSSMessageIDs.SyncGroup,
-                item => HasDataLength(item, WSSMessageIDs.SyncGroup, 1));
-            AddExactCheck(checks, history, target, "StartStimulation", "stimulation start", WSSMessageIDs.StimulationSwitch,
-                item => IsData(item, WSSMessageIDs.StimulationSwitch, 0x03));
-
-            int totalStreamCount = CountMessages(history, target, WSSMessageIDs.StreamChangeNoIPI);
-            int streamCount = history.Count(item => item.Target == target &&
-                HasDataLength(item, WSSMessageIDs.StreamChangeNoIPI, 9));
-            bool streamPassed = streamCount > 0 && streamCount == totalStreamCount;
-            checks.Add(new InitializationConformanceCheck(
-                "ObserveStreaming",
-                streamPassed,
-                streamPassed
-                    ? $"Target 0x{target:X2} received {streamCount} StreamChangeNoIPI message(s)."
-                    : streamCount == 0
-                        ? $"Target 0x{target:X2} did not receive a valid StreamChangeNoIPI after setup."
-                        : $"Target 0x{target:X2} received {totalStreamCount - streamCount} malformed StreamChangeNoIPI message(s)."));
-
-            return checks.ToArray();
-        }
-
-        private static IReadOnlyList<InitializationConformanceCheck> BuildOrderingChecks(
-            IReadOnlyList<WssMessageObservation> history,
-            byte target)
-        {
-            var checks = new List<InitializationConformanceCheck>();
-            var clear = First(history, target, item => IsData(item, WSSMessageIDs.Clear, 0x00));
-            var moduleQuery = First(history, target, item => IsData(item, WSSMessageIDs.ModuleQuery, 0x01));
-            var firstCreation = First(history, target, IsSetupCreation);
-            var firstEvent = First(history, target, item => HasDataLength(item, WSSMessageIDs.CreateEvent, 16));
-            var sync = First(history, target, item => HasDataLength(item, WSSMessageIDs.SyncGroup, 1));
-            var start = First(history, target, item => IsData(item, WSSMessageIDs.StimulationSwitch, 0x03));
-            var stream = First(history, target, item => HasDataLength(item, WSSMessageIDs.StreamChangeNoIPI, 9));
-
-            AddBeforeCheck(checks, "ClearBeforeModuleQuery", target, "Clear(All)", clear, "ModuleQuery", moduleQuery);
-            AddBeforeCheck(checks, "ClearBeforeSetupCreation", target, "Clear(All)", clear, "setup creation", firstCreation);
-            AddBeforeCheck(checks, "ModuleQueryBeforeEventCreation", target, "ModuleQuery", moduleQuery, "CreateEvent", firstEvent);
-
-            for (byte id = 1; id <= 3; id++)
-            {
-                byte resourceId = id;
-                var schedule = First(history, target,
-                    item => HasId(item, WSSMessageIDs.CreateSchedule, 4, resourceId));
-                var contact = First(history, target,
-                    item => HasId(item, WSSMessageIDs.CreateContactConfig, 4, resourceId));
-                var createEvent = First(history, target,
-                    item => HasId(item, WSSMessageIDs.CreateEvent, 16, resourceId));
-                var ratio = First(history, target,
-                    item => HasId(item, WSSMessageIDs.EditEventConfig, 3, resourceId) && item.Payload[3] == 0x07);
-                var assignment = First(history, target,
-                    item => IsAssignment(item, resourceId, resourceId));
-
-                AddBeforeCheck(checks, $"ContactBeforeEvent{id}", target,
-                    $"CreateContactConfiguration {id}", contact, $"CreateEvent {id}", createEvent);
-                AddBeforeCheck(checks, $"EventBeforeRatio{id}", target,
-                    $"CreateEvent {id}", createEvent, $"EditEventRatio {id}", ratio);
-                AddBeforeCheck(checks, $"ScheduleBeforeAssignment{id}", target,
-                    $"CreateSchedule {id}", schedule, $"AddEventToSchedule {id}", assignment);
-                AddBeforeCheck(checks, $"EventBeforeAssignment{id}", target,
-                    $"CreateEvent {id}", createEvent, $"AddEventToSchedule {id}", assignment);
-            }
-
-            var lastSetupObject = Last(history, target, IsRequiredSetupObject);
-            AddBeforeCheck(checks, "SetupObjectsBeforeSynchronization", target,
-                "last required setup object", lastSetupObject, "SyncGroup", sync);
-            AddBeforeCheck(checks, "SynchronizationBeforeStimulationStart", target,
-                "SyncGroup", sync, "stimulation start", start);
-            AddBeforeCheck(checks, "StimulationStartBeforeStreaming", target,
-                "stimulation start", start, "StreamChangeNoIPI", stream);
-
-            return checks.ToArray();
-        }
-
-        private static void AddExactCheck(
-            ICollection<InitializationConformanceCheck> checks,
-            IReadOnlyList<WssMessageObservation> history,
+        private void ValidateTarget(
             byte target,
-            string name,
-            string operation,
-            WSSMessageIDs messageId,
-            Func<WssMessageObservation, bool> predicate)
+            IReadOnlyList<WssConfigurationTransition> allTransitions,
+            ICollection<InitializationConformanceCheck> checks)
         {
-            int totalCount = CountMessages(history, target, messageId);
-            int count = history.Count(item => item.Target == target && predicate(item));
-            bool passed = totalCount == 1 && count == 1;
-            string details = passed
-                ? $"Target 0x{target:X2} received exactly one {operation}."
-                : totalCount != count
-                    ? $"Target 0x{target:X2} received {totalCount - count} malformed {operation} message(s)."
-                    : count == 0
-                        ? $"Target 0x{target:X2} did not receive {operation}."
-                        : $"Target 0x{target:X2} received {operation} {count} times; expected exactly once.";
-            checks.Add(new InitializationConformanceCheck(name, passed, details));
-        }
-
-        private static void AddIdSetCheck(
-            ICollection<InitializationConformanceCheck> checks,
-            IReadOnlyList<WssMessageObservation> history,
-            byte target,
-            string name,
-            string operation,
-            WSSMessageIDs messageId,
-            Func<WssMessageObservation, bool> predicate,
-            int idIndex)
-        {
-            int totalCount = CountMessages(history, target, messageId);
-            var counts = history
-                .Where(item => item.Target == target && predicate(item))
-                .GroupBy(item => item.Payload[idIndex])
-                .ToDictionary(group => group.Key, group => group.Count());
-            var issues = new List<string>();
-            for (byte id = 1; id <= 3; id++)
+            int lastReset = -1;
+            for (int i = 0; i < allTransitions.Count; i++)
             {
-                counts.TryGetValue(id, out int count);
-                if (count == 0) issues.Add($"missing ID {id}");
-                else if (count != 1) issues.Add($"ID {id} observed {count} times");
+                if (allTransitions[i].Message.MessageId == (byte)WSSMessageIDs.Reset)
+                    lastReset = i;
             }
 
-            bool passed = issues.Count == 0 && counts.Count == 3;
-            if (counts.Keys.Any(id => id < 1 || id > 3))
-                issues.Add("unexpected IDs " + string.Join(", ", counts.Keys.Where(id => id < 1 || id > 3).Select(id => id.ToString())));
-            int validCount = counts.Values.Sum();
-            if (totalCount != validCount)
-                issues.Add($"{totalCount - validCount} malformed message(s)");
-
-            passed = passed && issues.Count == 0;
-            checks.Add(new InitializationConformanceCheck(
-                name,
-                passed,
-                passed
-                    ? $"Target 0x{target:X2} received {operation} IDs 1, 2, and 3 exactly once."
-                    : $"Target 0x{target:X2} {operation} requirements failed: {string.Join("; ", issues)}."));
-        }
-
-        private static void AddEventContactCheck(
-            ICollection<InitializationConformanceCheck> checks,
-            IReadOnlyList<WssMessageObservation> history,
-            byte target)
-        {
-            var issues = new List<string>();
-            for (byte id = 1; id <= 3; id++)
+            if (lastReset >= 0)
             {
-                byte eventId = id;
-                var matchingEvents = history.Where(item =>
-                    item.Target == target && HasId(item, WSSMessageIDs.CreateEvent, 16, eventId)).ToArray();
-                if (matchingEvents.Length == 1 && matchingEvents[0].Payload[4] != eventId)
-                    issues.Add($"event {eventId} references contact configuration {matchingEvents[0].Payload[4]}");
+                var reset = allTransitions[lastReset].Message;
+                AddFinding(checks, "ResetDuringConfiguration", WssConformanceSeverity.Error, target,
+                    reset.SequenceNumber, "Reset invalidated all configuration and lifecycle observations that preceded it.");
             }
 
-            bool passed = issues.Count == 0;
-            checks.Add(new InitializationConformanceCheck(
-                "EventsReferenceContactConfigurations",
-                passed,
-                passed
-                    ? $"Target 0x{target:X2} events 1, 2, and 3 reference matching contact configurations."
-                    : $"Target 0x{target:X2} event contact references failed: {string.Join("; ", issues)}."));
-        }
-
-        private static void AddAssignmentCheck(
-            ICollection<InitializationConformanceCheck> checks,
-            IReadOnlyList<WssMessageObservation> history,
-            byte target)
-        {
-            var issues = new List<string>();
-            int totalCount = CountMessages(history, target, WSSMessageIDs.AddEventToSchedule);
-            var assignments = history.Where(item =>
-                item.Target == target && HasDataLength(item, WSSMessageIDs.AddEventToSchedule, 2)).ToArray();
-            for (byte id = 1; id <= 3; id++)
-            {
-                int count = assignments.Count(item => IsAssignment(item, id, id));
-                if (count == 0) issues.Add($"missing event {id} to schedule {id}");
-                else if (count != 1) issues.Add($"event {id} to schedule {id} observed {count} times");
-            }
-
-            int unexpected = assignments.Count(item => item.Payload[2] != item.Payload[3] || item.Payload[2] < 1 || item.Payload[2] > 3);
-            if (unexpected > 0) issues.Add($"{unexpected} unexpected assignment(s)");
-            if (totalCount != assignments.Length)
-                issues.Add($"{totalCount - assignments.Length} malformed assignment message(s)");
-
-            bool passed = issues.Count == 0 && assignments.Length == 3;
-            checks.Add(new InitializationConformanceCheck(
-                "AssignEventsToSchedules",
-                passed,
-                passed
-                    ? $"Target 0x{target:X2} assigned events 1, 2, and 3 to matching schedules exactly once."
-                    : $"Target 0x{target:X2} event assignment requirements failed: {string.Join("; ", issues)}."));
-        }
-
-        private static void AddBeforeCheck(
-            ICollection<InitializationConformanceCheck> checks,
-            string name,
-            byte target,
-            string earlierName,
-            WssMessageObservation earlier,
-            string laterName,
-            WssMessageObservation later)
-        {
-            if (earlier == null || later == null)
-            {
-                checks.Add(new InitializationConformanceCheck(
-                    name,
-                    true,
-                    $"Target 0x{target:X2}: ordering not evaluated because a required operation is missing."));
+            var transitions = allTransitions.Skip(lastReset + 1).ToArray();
+            if (transitions.Length == 0)
                 return;
+
+            bool conformingStartObserved = false;
+            foreach (var transition in transitions)
+                ValidateTransition(target, transition, checks, ref conformingStartObserved);
+
+            var finalState = transitions[transitions.Length - 1].After;
+            if (!finalState.ContactsKnown || !finalState.EventsKnown || !finalState.SchedulesKnown)
+            {
+                AddFinding(checks, "UnknownBaseline", WssConformanceSeverity.Warning, target, null,
+                    "Clear(All) was not observed in the current epoch; unobserved resources may predate this session.");
             }
 
-            bool passed = earlier.SequenceNumber < later.SequenceNumber;
-            checks.Add(new InitializationConformanceCheck(
-                name,
-                passed,
-                passed
-                    ? $"{earlierName} target 0x{target:X2} at #{earlier.SequenceNumber} preceded {laterName} at #{later.SequenceNumber}."
-                    : $"{earlierName} target 0x{target:X2} observed at #{earlier.SequenceNumber}; {laterName} observed at #{later.SequenceNumber}. Expected {earlierName} before {laterName}."));
+            AddFinalStateFindings(target, finalState, checks);
         }
 
-        private static WssMessageObservation First(
-            IEnumerable<WssMessageObservation> history,
+        private void ValidateTransition(
             byte target,
-            Func<WssMessageObservation, bool> predicate)
+            WssConfigurationTransition transition,
+            ICollection<InitializationConformanceCheck> checks,
+            ref bool conformingStartObserved)
         {
-            return history.FirstOrDefault(item => item.Target == target && predicate(item));
+            var message = transition.Message;
+            var payload = message.Payload;
+            var before = transition.Before;
+
+            switch ((WSSMessageIDs)message.MessageId)
+            {
+                case WSSMessageIDs.Clear:
+                    conformingStartObserved = false;
+                    if (HasData(payload, 1) && payload[2] == 0x00)
+                    {
+                        AddFinding(checks, "KnownCleanBaseline", WssConformanceSeverity.Info, target,
+                            message.SequenceNumber, "Clear(All) established a known empty resource baseline.");
+                    }
+                    break;
+
+                case WSSMessageIDs.CreateEvent:
+                    if (!IsCreateEventPayload(payload))
+                        break;
+                    byte eventId = payload[2];
+                    byte contactId = payload[4];
+                    CheckResource(checks, "EventContactExists", "CreateEvent", "ContactConfig", contactId,
+                        before.ContactsKnown, before.Contacts.Contains(contactId), target, message.SequenceNumber);
+                    if (_device.Profile.SupportsModuleQuery && IsKnownFreshState(before) && !before.ModuleQueried)
+                    {
+                        AddFinding(checks, "ModuleQueryBeforeEventCreation", WssConformanceSeverity.Error,
+                            target, message.SequenceNumber,
+                            $"CreateEvent {eventId} requires ModuleQuery(settings) first on ModuleQuery-capable firmware after Clear(All).");
+                    }
+                    break;
+
+                case WSSMessageIDs.AddEventToSchedule:
+                    if (!HasData(payload, 2))
+                        break;
+                    CheckResource(checks, "AssignmentEventExists", "AddEventToSchedule", "Event", payload[2],
+                        before.EventsKnown, before.Events.Contains(payload[2]), target, message.SequenceNumber);
+                    CheckResource(checks, "AssignmentScheduleExists", "AddEventToSchedule", "Schedule", payload[3],
+                        before.SchedulesKnown, before.Schedules.Contains(payload[3]), target, message.SequenceNumber);
+                    break;
+
+                case WSSMessageIDs.EditEventConfig:
+                    if (payload.Length < 4)
+                        break;
+                    CheckResource(checks, "EditedEventExists", "EditEventConfig", "Event", payload[2],
+                        before.EventsKnown, before.Events.Contains(payload[2]), target, message.SequenceNumber);
+                    if (HasData(payload, 3) && payload[3] == 0x01)
+                    {
+                        CheckResource(checks, "EditedContactExists", "EditEventContactConfig", "ContactConfig", payload[4],
+                            before.ContactsKnown, before.Contacts.Contains(payload[4]), target, message.SequenceNumber);
+                    }
+                    break;
+
+                case WSSMessageIDs.SyncGroup:
+                    if (!HasData(payload, 1))
+                        break;
+                    bool matchingSchedule = before.ScheduleSyncSignals.Any(item =>
+                        item.Value == payload[2] && before.Schedules.Contains(item.Key));
+                    if (matchingSchedule)
+                    {
+                        AddFinding(checks, "SynchronizationMatchesSchedule", WssConformanceSeverity.Info,
+                            target, message.SequenceNumber,
+                            $"SyncGroup({payload[2]}) matches at least one known schedule.");
+                    }
+                    else
+                    {
+                        var severity = before.SchedulesKnown
+                            ? WssConformanceSeverity.Error
+                            : WssConformanceSeverity.NotVerifiable;
+                        AddFinding(checks, "SynchronizationMatchesSchedule", severity, target,
+                            message.SequenceNumber,
+                            $"SyncGroup({payload[2]}) has no observed matching schedule; schedule state is " +
+                            (before.SchedulesKnown ? "known." : "pre-existing or unknown."));
+                    }
+                    break;
+
+                case WSSMessageIDs.StimulationSwitch:
+                    if (HasData(payload, 1) && payload[2] == 0x03)
+                        conformingStartObserved = ValidateStart(target, message.SequenceNumber, before, checks);
+                    else if (HasData(payload, 1) && payload[2] == 0x04)
+                        conformingStartObserved = false;
+                    break;
+
+                case WSSMessageIDs.StreamChangeAll:
+                case WSSMessageIDs.StreamChangeNoIPI:
+                case WSSMessageIDs.StreamChangeNoPW:
+                case WSSMessageIDs.StreamChangeNoPA:
+                    if (HasData(payload, 9) && !conformingStartObserved)
+                    {
+                        AddFinding(checks, "StimulationStartedBeforeStreaming", WssConformanceSeverity.Error,
+                            target, message.SequenceNumber, "A stimulation stream message was observed before StartStim.");
+                    }
+                    break;
+
+                case WSSMessageIDs.DeleteContactConfig:
+                    if (!HasData(payload, 1))
+                        break;
+                    byte deletedContact = payload[2];
+                    CheckResource(checks, "DeletedContactExists", "DeleteContactConfig", "ContactConfig", deletedContact,
+                        before.ContactsKnown, before.Contacts.Contains(deletedContact), target, message.SequenceNumber);
+                    foreach (var reference in before.EventContacts.Where(item =>
+                        item.Value == deletedContact && before.Events.Contains(item.Key)))
+                    {
+                        AddFinding(checks, "DeleteReferencedContact", WssConformanceSeverity.Error, target,
+                            message.SequenceNumber,
+                            $"DeleteContactConfig {deletedContact} would leave Event {reference.Key} referencing the deleted contact configuration.");
+                    }
+                    break;
+
+                case WSSMessageIDs.DeleteEvent:
+                    if (HasData(payload, 1))
+                        CheckResource(checks, "DeletedEventExists", "DeleteEvent", "Event", payload[2],
+                            before.EventsKnown, before.Events.Contains(payload[2]), target, message.SequenceNumber);
+                    break;
+
+                case WSSMessageIDs.RemoveEventFromSchedule:
+                    if (HasData(payload, 1))
+                    {
+                        CheckResource(checks, "UnassignedEventExists", "DeleteEventFromSchedule", "Event", payload[2],
+                            before.EventsKnown, before.Events.Contains(payload[2]), target, message.SequenceNumber);
+                    }
+                    break;
+
+                case WSSMessageIDs.MoveEventToSchedule:
+                    if (!HasData(payload, 3))
+                        break;
+                    CheckResource(checks, "MovedEventExists", "MoveEventToSchedule", "Event", payload[2],
+                        before.EventsKnown, before.Events.Contains(payload[2]), target, message.SequenceNumber);
+                    CheckResource(checks, "MoveDestinationScheduleExists", "MoveEventToSchedule", "Schedule", payload[3],
+                        before.SchedulesKnown, before.Schedules.Contains(payload[3]), target, message.SequenceNumber);
+                    break;
+
+                case WSSMessageIDs.DeleteSchedule:
+                    if (HasData(payload, 1))
+                        CheckResource(checks, "DeletedScheduleExists", "DeleteSchedule", "Schedule", payload[2],
+                            before.SchedulesKnown, before.Schedules.Contains(payload[2]), target, message.SequenceNumber);
+                    break;
+
+                case WSSMessageIDs.ChangeScheduleConfig:
+                    if (HasData(payload, 3))
+                        CheckResource(checks, "EditedScheduleExists", "ChangeScheduleConfig", "Schedule", payload[3],
+                            before.SchedulesKnown, before.Schedules.Contains(payload[3]), target, message.SequenceNumber);
+                    break;
+            }
         }
 
-        private static WssMessageObservation Last(
-            IEnumerable<WssMessageObservation> history,
+        private static bool ValidateStart(
             byte target,
-            Func<WssMessageObservation, bool> predicate)
+            long sequenceNumber,
+            WssConfigurationSnapshot state,
+            ICollection<InitializationConformanceCheck> checks)
         {
-            return history.LastOrDefault(item => item.Target == target && predicate(item));
+            bool runnable = state.EventSchedules.Any(assignment =>
+                state.Events.Contains(assignment.Key) &&
+                state.Schedules.Contains(assignment.Value) &&
+                state.EventContacts.TryGetValue(assignment.Key, out byte contactId) &&
+                state.Contacts.Contains(contactId) &&
+                state.SynchronizedSchedules.Contains(assignment.Value));
+
+            if (runnable)
+            {
+                AddFinding(checks, "RunnableConfigurationBeforeStart", WssConformanceSeverity.Info,
+                    target, sequenceNumber, "StartStim has at least one synchronized runnable configuration chain.");
+                return true;
+            }
+
+            bool known = state.ContactsKnown && state.EventsKnown && state.SchedulesKnown && state.AssignmentsKnown;
+            AddFinding(checks, "RunnableConfigurationBeforeStart",
+                known ? WssConformanceSeverity.Error : WssConformanceSeverity.NotVerifiable,
+                target, sequenceNumber,
+                known
+                    ? "StartStim has no complete ContactConfig -> Event -> Schedule assignment -> synchronized schedule chain."
+                    : "A runnable chain cannot be verified because one or more resource categories may predate this session.");
+            return false;
         }
 
-        private static bool IsSetupCreation(WssMessageObservation item)
-        {
-            return HasDataLength(item, WSSMessageIDs.CreateSchedule, 4) ||
-                   HasDataLength(item, WSSMessageIDs.CreateContactConfig, 4) ||
-                   HasDataLength(item, WSSMessageIDs.CreateEvent, 16);
-        }
-
-        private static bool IsRequiredSetupObject(WssMessageObservation item)
-        {
-            return IsSetupCreation(item) ||
-                   (HasDataLength(item, WSSMessageIDs.EditEventConfig, 3) && item.Payload[3] == 0x07) ||
-                   HasDataLength(item, WSSMessageIDs.AddEventToSchedule, 2);
-        }
-
-        private static bool IsData(WssMessageObservation item, WSSMessageIDs messageId, byte value)
-        {
-            return HasDataLength(item, messageId, 1) && item.Payload[2] == value;
-        }
-
-        private static bool HasId(WssMessageObservation item, WSSMessageIDs messageId, int dataLength, byte id)
-        {
-            return HasDataLength(item, messageId, dataLength) && item.Payload[2] == id;
-        }
-
-        private static bool IsAssignment(WssMessageObservation item, byte eventId, byte scheduleId)
-        {
-            return HasDataLength(item, WSSMessageIDs.AddEventToSchedule, 2) &&
-                   item.Payload[2] == eventId && item.Payload[3] == scheduleId;
-        }
-
-        private static bool HasDataLength(WssMessageObservation item, WSSMessageIDs messageId, int dataLength)
-        {
-            if (item.MessageId != (byte)messageId)
-                return false;
-
-            var payload = item.Payload;
-            return payload.Length == dataLength + 2 && payload[1] == dataLength;
-        }
-
-        private static int CountMessages(
-            IEnumerable<WssMessageObservation> history,
+        private static void AddFinalStateFindings(
             byte target,
-            WSSMessageIDs messageId)
+            WssConfigurationSnapshot state,
+            ICollection<InitializationConformanceCheck> checks)
         {
-            return history.Count(item => item.Target == target && item.MessageId == (byte)messageId);
+            foreach (byte eventId in state.Events)
+            {
+                if (!state.EventSchedules.ContainsKey(eventId))
+                {
+                    AddFinding(checks, "UnassignedEvent", WssConformanceSeverity.Warning, target, null,
+                        $"Event {eventId} exists but is not assigned to any schedule.");
+                }
+
+                if (state.EventContacts.TryGetValue(eventId, out byte contactId) &&
+                    state.ContactsKnown && !state.Contacts.Contains(contactId))
+                {
+                    AddFinding(checks, "DanglingEventContact", WssConformanceSeverity.Error, target, null,
+                        $"Event {eventId} references missing ContactConfig {contactId}.");
+                }
+            }
+
+            var usedContacts = new HashSet<byte>(state.EventContacts
+                .Where(item => state.Events.Contains(item.Key))
+                .Select(item => item.Value));
+            foreach (byte contactId in state.Contacts.Where(id => !usedContacts.Contains(id)))
+            {
+                AddFinding(checks, "UnusedContactConfig", WssConformanceSeverity.Warning, target, null,
+                    $"ContactConfig {contactId} exists but is not referenced by any event.");
+            }
+
+            var usedSchedules = new HashSet<byte>(state.EventSchedules
+                .Where(item => state.Events.Contains(item.Key))
+                .Select(item => item.Value));
+            foreach (byte scheduleId in state.Schedules.Where(id => !usedSchedules.Contains(id)))
+            {
+                AddFinding(checks, "EmptySchedule", WssConformanceSeverity.Warning, target, null,
+                    $"Schedule {scheduleId} exists but has no assigned event.");
+            }
+        }
+
+        private static void CheckResource(
+            ICollection<InitializationConformanceCheck> checks,
+            string name,
+            string operation,
+            string resourceType,
+            byte resourceId,
+            bool categoryKnown,
+            bool exists,
+            byte target,
+            long sequenceNumber)
+        {
+            if (exists)
+                return;
+
+            AddFinding(checks, name,
+                categoryKnown ? WssConformanceSeverity.Error : WssConformanceSeverity.NotVerifiable,
+                target,
+                sequenceNumber,
+                categoryKnown
+                    ? $"{operation} references missing {resourceType} {resourceId}."
+                    : $"{operation} references {resourceType} {resourceId}, whose existence cannot be verified from this session.");
+        }
+
+        private static bool IsKnownFreshState(WssConfigurationSnapshot state)
+            => state.ContactsKnown && state.EventsKnown && state.SchedulesKnown && state.AssignmentsKnown;
+
+        private static bool IsCreateEventPayload(byte[] payload)
+        {
+            int dataLength = payload.Length >= 2 ? payload[1] : -1;
+            return HasData(payload, dataLength) &&
+                   (dataLength == 3 || dataLength == 5 || dataLength == 14 ||
+                    dataLength == 16 || dataLength == 17 || dataLength == 19);
+        }
+
+        private static bool HasData(byte[] payload, int dataLength)
+            => payload != null && payload.Length == dataLength + 2 && payload.Length >= 2 && payload[1] == dataLength;
+
+        private static void AddFinding(
+            ICollection<InitializationConformanceCheck> checks,
+            string name,
+            WssConformanceSeverity severity,
+            byte target,
+            long? sequenceNumber,
+            string message)
+        {
+            string details = $"{severity.ToString().ToUpperInvariant()}: {message}\nTarget: 0x{target:X2}";
+            if (sequenceNumber.HasValue)
+                details += $"\nObserved sequence: #{sequenceNumber.Value}";
+            checks.Add(new InitializationConformanceCheck(name, severity, details, target, sequenceNumber));
         }
     }
 }

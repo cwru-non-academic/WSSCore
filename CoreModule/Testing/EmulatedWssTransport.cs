@@ -24,8 +24,18 @@ namespace Wss.Testing
         /// Creates the transport and its single associated device and conformance view.
         /// </summary>
         public EmulatedWssTransport()
+            : this(EmulatedWssDeviceProfile.Default)
         {
-            _device = new EmulatedWssDevice();
+        }
+
+        /// <summary>
+        /// Creates the transport with an emulated device using the specified capability profile.
+        /// </summary>
+        /// <param name="profile">Capability profile reported by the emulated device.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="profile"/> is null.</exception>
+        public EmulatedWssTransport(EmulatedWssDeviceProfile profile)
+        {
+            _device = new EmulatedWssDevice(profile);
             _conformance = new WssConformance(_device);
         }
 
