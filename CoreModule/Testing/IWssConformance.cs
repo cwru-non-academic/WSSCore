@@ -23,8 +23,12 @@ namespace Wss.Testing
         IReadOnlyList<WssStimulationObservation> StimulationHistory { get; }
 
         /// <summary>
-        /// Validates observed configuration relationships and stimulation lifecycle ordering per target.
+        /// Validates all observed configuration and lifecycle transitions per target.
         /// </summary>
+        /// <remarks>
+        /// Validation includes traffic after streaming begins through the moment this method is called.
+        /// A device Reset opens a new uncertain epoch whose pre-reset state cannot satisfy later requirements.
+        /// </remarks>
         /// <returns>Structured informational, warning, unverifiable, error, and protocol-error results.</returns>
         InitializationConformanceResult ValidateInitialization();
 

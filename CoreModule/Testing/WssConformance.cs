@@ -171,33 +171,54 @@ namespace Wss.Testing
             IReadOnlyList<WssConfigurationTransition> allTransitions,
             ICollection<InitializationConformanceCheck> checks)
         {
-            int lastReset = -1;
-            for (int i = 0; i < allTransitions.Count; i++)
-            {
-                if (allTransitions[i].Message.MessageId == (byte)WSSMessageIDs.Reset)
-                    lastReset = i;
-            }
-
-            if (lastReset >= 0)
-            {
-                var reset = allTransitions[lastReset].Message;
-                AddFinding(checks, "ResetDuringConfiguration", WssConformanceSeverity.Error, target,
-                    reset.SequenceNumber, "Reset invalidated all configuration and lifecycle observations that preceded it.");
-            }
-
-            var transitions = allTransitions.Skip(lastReset + 1).ToArray();
-            if (transitions.Length == 0)
+            if (allTransitions.Count == 0)
                 return;
 
+            var episodeChecks = new List<InitializationConformanceCheck>();
             bool conformingStartObserved = false;
-            foreach (var transition in transitions)
-                ValidateTransition(target, transition, checks, ref conformingStartObserved);
+            bool conformingStreamObserved = false;
+            bool resetEpoch = false;
+            WssConfigurationSnapshot finalState = null;
 
-            var finalState = transitions[transitions.Length - 1].After;
+            foreach (var transition in allTransitions)
+            {
+                if (IsDeviceReset(transition))
+                {
+                    if (conformingStreamObserved && finalState != null)
+                        AddEpisodeFindings(target, finalState, episodeChecks, checks);
+                    episodeChecks.Clear();
+                    conformingStartObserved = false;
+                    conformingStreamObserved = false;
+                    resetEpoch = true;
+                    finalState = transition.After;
+                    continue;
+                }
+
+                ValidateTransition(target, transition, episodeChecks, ref conformingStartObserved, resetEpoch);
+                finalState = transition.After;
+                if (IsConformingStream(transition, conformingStartObserved))
+                    conformingStreamObserved = true;
+                if (IsConformingStart(transition, conformingStartObserved))
+                    resetEpoch = false;
+            }
+
+            if (finalState != null)
+                AddEpisodeFindings(target, finalState, episodeChecks, checks);
+        }
+
+        private static void AddEpisodeFindings(
+            byte target,
+            WssConfigurationSnapshot finalState,
+            IEnumerable<InitializationConformanceCheck> episodeChecks,
+            ICollection<InitializationConformanceCheck> checks)
+        {
+            foreach (var check in episodeChecks)
+                checks.Add(check);
+
             if (!finalState.ContactsKnown || !finalState.EventsKnown || !finalState.SchedulesKnown)
             {
                 AddFinding(checks, "UnknownBaseline", WssConformanceSeverity.Warning, target, null,
-                    "Clear(All) was not observed in the current epoch; unobserved resources may predate this session.");
+                    "Clear(All) was not observed in the current device epoch; unobserved resources may predate this session.");
             }
 
             AddFinalStateFindings(target, finalState, checks);
@@ -207,7 +228,8 @@ namespace Wss.Testing
             byte target,
             WssConfigurationTransition transition,
             ICollection<InitializationConformanceCheck> checks,
-            ref bool conformingStartObserved)
+            ref bool conformingStartObserved,
+            bool resetEpoch)
         {
             var message = transition.Message;
             var payload = message.Payload;
@@ -235,7 +257,7 @@ namespace Wss.Testing
                     {
                         AddFinding(checks, "ModuleQueryBeforeEventCreation", WssConformanceSeverity.Error,
                             target, message.SequenceNumber,
-                            $"CreateEvent {eventId} requires ModuleQuery(settings) first on ModuleQuery-capable firmware after Clear(All).");
+                            $"CreateEvent {eventId} requires ModuleQuery(settings) first in the current device/connection epoch on ModuleQuery-capable firmware.");
                     }
                     break;
 
@@ -294,10 +316,21 @@ namespace Wss.Testing
                 case WSSMessageIDs.StreamChangeNoIPI:
                 case WSSMessageIDs.StreamChangeNoPW:
                 case WSSMessageIDs.StreamChangeNoPA:
-                    if (HasData(payload, 9) && !conformingStartObserved)
+                    if (!HasData(payload, 9))
+                        break;
+                    if (!conformingStartObserved)
                     {
                         AddFinding(checks, "StimulationStartedBeforeStreaming", WssConformanceSeverity.Error,
-                            target, message.SequenceNumber, "A stimulation stream message was observed before StartStim.");
+                            target, message.SequenceNumber,
+                            resetEpoch
+                                ? "A stimulation stream message was observed after Reset before a new valid setup and StartStim; Reset invalidated the previous lifecycle state."
+                                : "A stimulation stream message was observed before StartStim.");
+                    }
+                    else if (!HasRunnableConfiguration(before))
+                    {
+                        AddFinding(checks, "RunnableConfigurationBeforeStreaming", WssConformanceSeverity.Error,
+                            target, message.SequenceNumber,
+                            "A stimulation stream message was observed without a current ContactConfig -> Event -> Schedule assignment -> synchronized schedule chain.");
                     }
                     break;
 
@@ -359,12 +392,7 @@ namespace Wss.Testing
             WssConfigurationSnapshot state,
             ICollection<InitializationConformanceCheck> checks)
         {
-            bool runnable = state.EventSchedules.Any(assignment =>
-                state.Events.Contains(assignment.Key) &&
-                state.Schedules.Contains(assignment.Value) &&
-                state.EventContacts.TryGetValue(assignment.Key, out byte contactId) &&
-                state.Contacts.Contains(contactId) &&
-                state.SynchronizedSchedules.Contains(assignment.Value));
+            bool runnable = HasRunnableConfiguration(state);
 
             if (runnable)
             {
@@ -382,6 +410,14 @@ namespace Wss.Testing
                     : "A runnable chain cannot be verified because one or more resource categories may predate this session.");
             return false;
         }
+
+        private static bool HasRunnableConfiguration(WssConfigurationSnapshot state)
+            => state.EventSchedules.Any(assignment =>
+                state.Events.Contains(assignment.Key) &&
+                state.Schedules.Contains(assignment.Value) &&
+                state.EventContacts.TryGetValue(assignment.Key, out byte contactId) &&
+                state.Contacts.Contains(contactId) &&
+                state.SynchronizedSchedules.Contains(assignment.Value));
 
         private static void AddFinalStateFindings(
             byte target,
@@ -448,6 +484,27 @@ namespace Wss.Testing
 
         private static bool IsKnownFreshState(WssConfigurationSnapshot state)
             => state.ContactsKnown && state.EventsKnown && state.SchedulesKnown && state.AssignmentsKnown;
+
+        private static bool IsDeviceReset(WssConfigurationTransition transition)
+            => transition.Message.MessageId == (byte)WSSMessageIDs.Reset &&
+               HasData(transition.Message.Payload, 0);
+
+        private static bool IsConformingStart(
+            WssConfigurationTransition transition,
+            bool conformingStartObserved)
+            => conformingStartObserved &&
+               transition.Message.MessageId == (byte)WSSMessageIDs.StimulationSwitch &&
+               HasData(transition.Message.Payload, 1) &&
+               transition.Message.Payload[2] == 0x03;
+
+        private static bool IsConformingStream(
+            WssConfigurationTransition transition,
+            bool conformingStartObserved)
+            => conformingStartObserved &&
+               transition.Message.MessageId >= (byte)WSSMessageIDs.StreamChangeAll &&
+               transition.Message.MessageId <= (byte)WSSMessageIDs.StreamChangeNoPA &&
+               HasData(transition.Message.Payload, 9) &&
+               HasRunnableConfiguration(transition.Before);
 
         private static bool IsCreateEventPayload(byte[] payload)
         {

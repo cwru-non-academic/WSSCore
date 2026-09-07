@@ -86,11 +86,13 @@ namespace WSS.Core.Tests
         {
             core.Initialize();
             bool readyObserved = false;
+            bool streamObserved = false;
             for (int i = 0; i < 2000; i++)
             {
                 core.Tick();
                 readyObserved = readyObserved || core.Ready();
-                if (readyObserved && transport.Conformance.StimulationHistory.Any())
+                streamObserved = streamObserved || transport.Conformance.StimulationHistory.Any();
+                if (readyObserved && streamObserved)
                     break;
                 await Task.Delay(1);
             }
@@ -99,6 +101,7 @@ namespace WSS.Core.Tests
             Assert.Multiple(() =>
             {
                 Assert.That(readyObserved, Is.True, "Core did not reach Ready within the finite tick limit.");
+                Assert.That(streamObserved, Is.True, "Core did not emit a supported startup stream within the finite observation limit.");
                 Assert.That(initialization.Passed, Is.True, string.Join(Environment.NewLine, initialization.Failures));
             });
         }

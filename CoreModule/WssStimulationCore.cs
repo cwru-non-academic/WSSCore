@@ -304,15 +304,14 @@ namespace Wss.CoreModule
                 case CoreState.SettingUp:
                 case CoreState.Ready:
                 case CoreState.Started:
-                    _ = ScheduleSetupChangeAsync(targetWSS,
+                    _ = ScheduleSetupChangeAsync(targetWSS, false,
                         () => StepLogger(_wss.StopStim(targetWSS),      $"StopStim[{targetWSS}]")
                     );
                     break;
                 case CoreState.Streaming:
-                    _ = ScheduleSetupChangeAsync(targetWSS,
+                    _ = ScheduleSetupChangeAsync(targetWSS, false,
                         () => StepLogger(_wss.StopStim(targetWSS),      $"StopStim[{targetWSS}]")
                     );
-                    StopStreamingInternal();
                     break;
             }
         }
@@ -843,6 +842,13 @@ namespace Wss.CoreModule
         #region ========== Setup runner internals ==========
         /// <summary>Append steps to a target, pause streaming if needed, and ensure the runner is active.</summary>
         private async Task ScheduleSetupChangeAsync(WssTarget t, params Func<Task<string>>[] newSteps)
+            => await ScheduleSetupChangeAsync(t, true, newSteps);
+
+        /// <summary>Append steps with explicit control over whether paused streaming resumes.</summary>
+        private async Task ScheduleSetupChangeAsync(
+            WssTarget t,
+            bool resumeStreaming,
+            params Func<Task<string>>[] newSteps)
         {
             await _setupGate.WaitAsync();
             try
@@ -850,8 +856,16 @@ namespace Wss.CoreModule
                 if (!_steps.ContainsKey(t)) { _steps[t] = new List<Func<Task<string>>>(); _cursor[t] = 0; }
                 _steps[t].AddRange(newSteps);
 
+                if (!resumeStreaming)
+                    _resumeStreamingAfter = false;
+
                 // pause streaming once; resume when queue drains
-                if (_state == CoreState.Streaming) { StopStreamingInternal(); _resumeStreamingAfter = true; }
+                if (_state == CoreState.Streaming)
+                {
+                    StopStreamingInternal();
+                    if (resumeStreaming)
+                        _resumeStreamingAfter = true;
+                }
                 _state = CoreState.SettingUp;
 
                 EnsureSetupRunner();

@@ -152,6 +152,17 @@ namespace WSS.Core.Tests
         }
 
         [Test]
+        public async Task StreamingAfterStopFails()
+        {
+            using var transport = await CreateConnectedTransportAsync();
+            await SendRunnableConfigurationAsync(transport, 9, 7, 4, 170, false);
+            await SendAsync(transport, WSSMessageIDs.StimulationSwitch, 0x04);
+            await SendStreamAsync(transport);
+
+            AssertError(transport.Conformance.ValidateInitialization(), "StimulationStartedBeforeStreaming");
+        }
+
+        [Test]
         public async Task EditOfUnobservedEventWithoutCleanBaselineIsNotVerifiable()
         {
             using var transport = await CreateConnectedTransportAsync();
@@ -202,7 +213,7 @@ namespace WSS.Core.Tests
         }
 
         [Test]
-        public async Task ClearAllInvalidatesEarlierModuleQuery()
+        public async Task ClearAllPreservesEarlierModuleQuery()
         {
             using var transport = await CreateConnectedTransportAsync();
             await SendAsync(transport, WSSMessageIDs.ModuleQuery, 0x01);
@@ -210,7 +221,14 @@ namespace WSS.Core.Tests
             await SendAsync(transport, WSSMessageIDs.CreateContactConfig, 9, 0, 0);
             await SendAsync(transport, WSSMessageIDs.CreateEvent, 7, 0, 9);
 
-            AssertError(transport.Conformance.ValidateInitialization(), "ModuleQueryBeforeEventCreation");
+            var result = transport.Conformance.ValidateInitialization();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Passed, Is.True, JoinFailures(result));
+                Assert.That(result.Errors.Any(item => item.Name == "ModuleQueryBeforeEventCreation"), Is.False);
+                Assert.That(result.Checks.Any(item => item.Name == "KnownCleanBaseline"), Is.True);
+            });
         }
 
         [Test]
@@ -260,7 +278,7 @@ namespace WSS.Core.Tests
         }
 
         [Test]
-        public async Task ResetInvalidatesPriorConfiguration()
+        public async Task PreResetStartCannotAuthorizePostResetStreaming()
         {
             using var transport = await CreateConnectedTransportAsync();
             await SendRunnableConfigurationAsync(transport, 9, 7, 4, 170, false);
@@ -271,8 +289,194 @@ namespace WSS.Core.Tests
 
             Assert.Multiple(() =>
             {
-                AssertError(result, "ResetDuringConfiguration");
                 AssertError(result, "StimulationStartedBeforeStreaming");
+                Assert.That(result.Errors.Any(item => item.Name == "ResetDuringConfiguration"), Is.False);
+                Assert.That(result.Errors.Single(item => item.Name == "StimulationStartedBeforeStreaming").Details,
+                    Does.Contain("Reset invalidated the previous lifecycle state"));
+            });
+        }
+
+        [Test]
+        public async Task ResetInvalidatesEarlierModuleQuery()
+        {
+            using var transport = await CreateConnectedTransportAsync();
+            await SendRunnableConfigurationAsync(transport, 9, 7, 4, 170, false);
+            await SendAsync(transport, WSSMessageIDs.Reset);
+            await SendAsync(transport, WSSMessageIDs.Clear, 0x00);
+            await SendAsync(transport, WSSMessageIDs.CreateContactConfig, 19, 0, 0);
+            await SendAsync(transport, WSSMessageIDs.CreateEvent, 17, 0, 19);
+
+            AssertError(transport.Conformance.ValidateInitialization(), "ModuleQueryBeforeEventCreation");
+        }
+
+        [Test]
+        public async Task ResetMakesPriorConfigurationExistenceNotVerifiable()
+        {
+            using var transport = await CreateConnectedTransportAsync();
+            await SendRunnableConfigurationAsync(transport, 9, 7, 4, 170, false);
+            await SendAsync(transport, WSSMessageIDs.Reset);
+            await SendEventEditAsync(transport, 7, 0x02);
+
+            var result = transport.Conformance.ValidateInitialization();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Passed, Is.True, JoinFailures(result));
+                Assert.That(result.Errors.Any(item => item.Name == "EditedEventExists"), Is.False);
+                Assert.That(result.NotVerifiable.Any(item =>
+                    item.Name == "EditedEventExists" && item.Details.Contains("cannot be verified")), Is.True);
+                Assert.That(result.Warnings.Any(item => item.Name == "UnknownBaseline"), Is.True);
+            });
+        }
+
+        [Test]
+        public async Task ResetAfterCompletedStartupDoesNotInvalidateHistoricalInitialization()
+        {
+            using var transport = await CreateConnectedTransportAsync();
+            await SendRunnableConfigurationAsync(transport, 9, 7, 4, 170, false);
+            await SendAsync(transport, WSSMessageIDs.Reset);
+
+            var result = transport.Conformance.ValidateInitialization();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Passed, Is.True, JoinFailures(result));
+                Assert.That(result.Errors.Any(item => item.Name == "ResetDuringConfiguration"), Is.False);
+                Assert.That(result.Warnings.Any(item => item.Name == "UnknownBaseline"), Is.True);
+            });
+        }
+
+        [Test]
+        public async Task CompleteSetupAfterResetFormsNewValidEpoch()
+        {
+            using var transport = await CreateConnectedTransportAsync();
+            await SendRunnableConfigurationAsync(transport, 9, 7, 4, 170, false);
+            await SendAsync(transport, WSSMessageIDs.Reset);
+            await SendRunnableConfigurationAsync(transport, 19, 17, 14, 42, false);
+
+            var result = transport.Conformance.ValidateInitialization();
+
+            Assert.That(result.Passed, Is.True, JoinFailures(result));
+            Assert.That(result.Errors, Is.Empty);
+        }
+
+        [Test]
+        public async Task ResetAllowsRecoveryFromInterruptedInitializationAttempt()
+        {
+            using var transport = await CreateConnectedTransportAsync();
+            await SendAsync(transport, WSSMessageIDs.Clear, 0x00);
+            await SendAsync(transport, WSSMessageIDs.CreateContactConfig, 9, 0, 0);
+            await SendAsync(transport, WSSMessageIDs.CreateEvent, 7, 0, 9);
+            await SendAsync(transport, WSSMessageIDs.Reset);
+            await SendRunnableConfigurationAsync(transport, 19, 17, 14, 42, false);
+
+            var result = transport.Conformance.ValidateInitialization();
+
+            Assert.That(result.Passed, Is.True, JoinFailures(result));
+            Assert.That(result.Errors, Is.Empty);
+        }
+
+        [Test]
+        public async Task ResetDoesNotEraseCompletedEpochFailures()
+        {
+            using var transport = await CreateConnectedTransportAsync();
+            await SendRunnableConfigurationAsync(transport, 9, 7, 4, 170, false);
+            await SendAsync(transport, WSSMessageIDs.DeleteContactConfig, 9);
+            await SendAsync(transport, WSSMessageIDs.Reset);
+
+            AssertError(transport.Conformance.ValidateInitialization(), "DeleteReferencedContact");
+        }
+
+        [Test]
+        public async Task ValidPostStreamEventEditIsEvaluatedAndPasses()
+        {
+            using var transport = await CreateConnectedTransportAsync();
+            await SendRunnableConfigurationAsync(transport, 9, 7, 4, 170, false);
+            long firstStreamSequence = transport.Conformance.MessageHistory.Last(IsStream).SequenceNumber;
+
+            await SendEventEditAsync(transport, 7, 0x07);
+            var edit = transport.Conformance.MessageHistory.Last(item =>
+                item.MessageId == (byte)WSSMessageIDs.EditEventConfig);
+            await SendStreamAsync(transport);
+            var secondStream = transport.Conformance.MessageHistory.Last(IsStream);
+
+            var result = transport.Conformance.ValidateInitialization();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Passed, Is.True, JoinFailures(result));
+                Assert.That(edit.Payload[2], Is.EqualTo(7));
+                Assert.That(edit.Payload[3], Is.EqualTo(0x07));
+                Assert.That(edit.SequenceNumber, Is.GreaterThan(firstStreamSequence));
+                Assert.That(secondStream.SequenceNumber, Is.GreaterThan(edit.SequenceNumber));
+            });
+        }
+
+        [Test]
+        public async Task InvalidPostStreamTransitionFails()
+        {
+            using var transport = await CreateConnectedTransportAsync();
+            await SendRunnableConfigurationAsync(transport, 9, 7, 4, 170, false);
+            long firstStreamSequence = transport.Conformance.MessageHistory.Last(IsStream).SequenceNumber;
+
+            await SendAsync(transport, WSSMessageIDs.DeleteContactConfig, 9);
+
+            var result = transport.Conformance.ValidateInitialization();
+            var error = result.Errors.Single(item => item.Name == "DeleteReferencedContact");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Passed, Is.False);
+                Assert.That(error.SequenceNumber, Is.GreaterThan(firstStreamSequence));
+                Assert.That(error.Details, Does.Contain("Event 7"));
+            });
+        }
+
+        [Test]
+        public async Task EventEditPreservesScheduleSynchronizationWithoutResync()
+        {
+            using var transport = await CreateConnectedTransportAsync();
+            await SendRunnableConfigurationAsync(transport, 9, 7, 4, 170, false);
+            long firstStreamSequence = transport.Conformance.MessageHistory.Last(IsStream).SequenceNumber;
+
+            await SendEventEditAsync(transport, 7, 0x02);
+            var edit = transport.Conformance.MessageHistory.Last(item =>
+                item.MessageId == (byte)WSSMessageIDs.EditEventConfig);
+            await SendStreamAsync(transport);
+            var secondStream = transport.Conformance.MessageHistory.Last(IsStream);
+
+            var result = transport.Conformance.ValidateInitialization();
+            bool redundantSync = transport.Conformance.MessageHistory.Any(item =>
+                item.SequenceNumber > edit.SequenceNumber &&
+                item.SequenceNumber < secondStream.SequenceNumber &&
+                item.MessageId == (byte)WSSMessageIDs.SyncGroup);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(edit.SequenceNumber, Is.GreaterThan(firstStreamSequence));
+                Assert.That(secondStream.SequenceNumber, Is.GreaterThan(edit.SequenceNumber));
+                Assert.That(redundantSync, Is.False);
+                Assert.That(result.Passed, Is.True, JoinFailures(result));
+                Assert.That(result.Errors.Any(item => item.Name == "RunnableConfigurationBeforeStreaming"), Is.False);
+            });
+        }
+
+        [Test]
+        public async Task PostStreamConfigurationContributesFinalStateWarnings()
+        {
+            using var transport = await CreateConnectedTransportAsync();
+            await SendRunnableConfigurationAsync(transport, 9, 7, 4, 170, false);
+            await SendAsync(transport, WSSMessageIDs.CreateContactConfig, 99, 0, 0);
+
+            var result = transport.Conformance.ValidateInitialization();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Passed, Is.True, JoinFailures(result));
+                Assert.That(transport.Conformance.MessageHistory.Any(item =>
+                    item.MessageId == (byte)WSSMessageIDs.CreateContactConfig && item.Payload[2] == 99), Is.True);
+                Assert.That(result.Warnings.Any(item =>
+                    item.Name == "UnusedContactConfig" && item.Details.Contains("ContactConfig 99")), Is.True);
             });
         }
 
@@ -340,6 +544,10 @@ namespace WSS.Core.Tests
             Buffer.BlockCopy(data, 0, payload, 2, data.Length);
             return transport.SendAsync(new WssFrameCodec().Frame(0x00, 0x81, payload));
         }
+
+        private static bool IsStream(WssMessageObservation observation)
+            => observation.MessageId >= (byte)WSSMessageIDs.StreamChangeAll &&
+               observation.MessageId <= (byte)WSSMessageIDs.StreamChangeNoPA;
 
         private static void AssertError(InitializationConformanceResult result, string name)
         {

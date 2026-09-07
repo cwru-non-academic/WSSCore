@@ -268,7 +268,7 @@ namespace Wss.Testing
                         switch (payload[2])
                         {
                             case 0x00:
-                                state.Reset(true);
+                                state.ClearAllConfiguration();
                                 break;
                             case 0x01:
                                 state.ClearEvents();
@@ -285,7 +285,7 @@ namespace Wss.Testing
 
                 case (byte)WSSMessageIDs.Reset:
                     if (HasData(payload, 0))
-                        state.Reset(false);
+                        state.ResetDeviceState();
                     break;
 
                 case (byte)WSSMessageIDs.ModuleQuery:
@@ -324,7 +324,6 @@ namespace Wss.Testing
                         state.EventRatioIds.Add(payload[2]);
                     if (HasData(payload, 3) && payload[3] == 0x01)
                         state.EventContactConfigurationIds[payload[2]] = payload[4];
-                    InvalidateEventSynchronization(state, payload.Length >= 3 ? payload[2] : (byte)0);
                     RecordEditedEventState(state, payload);
                     break;
 
@@ -358,7 +357,6 @@ namespace Wss.Testing
                     {
                         state.RemoveAssignment(payload[2]);
                         state.EventScheduleIds[payload[2]] = payload[3];
-                        state.SynchronizedScheduleIds.Remove(payload[3]);
                     }
                     break;
 
@@ -426,12 +424,6 @@ namespace Wss.Testing
             return HasData(payload, dataLength) &&
                    (dataLength == 3 || dataLength == 5 || dataLength == 14 ||
                     dataLength == 16 || dataLength == 17 || dataLength == 19);
-        }
-
-        private static void InvalidateEventSynchronization(TargetState state, byte eventId)
-        {
-            if (state.EventScheduleIds.TryGetValue(eventId, out byte scheduleId))
-                state.SynchronizedScheduleIds.Remove(scheduleId);
         }
 
         private void RecordStreamState(
@@ -575,13 +567,23 @@ namespace Wss.Testing
             internal bool StimulationStarted { get; set; }
             internal bool StreamingObserved { get; set; }
 
-            internal void Reset(bool knownClean)
+            internal void ClearAllConfiguration()
+            {
+                ClearConfigurationState(true);
+            }
+
+            internal void ResetDeviceState()
+            {
+                ClearConfigurationState(false);
+                ModuleQueried = false;
+            }
+
+            private void ClearConfigurationState(bool knownClean)
             {
                 ContactsKnown = knownClean;
                 EventsKnown = knownClean;
                 SchedulesKnown = knownClean;
                 AssignmentsKnown = knownClean;
-                ModuleQueried = false;
                 ScheduleIds.Clear();
                 ContactConfigurationIds.Clear();
                 EventIds.Clear();
@@ -608,7 +610,6 @@ namespace Wss.Testing
                 EventRatioIds.Clear();
                 EventScheduleIds.Clear();
                 EventStates.Clear();
-                SynchronizedScheduleIds.Clear();
                 StimulationStarted = false;
                 StreamingObserved = false;
             }
@@ -630,7 +631,6 @@ namespace Wss.Testing
             {
                 ContactsKnown = true;
                 ContactConfigurationIds.Clear();
-                SynchronizedScheduleIds.Clear();
                 StimulationStarted = false;
                 StreamingObserved = false;
             }
@@ -646,8 +646,6 @@ namespace Wss.Testing
 
             internal void RemoveAssignment(byte eventId)
             {
-                if (EventScheduleIds.TryGetValue(eventId, out byte scheduleId))
-                    SynchronizedScheduleIds.Remove(scheduleId);
                 EventScheduleIds.Remove(eventId);
             }
 
