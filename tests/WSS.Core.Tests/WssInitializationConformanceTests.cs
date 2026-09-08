@@ -14,6 +14,7 @@ namespace WSS.Core.Tests
         [Test]
         public async Task RealCoreInitializationReachesReadyAndPassesConformance()
         {
+            var scenario = WssBehaviorScenarios.Initialization;
             string configPath = Path.Combine(Path.GetTempPath(), $"wss-core-{Guid.NewGuid():N}.json");
             File.WriteAllText(configPath,
                 "{\"maxWSS\":1,\"firmware\":\"J03\",\"broadcastTarget\":\"0x8F\",\"wssTargets\":[\"0x81\",\"0x82\",\"0x83\"]}");
@@ -44,17 +45,25 @@ namespace WSS.Core.Tests
                     await Task.Delay(1);
                 }
 
-                for (int i = 0; i < 1000 && !transport.Conformance.StimulationHistory.Any(); i++)
+                for (int i = 0; i < 1000 && !transport.Conformance.StimulationHistory.Any(
+                    item => item.Target == scenario.Target); i++)
+                {
                     await Task.Delay(1);
+                }
 
-                bool streamObserved = transport.Conformance.StimulationHistory.Any();
+                bool streamObserved = transport.Conformance.StimulationHistory.Any(
+                    item => item.Target == scenario.Target);
                 var result = transport.Conformance.ValidateInitialization();
                 Assert.Multiple(() =>
                 {
-                    Assert.That(reachedReady, Is.True, "Core did not reach Ready within the finite tick limit.");
-                    Assert.That(core.Ready(), Is.True, "Core left Ready before conformance validation.");
-                    Assert.That(streamObserved, Is.True, "Core did not emit a supported startup stream within the finite observation limit.");
-                    Assert.That(result.Passed, Is.True, string.Join(Environment.NewLine, result.Failures));
+                    Assert.That(!scenario.RequiresOperationalState || reachedReady, Is.True,
+                        "Core did not reach Ready within the finite tick limit.");
+                    Assert.That(!scenario.RequiresOperationalState || core.Ready(), Is.True,
+                        "Core left Ready before conformance validation.");
+                    Assert.That(!scenario.RequiresStreamObservation || streamObserved, Is.True,
+                        $"Core did not emit a supported startup stream for target 0x{scenario.Target:X2}.");
+                    Assert.That(!scenario.RequiresSuccessfulConformance || result.Passed, Is.True,
+                        string.Join(Environment.NewLine, result.Failures));
                 });
             }
             finally
@@ -70,6 +79,7 @@ namespace WSS.Core.Tests
         [Test]
         public async Task RealCoreRuntimeEventEditPausesAndResumesStreaming()
         {
+            var scenario = WssBehaviorScenarios.RuntimeEventEdit;
             string configPath = CreateCoreConfigPath();
             var transport = new EmulatedWssTransport();
             WssStimulationCore core = null;
@@ -77,8 +87,10 @@ namespace WSS.Core.Tests
             {
                 core = CreateCore(transport, configPath);
                 var initialStream = await InitializeUntilStreamingAsync(core, transport);
+                int syncCountBefore = transport.Conformance.MessageHistory.Count(item =>
+                    item.MessageId == (byte)WSSMessageIDs.SyncGroup);
 
-                core.UpdateEventRatio(4, 1, WssTarget.Wss1);
+                core.UpdateEventRatio(scenario.Ratio, scenario.EventId, (WssTarget)scenario.Target);
 
                 WssMessageObservation edit = null;
                 WssMessageObservation resumedStream = null;
@@ -88,11 +100,12 @@ namespace WSS.Core.Tests
                     var history = transport.Conformance.MessageHistory;
                     edit = history.FirstOrDefault(item =>
                         item.SequenceNumber > initialStream.SequenceNumber &&
-                        item.MessageId == (byte)WSSMessageIDs.EditEventConfig &&
+                        item.Target == scenario.Target &&
+                        item.MessageId == scenario.ExpectedMessageId &&
                         item.Payload.Length >= 5 &&
-                        item.Payload[2] == 1 &&
-                        item.Payload[3] == 0x07 &&
-                        item.Payload[4] == 4);
+                        item.Payload[2] == scenario.EventId &&
+                        item.Payload[3] == scenario.ExpectedSubcommand &&
+                        item.Payload[4] == scenario.ExpectedValue);
                     if (edit != null)
                     {
                         resumedStream = history.FirstOrDefault(item =>
@@ -104,6 +117,9 @@ namespace WSS.Core.Tests
                 }
 
                 var result = transport.Conformance.ValidateInitialization();
+                int syncCountAfter = transport.Conformance.MessageHistory.Count(item =>
+                    item.MessageId == (byte)WSSMessageIDs.SyncGroup);
+                int expectedAdditionalSyncGroups = scenario.AdditionalSyncGroupExpected ? 1 : 0;
                 if (edit != null && resumedStream != null)
                 {
                     TestContext.WriteLine(
@@ -112,10 +128,14 @@ namespace WSS.Core.Tests
                 Assert.Multiple(() =>
                 {
                     Assert.That(edit, Is.Not.Null, "Core did not transmit the requested EditEventConfig ratio command.");
-                    Assert.That(resumedStream, Is.Not.Null, "Core did not resume streaming after the Event edit.");
+                    Assert.That(resumedStream != null, Is.EqualTo(scenario.ResumeStreamingExpected),
+                        "Core streaming state after the Event edit did not match the shared scenario.");
                     Assert.That(edit?.SequenceNumber, Is.GreaterThan(initialStream.SequenceNumber));
                     Assert.That(resumedStream?.SequenceNumber, Is.GreaterThan(edit?.SequenceNumber));
-                    Assert.That(result.Passed, Is.True, string.Join(Environment.NewLine, result.Failures));
+                    Assert.That(syncCountAfter - syncCountBefore, Is.EqualTo(expectedAdditionalSyncGroups),
+                        "Runtime Event edit SyncGroup behavior did not match the shared scenario.");
+                    Assert.That(!scenario.RequiresSuccessfulConformance || result.Passed, Is.True,
+                        string.Join(Environment.NewLine, result.Failures));
                 });
             }
             finally
@@ -382,6 +402,7 @@ namespace WSS.Core.Tests
         [Test]
         public async Task RealCoreStopStimLeavesStreamingStopped()
         {
+            var scenario = WssBehaviorScenarios.StopStimulation;
             string configPath = CreateCoreConfigPath();
             var transport = new EmulatedWssTransport();
             WssStimulationCore core = null;
@@ -390,7 +411,7 @@ namespace WSS.Core.Tests
                 core = CreateCore(transport, configPath);
                 var initialStream = await InitializeUntilStreamingAsync(core, transport);
 
-                core.StopStim(WssTarget.Wss1);
+                core.StopStim((WssTarget)scenario.Target);
 
                 WssMessageObservation stop = null;
                 bool queueDrained = false;
@@ -399,9 +420,10 @@ namespace WSS.Core.Tests
                     core.Tick();
                     stop = transport.Conformance.MessageHistory.FirstOrDefault(item =>
                         item.SequenceNumber > initialStream.SequenceNumber &&
-                        item.MessageId == (byte)WSSMessageIDs.StimulationSwitch &&
+                        item.Target == scenario.Target &&
+                        item.MessageId == scenario.ExpectedMessageId &&
                         item.Payload.Length == 3 &&
-                        item.Payload[2] == 0x04);
+                        item.Payload[2] == scenario.ExpectedOperationValue);
                     queueDrained = stop != null && core.Ready();
                     if (queueDrained)
                         break;
@@ -423,7 +445,8 @@ namespace WSS.Core.Tests
                 {
                     Assert.That(stop, Is.Not.Null, "Core did not transmit StimulationSwitch STOP.");
                     Assert.That(queueDrained, Is.True, "StopStim setup processing did not drain within the finite tick limit.");
-                    Assert.That(streamAfterStop, Is.False, "Core emitted a stream after StopStim completed.");
+                    Assert.That(streamAfterStop, Is.EqualTo(scenario.ResumeStreamingExpected),
+                        "Core streaming state after StopStim did not match the shared scenario.");
                     Assert.That(core.Ready(), Is.True, "Core did not remain Ready after stopping stimulation.");
                     Assert.That(result.Passed, Is.True, string.Join(Environment.NewLine, result.Failures));
                 });
