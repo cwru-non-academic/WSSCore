@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -15,6 +17,7 @@ namespace WSS.Core.Tests
         [Test]
         public async Task DirectAnalogStimulationPassesWireLevelConformance()
         {
+            var scenario = WssBehaviorScenarios.DirectAnalog;
             string fixtureDirectory = CreateFixtureDirectory(out string coreConfigPath, out _);
             var transport = new EmulatedWssTransport();
             WssStimulationCore core = null;
@@ -24,9 +27,13 @@ namespace WSS.Core.Tests
                 await InitializeAndValidateAsync(core, transport);
                 var baseline = transport.Conformance.CaptureStimulationBaseline();
 
-                core.StimulateAnalog(1, 237, 4.0f, 13);
+                core.StimulateAnalog(
+                    scenario.Channel,
+                    scenario.PulseWidth,
+                    scenario.AmplitudeMa,
+                    scenario.InterPulseInterval);
 
-                var result = await WaitForConformanceAsync(core, transport, baseline, 237);
+                var result = await WaitForConformanceAsync(core, transport, baseline, scenario.Expectation);
                 Assert.That(result.Passed, Is.True, string.Join(Environment.NewLine, result.Failures));
             }
             finally
@@ -37,14 +44,9 @@ namespace WSS.Core.Tests
             }
         }
 
-        // PW mode fixture: x > 0 maps to Round(21 + (221 - 21) * x); zero uses the explicit zero branch.
-        [TestCase(0.0f, 0, TestName = "Normalized_0_0_PassesWireLevelConformance")]
-        [TestCase(0.37f, 95, TestName = "Normalized_0_37_PassesWireLevelConformance")]
-        [TestCase(0.5f, 121, TestName = "Normalized_0_5_PassesWireLevelConformance")]
-        [TestCase(1.0f, 221, TestName = "Normalized_1_0_PassesWireLevelConformance")]
-        [TestCase(-0.2f, 0, TestName = "Normalized_BelowZero_ClampsToZero")]
-        [TestCase(1.2f, 221, TestName = "Normalized_AboveOne_ClampsToOne")]
-        public async Task NormalizedStimulationPassesWireLevelConformance(float normalized, int expectedPulseWidth)
+        [TestCaseSource(nameof(NormalizedStimulationCases))]
+        public async Task NormalizedStimulationPassesWireLevelConformance(
+            WssNormalizedStimulationScenario scenario)
         {
             string fixtureDirectory = CreateFixtureDirectory(out string coreConfigPath, out string stimConfigPath);
             var transport = new EmulatedWssTransport();
@@ -56,9 +58,9 @@ namespace WSS.Core.Tests
                 await InitializeAndValidateAsync(layer, transport);
                 var baseline = transport.Conformance.CaptureStimulationBaseline();
 
-                layer.StimulateNormalized(1, normalized);
+                layer.StimulateNormalized(scenario.Channel, scenario.Input);
 
-                var result = await WaitForConformanceAsync(layer, transport, baseline, expectedPulseWidth);
+                var result = await WaitForConformanceAsync(layer, transport, baseline, scenario.Expectation);
                 Assert.That(result.Passed, Is.True, string.Join(Environment.NewLine, result.Failures));
             }
             finally
@@ -68,6 +70,21 @@ namespace WSS.Core.Tests
                 DeleteFixtureDirectory(fixtureDirectory);
             }
         }
+
+        [Test]
+        public void NormalizedCaseSourceEnumeratesSharedCatalog()
+        {
+            var sourcedScenarios = NormalizedStimulationCases
+                .Select(testCase => testCase.Arguments.Single())
+                .Cast<WssNormalizedStimulationScenario>()
+                .ToArray();
+
+            Assert.That(sourcedScenarios, Is.EqualTo(WssBehaviorScenarios.NormalizedStimulation));
+        }
+
+        private static IEnumerable<TestCaseData> NormalizedStimulationCases =>
+            WssBehaviorScenarios.NormalizedStimulation.Select(scenario =>
+                new TestCaseData(scenario).SetName(scenario.Id));
 
         private static WssStimulationCore CreateCore(EmulatedWssTransport transport, string coreConfigPath)
         {
@@ -110,15 +127,8 @@ namespace WSS.Core.Tests
             IStimulationCore core,
             EmulatedWssTransport transport,
             WssStimulationBaseline baseline,
-            int pulseWidth)
+            WssStimulationExpectation expectation)
         {
-            var expectation = new WssStimulationExpectation(
-                0x81,
-                1,
-                4,
-                pulseWidth,
-                13,
-                (byte)WSSMessageIDs.StreamChangeAll);
             StimulationConformanceResult result = null;
             for (int i = 0; i < 1000; i++)
             {
@@ -134,20 +144,28 @@ namespace WSS.Core.Tests
 
         private static string CreateFixtureDirectory(out string coreConfigPath, out string stimConfigPath)
         {
+            var profile = WssBehaviorScenarios.StimulationFixture;
             string directory = Path.Combine(Path.GetTempPath(), $"wss-stimulation-{Guid.NewGuid():N}");
             Directory.CreateDirectory(directory);
             coreConfigPath = Path.Combine(directory, "stimConfig.json");
             stimConfigPath = Path.Combine(directory, "stimParams.json");
 
-            // This custom linear segment makes the hardware PA equal to mA: ((amp - 1) / 1) + 1.
             File.WriteAllText(coreConfigPath,
-                "{\"maxWSS\":1,\"firmware\":\"J03\",\"broadcastTarget\":\"0x8F\"," +
-                "\"wssTargets\":[\"0x81\",\"0x82\",\"0x83\"],\"useConfigAmpCurves\":true," +
-                "\"ampCurves\":[{\"LowThreshold\":0.0,\"LowConst\":1.0,\"ExpPower\":1.0," +
-                "\"LinearOffset\":-1.0,\"LinearSlope\":1.0}]}");
+                $"{{\"maxWSS\":1,\"firmware\":\"J03\",\"broadcastTarget\":\"0x8F\"," +
+                $"\"wssTargets\":[\"0x81\",\"0x82\",\"0x83\"],\"useConfigAmpCurves\":true," +
+                $"\"ampCurves\":[{{\"LowThreshold\":{profile.CurveLowThreshold.ToString(CultureInfo.InvariantCulture)}," +
+                $"\"LowConst\":{profile.CurveLowConstant.ToString(CultureInfo.InvariantCulture)}," +
+                $"\"ExpPower\":{profile.CurveExponent.ToString(CultureInfo.InvariantCulture)}," +
+                $"\"LinearOffset\":{profile.CurveLinearOffset.ToString(CultureInfo.InvariantCulture)}," +
+                $"\"LinearSlope\":{profile.CurveLinearSlope.ToString(CultureInfo.InvariantCulture)}" +
+                "}]}");
             File.WriteAllText(stimConfigPath,
-                "{\"stim\":{\"ch\":{\"1\":{\"ampMode\":\"PW\",\"minPW\":21,\"maxPW\":221," +
-                "\"minPA\":0.0,\"maxPA\":0.0,\"defaultPA\":4.0,\"defaultPW\":50,\"IPI\":13}}}}");
+                $"{{\"stim\":{{\"ch\":{{\"1\":{{\"ampMode\":\"{profile.AmplitudeMode}\"," +
+                $"\"minPW\":{profile.MinimumPulseWidth},\"maxPW\":{profile.MaximumPulseWidth}," +
+                $"\"minPA\":0.0,\"maxPA\":0.0," +
+                $"\"defaultPA\":{profile.DefaultAmplitudeMa.ToString(CultureInfo.InvariantCulture)}," +
+                $"\"defaultPW\":50,\"IPI\":{profile.InterPulseInterval}" +
+                "}}}}");
             return directory;
         }
 
