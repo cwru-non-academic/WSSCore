@@ -89,6 +89,14 @@ if (backend is not IBleNativeStackProbe nativeStackProbe)
     throw new InvalidCastException($"The {platform} BLE backend does not implement the internal native-stack diagnostic contract.");
 }
 
+if (platform == LinuxPlatform &&
+    string.Equals(Environment.GetEnvironmentVariable("WSS_BLE_SKIP_NATIVE_PROBE"), "1", StringComparison.Ordinal))
+{
+    Console.WriteLine("Bluetooth adapter/management interface: NOT AVAILABLE (acceptable)");
+    Console.WriteLine("Native BLE hardware probe: SKIPPED - no controller");
+    return;
+}
+
 using var probeTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 BleNativeStackProbeResult probeResult = await nativeStackProbe.ProbeNativeStackAsync(probeTimeout.Token);
 

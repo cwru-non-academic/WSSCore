@@ -107,6 +107,7 @@ jobs:
       - artifacts
       - core-conformance
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
@@ -115,7 +116,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
-      - name: Install and start BlueZ
+      - name: Install and verify BlueZ
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -123,13 +124,50 @@ jobs:
 
           sudo apt-get update
           sudo apt-get install --yes bluez
+
+          bluetoothd="$(command -v bluetoothd || true)"
+          if [[ -z "$bluetoothd" ]]; then
+            bluetoothd=/usr/libexec/bluetooth/bluetoothd
+          fi
+
+          if [[ ! -x "$bluetoothd" ]]; then
+            echo "BlueZ bluetoothd executable was not found or is not executable: $bluetoothd" >&2
+            exit 1
+          fi
+
+          "$bluetoothd" --version
+          echo "BlueZ runtime: PASS"
+
+          busctl --system --no-pager list >/dev/null
+          echo "System D-Bus: PASS"
+
+          set +e
+          btmgmt_output="$(sudo btmgmt info 2>&1)"
+          btmgmt_status=$?
+          set -e
+          printf '%s\n' "$btmgmt_output"
+
+          if (( btmgmt_status == 0 )) && [[ "$btmgmt_output" == "Index list with 0 items" ]]; then
+            echo "WSS_BLE_SKIP_NATIVE_PROBE=1" >> "$GITHUB_ENV"
+            echo "No Bluetooth controller is exposed by the hosted runner."
+            exit 0
+          fi
+
+          if (( btmgmt_status != 0 )); then
+            if [[ "$btmgmt_output" == "Unable to open management socket" ||
+                  "$btmgmt_output" == "Unable to send index_list cmd" ]]; then
+              echo "WSS_BLE_SKIP_NATIVE_PROBE=1" >> "$GITHUB_ENV"
+              echo "No Bluetooth management interface is exposed by the hosted runner."
+              exit 0
+            fi
+
+            echo "Unexpected btmgmt failure." >&2
+            exit "$btmgmt_status"
+          fi
+
           sudo systemctl start bluetooth.service || true
 
           if ! busctl --system --no-pager status org.bluez >/dev/null 2>&1; then
-            bluetoothd="$(command -v bluetoothd || true)"
-            if [[ -z "$bluetoothd" ]]; then
-              bluetoothd=/usr/libexec/bluetooth/bluetoothd
-            fi
 
             sudo nohup "$bluetoothd" --nodetach >"$RUNNER_TEMP/bluetoothd.log" 2>&1 &
 
