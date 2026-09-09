@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows10.0.19041</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>WSS.Transport.BLE.Windows</AssemblyName>
+    <RootNamespace>WSS.Transport.BLE.Windows</RootNamespace>
+    <Platforms>AnyCPU</Platforms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../WSS.Transport.BLE/WSS.Transport.BLE.csproj" />
+  </ItemGroup>
+
+  <Target Name="CopyWindowsBackendToFacadeOutput" AfterTargets="Build">
+    <PropertyGroup>
+      <FacadeBackendDirectory>../WSS.Transport.BLE/bin/$(Configuration)/net9.0/backends/windows</FacadeBackendDirectory>
+    </PropertyGroup>
+    <MakeDir Directories="$(FacadeBackendDirectory)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(FacadeBackendDirectory)" />
+  </Target>
+</Project>

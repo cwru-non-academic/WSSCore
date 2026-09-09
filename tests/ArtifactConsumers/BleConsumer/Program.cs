@@ -1,14 +1,28 @@
 using System.Reflection;
+using System.Runtime.Loader;
 using Wss.Transports;
+using Wss.Transports.Backends;
 
-foreach (var assemblyName in new[] { "WSS.Transport.BLE", "InTheHand.BluetoothLE", "Linux.Bluetooth", "Tmds.DBus" })
-{
-    _ = Assembly.Load(assemblyName);
-}
+_ = Assembly.Load("WSS.Transport.BLE");
 
 var options = new BleNusTransportOptions { DeviceName = "WssConsumerSmokeDevice" };
-using var transport = new BleNusTransport(options);
-if (transport.IsConnected || options.ServiceUuid == Guid.Empty)
+using var backend = BleBackendLoader.CreateBackendForPlatform(options, "linux");
+
+Assembly backendAssembly = AppDomain.CurrentDomain.GetAssemblies()
+    .Single(assembly => assembly.GetName().Name == "WSS.Transport.BLE.Linux");
+Assembly facadeAssembly = typeof(BleNusTransport).Assembly;
+AssemblyLoadContext backendLoadContext = AssemblyLoadContext.GetLoadContext(backendAssembly)
+    ?? throw new InvalidOperationException("Linux BLE backend has no load context.");
+Assembly linuxBluetoothAssembly = backendLoadContext.LoadFromAssemblyName(new AssemblyName("Linux.Bluetooth"));
+Assembly dbusAssembly = backendLoadContext.LoadFromAssemblyName(new AssemblyName("Tmds.DBus"));
+
+if (backend.IsConnected || options.ServiceUuid == Guid.Empty ||
+    ReferenceEquals(backendLoadContext, AssemblyLoadContext.Default) ||
+    backendLoadContext.IsCollectible ||
+    AssemblyLoadContext.GetLoadContext(facadeAssembly) != AssemblyLoadContext.Default ||
+    backendLoadContext.Assemblies.Any(assembly => assembly.GetName().Name == "WSS.Transport.BLE") ||
+    AssemblyLoadContext.GetLoadContext(linuxBluetoothAssembly) != backendLoadContext ||
+    AssemblyLoadContext.GetLoadContext(dbusAssembly) != backendLoadContext)
 {
     throw new InvalidOperationException("BLE transport smoke check failed.");
 }

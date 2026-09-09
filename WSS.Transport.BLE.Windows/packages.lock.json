@@ -1,16 +1,7 @@
 {
   "version": 1,
   "dependencies": {
-    "net9.0": {
-      "System.IO.Ports": {
-        "type": "Direct",
-        "requested": "[9.0.0, )",
-        "resolved": "9.0.0",
-        "contentHash": "NfEWew48r4MxHUnOQL7nw/5JBsz9dli8TJYpXjsAQu8tHH0QCq2ly4QMCc8wS9EAi1jvaFgq7ELdfwxvrKWALQ==",
-        "dependencies": {
-          "runtime.native.System.IO.Ports": "9.0.0"
-        }
-      },
+    "net9.0-windows10.0.19041": {
       "Microsoft.Win32.SystemEvents": {
         "type": "Transitive",
         "resolved": "6.0.0",
@@ -137,6 +128,14 @@
           "Microsoft.Win32.SystemEvents": "6.0.0"
         }
       },
+      "System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.0",
+        "contentHash": "NfEWew48r4MxHUnOQL7nw/5JBsz9dli8TJYpXjsAQu8tHH0QCq2ly4QMCc8wS9EAi1jvaFgq7ELdfwxvrKWALQ==",
+        "dependencies": {
+          "runtime.native.System.IO.Ports": "9.0.0"
+        }
+      },
       "System.Memory": {
         "type": "Transitive",
         "resolved": "4.5.5",
@@ -172,6 +171,13 @@
         "contentHash": "IXoJOXIqc39AIe+CIR7koBtRGMiCt/LPM3lI+PELtDIy9XdyeSrwXFdWV9dzJ2Awl0paLWUaknLxFQ5HpHZUog==",
         "dependencies": {
           "System.Drawing.Common": "6.0.0"
+        }
+      },
+      "wss.transport.ble": {
+        "type": "Project",
+        "dependencies": {
+          "System.IO.Ports": "[9.0.0, )",
+          "WSS_Core_Interface": "[1.0.0, )"
         }
       },
       "wss_core_interface": {

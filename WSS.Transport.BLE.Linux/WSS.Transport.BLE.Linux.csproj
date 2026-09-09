@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>WSS.Transport.BLE.Linux</AssemblyName>
+    <RootNamespace>WSS.Transport.BLE.Linux</RootNamespace>
+    <Platforms>AnyCPU</Platforms>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../WSS.Transport.BLE/WSS.Transport.BLE.csproj" />
+    <ProjectReference Include="../WSS_Core_Interface.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Linux.Bluetooth" Version="5.67.1" />
+  </ItemGroup>
+
+  <Target Name="CopyLinuxBackendToFacadeOutput" AfterTargets="Build">
+    <PropertyGroup>
+      <FacadeBackendDirectory>../WSS.Transport.BLE/bin/$(Configuration)/net9.0/backends/linux</FacadeBackendDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <LinuxBackendFile Include="$(TargetPath)" />
+      <LinuxBackendFile Include="$(TargetDir)Linux.Bluetooth.dll" />
+      <LinuxBackendFile Include="$(TargetDir)Tmds.DBus.dll" />
+    </ItemGroup>
+    <MakeDir Directories="$(FacadeBackendDirectory)" />
+    <Copy SourceFiles="@(LinuxBackendFile)" DestinationFolder="$(FacadeBackendDirectory)" />
+  </Target>
+</Project>
