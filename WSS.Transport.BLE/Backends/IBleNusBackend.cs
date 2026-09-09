@@ -22,6 +22,17 @@ internal interface IBleNusBackendFactory
     IBleNusBackend Create(BleNusTransportOptions options);
 }
 
+internal interface IBleNativeStackProbe
+{
+    Task<BleNativeStackProbeResult> ProbeNativeStackAsync(CancellationToken cancellationToken);
+}
+
+internal enum BleNativeStackProbeResult
+{
+    StackAvailable,
+    AdapterUnavailable
+}
+
 internal sealed record BleCandidate(
     string Id,
     string? Name,

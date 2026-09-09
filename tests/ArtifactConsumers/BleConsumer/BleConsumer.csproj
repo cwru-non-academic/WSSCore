@@ -9,6 +9,9 @@
   <ItemGroup>
     <ArtifactDependency Include="WSS.Transport.BLE.dll" />
     <ArtifactDependency Include="WSS_Core_Interface.dll" />
+    <ArtifactDependency Include="backends/windows/WSS.Transport.BLE.Windows.dll" />
+    <ArtifactDependency Include="backends/windows/Microsoft.Windows.SDK.NET.dll" />
+    <ArtifactDependency Include="backends/windows/WinRT.Runtime.dll" />
     <ArtifactDependency Include="backends/linux/WSS.Transport.BLE.Linux.dll" />
     <ArtifactDependency Include="backends/linux/Linux.Bluetooth.dll" />
     <ArtifactDependency Include="backends/linux/Tmds.DBus.dll" />

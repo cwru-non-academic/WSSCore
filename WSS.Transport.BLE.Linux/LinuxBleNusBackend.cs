@@ -7,7 +7,7 @@ using LinuxGattCharacteristicValueEventArgs = Linux.Bluetooth.GattCharacteristic
 
 namespace Wss.Transports.Backends.Linux;
 
-internal sealed class LinuxBleNusBackend : IBleNusBackend
+internal sealed class LinuxBleNusBackend : IBleNusBackend, IBleNativeStackProbe
 {
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(10);
 
@@ -37,6 +37,17 @@ internal sealed class LinuxBleNusBackend : IBleNusBackend
     }
 
     public event Action<byte[]>? BytesReceived;
+
+    async Task<BleNativeStackProbeResult> IBleNativeStackProbe.ProbeNativeStackAsync(
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+
+        Adapter? adapter = await GetFirstAdapterAsync(cancellationToken).ConfigureAwait(false);
+        return adapter == null
+            ? BleNativeStackProbeResult.AdapterUnavailable
+            : BleNativeStackProbeResult.StackAvailable;
+    }
 
     public async Task<IReadOnlyList<BleCandidate>> DiscoverAsync(
         BleDiscoveryRequest request,
@@ -195,9 +206,12 @@ internal sealed class LinuxBleNusBackend : IBleNusBackend
 
     private static async Task<Adapter> GetAdapterAsync(CancellationToken cancellationToken)
     {
-        Adapter? adapter = (await BlueZManager.GetAdaptersAsync().WaitAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault();
+        Adapter? adapter = await GetFirstAdapterAsync(cancellationToken).ConfigureAwait(false);
         return adapter ?? throw new InvalidOperationException("No Linux Bluetooth adapter is available.");
     }
+
+    private static async Task<Adapter?> GetFirstAdapterAsync(CancellationToken cancellationToken) =>
+        (await BlueZManager.GetAdaptersAsync().WaitAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault();
 
     private static async Task<LinuxDevice?> FindDeviceByIdAsync(
         Adapter adapter,

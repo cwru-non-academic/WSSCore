@@ -7,7 +7,7 @@ using Wss.CoreModule;
 
 namespace Wss.Transports.Backends.Windows;
 
-internal sealed class WindowsBleNusBackend : IBleNusBackend
+internal sealed class WindowsBleNusBackend : IBleNusBackend, IBleNativeStackProbe
 {
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(10);
 
@@ -40,6 +40,22 @@ internal sealed class WindowsBleNusBackend : IBleNusBackend
     }
 
     public event Action<byte[]>? BytesReceived;
+
+    async Task<BleNativeStackProbeResult> IBleNativeStackProbe.ProbeNativeStackAsync(
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+
+        (_, BluetoothError error) = await RunAdvertisementWatcherAsync(
+            TimeSpan.FromMilliseconds(500), cancellationToken).ConfigureAwait(false);
+
+        return error switch
+        {
+            BluetoothError.Success => BleNativeStackProbeResult.StackAvailable,
+            BluetoothError.RadioNotAvailable => BleNativeStackProbeResult.AdapterUnavailable,
+            _ => throw CreateWatcherStoppedException(error)
+        };
+    }
 
     public async Task<IReadOnlyList<BleCandidate>> DiscoverAsync(
         BleDiscoveryRequest request,
@@ -276,9 +292,26 @@ internal sealed class WindowsBleNusBackend : IBleNusBackend
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        (IReadOnlyList<AdvertisementCandidate> candidates, BluetoothError error) =
+            await RunAdvertisementWatcherAsync(timeout, cancellationToken).ConfigureAwait(false);
+
+        if (error != BluetoothError.Success)
+        {
+            throw CreateWatcherStoppedException(error);
+        }
+
+        return candidates;
+    }
+
+    private static async Task<(IReadOnlyList<AdvertisementCandidate> Candidates, BluetoothError Error)>
+        RunAdvertisementWatcherAsync(
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+    {
         var candidates = new Dictionary<ulong, AdvertisementCandidate>();
         var candidatesGate = new object();
         var stopped = new TaskCompletionSource<BluetoothError>(TaskCreationOptions.RunContinuationsAsynchronously);
+        BluetoothError error = BluetoothError.Success;
         var watcher = new BluetoothLEAdvertisementWatcher
         {
             ScanningMode = BluetoothLEScanningMode.Active
@@ -319,11 +352,7 @@ internal sealed class WindowsBleNusBackend : IBleNusBackend
             Task completed = await Task.WhenAny(delay, stopped.Task).ConfigureAwait(false);
             if (completed == stopped.Task)
             {
-                BluetoothError error = await stopped.Task.ConfigureAwait(false);
-                if (error != BluetoothError.Success)
-                {
-                    throw new InvalidOperationException($"Windows BLE advertisement scanning stopped with error '{error}'.");
-                }
+                error = await stopped.Task.ConfigureAwait(false);
             }
             else
             {
@@ -348,9 +377,12 @@ internal sealed class WindowsBleNusBackend : IBleNusBackend
 
         lock (candidatesGate)
         {
-            return candidates.Values.ToArray();
+            return (candidates.Values.ToArray(), error);
         }
     }
+
+    private static InvalidOperationException CreateWatcherStoppedException(BluetoothError error) =>
+        new($"Windows BLE advertisement scanning stopped with error '{error}'.");
 
     private static async Task<BleCandidate?> TryResolveConfiguredIdAsync(
         string deviceId,
