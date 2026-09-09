@@ -154,10 +154,9 @@ jobs:
           fi
 
           if (( btmgmt_status != 0 )); then
-            if [[ "$btmgmt_output" == "Unable to open management socket" ||
-                  "$btmgmt_output" == "Unable to send index_list cmd" ]]; then
+            if [[ "$btmgmt_output" == *"Unable to open mgmt_socket"* ]]; then
               echo "WSS_BLE_SKIP_NATIVE_PROBE=1" >> "$GITHUB_ENV"
-              echo "No Bluetooth management interface is exposed by the hosted runner."
+              echo "Bluetooth management interface: NOT AVAILABLE (acceptable)"
               exit 0
             fi
 
