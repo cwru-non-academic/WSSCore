@@ -34,6 +34,7 @@ Thumbs.db
 /artifacts/core/
 /artifacts/serial/
 /artifacts/ble-linux-x64/
+/artifacts/ble-unified/
 
 # Build output from the artifact utility.
 /tools/ArtifactBuild/bin/

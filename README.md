@@ -70,6 +70,24 @@ dotnet build "WSS.Transport.BLE/WSS.Transport.BLE.csproj" -c Release --nologo
 
 The `.NET 9` transport project restores BLE-specific dependencies such as `InTheHand.BluetoothLE` and `Linux.Bluetooth`. If you deploy the built DLLs directly instead of consuming them through NuGet, copy the resolved dependency assemblies alongside `WSS.Transport.BLE.dll`.
 
+### Building all release artifacts
+
+From the repository root, rebuild, stage, and validate all supported release artifacts with:
+
+```bash
+dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- build-all
+```
+
+The command produces the manifest-defined distributions in:
+
+```text
+artifacts/core/
+artifacts/serial/
+artifacts/ble-unified/
+```
+
+Rerunning the command safely replaces only these three generated artifact directories before staging and validating them again.
+
 ## CI, testing, and release workflow
 
 GitHub Actions builds and validates the distributable WSS artifacts. Normal feature-branch pushes do not run the full workflow.
