@@ -27,77 +27,38 @@ jobs:
       - name: Run Core conformance
         run: dotnet test tests/WSS.Core.Tests/WSS.Core.Tests.csproj --configuration Release --no-restore --nologo
 
-  core:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
-      - name: Clean, restore, and build Core
-        run: |
-          rm -rf bin obj tools/ArtifactBuild/bin tools/ArtifactBuild/obj
-          dotnet restore WSS_Core_Interface.csproj --locked-mode --nologo
-          dotnet build WSS_Core_Interface.csproj -c Release --no-restore --nologo
-          dotnet restore tools/ArtifactBuild/ArtifactBuild.csproj --locked-mode --nologo
-          dotnet build tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-restore --nologo
-      - name: Stage and validate Core
-        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-build -- stage --manifest tools/ArtifactBuild/manifests/core.json --source bin/Release/netstandard2.0 --destination artifacts/core
-      - uses: actions/upload-artifact@v4
-        with:
-          name: core
-          path: artifacts/core
-          if-no-files-found: error
-
-  serial:
+  artifacts:
+    name: Build and validate artifacts
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
-      - name: Clean, restore, and build Serial net48
-        shell: pwsh
-        run: |
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue bin, obj, WSS.Transport.Serial/bin, WSS.Transport.Serial/obj, tools/ArtifactBuild/bin, tools/ArtifactBuild/obj
-          dotnet restore WSS.Transport.Serial/WSS.Transport.Serial.csproj --locked-mode --nologo
-          dotnet build WSS.Transport.Serial/WSS.Transport.Serial.csproj -c Release --no-restore --nologo
-          dotnet restore tools/ArtifactBuild/ArtifactBuild.csproj --locked-mode --nologo
-          dotnet build tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-restore --nologo
-      - name: Stage and validate Serial
-        shell: pwsh
-        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-build -- stage --manifest tools/ArtifactBuild/manifests/serial.json --source WSS.Transport.Serial/bin/Release/net48 --destination artifacts/serial
-      - uses: actions/upload-artifact@v4
+      - name: Build, stage, and validate all artifacts
+        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- build-all
+      - name: Upload Core artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: core
+          path: artifacts/core
+          if-no-files-found: error
+      - name: Upload Serial artifact
+        uses: actions/upload-artifact@v4
         with:
           name: serial
           path: artifacts/serial
           if-no-files-found: error
-
-  ble-linux-x64:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - name: Upload unified BLE artifact
+        uses: actions/upload-artifact@v4
         with:
-          dotnet-version: 9.0.x
-      - name: Clean, restore, and build BLE before Linux x64 staging
-        run: |
-          rm -rf bin obj WSS.Transport.BLE/bin WSS.Transport.BLE/obj tools/ArtifactBuild/bin tools/ArtifactBuild/obj
-          dotnet restore WSS.Transport.BLE/WSS.Transport.BLE.csproj --locked-mode --nologo
-          dotnet build WSS.Transport.BLE/WSS.Transport.BLE.csproj -c Release --no-restore --nologo
-          dotnet restore tools/ArtifactBuild/ArtifactBuild.csproj --locked-mode --nologo
-          dotnet build tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-restore --nologo
-      - name: Stage and validate BLE Linux x64
-        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -c Release --no-build -- stage --manifest tools/ArtifactBuild/manifests/ble-linux-x64.json --source WSS.Transport.BLE/bin/Release/net9.0 --destination artifacts/ble-linux-x64
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ble-linux-x64
-          path: artifacts/ble-linux-x64
+          name: ble-unified
+          path: artifacts/ble-unified
           if-no-files-found: error
 
   core-consumer:
     needs:
-      - core
+      - artifacts
       - core-conformance
     strategy:
       matrix:
@@ -120,7 +81,7 @@ jobs:
 
   serial-consumer:
     needs:
-      - serial
+      - artifacts
       - core-conformance
     strategy:
       matrix:
@@ -143,26 +104,98 @@ jobs:
 
   ble-consumer:
     needs:
-      - ble-linux-x64
+      - artifacts
       - core-conformance
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
+      - name: Install and verify BlueZ
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install --yes bluez
+
+          bluetoothd="$(command -v bluetoothd || true)"
+          if [[ -z "$bluetoothd" ]]; then
+            bluetoothd=/usr/libexec/bluetooth/bluetoothd
+          fi
+
+          if [[ ! -x "$bluetoothd" ]]; then
+            echo "BlueZ bluetoothd executable was not found or is not executable: $bluetoothd" >&2
+            exit 1
+          fi
+
+          "$bluetoothd" --version
+          echo "BlueZ runtime: PASS"
+
+          busctl --system --no-pager list >/dev/null
+          echo "System D-Bus: PASS"
+
+          set +e
+          btmgmt_output="$(sudo btmgmt info 2>&1)"
+          btmgmt_status=$?
+          set -e
+          printf '%s\n' "$btmgmt_output"
+
+          if (( btmgmt_status == 0 )) && [[ "$btmgmt_output" == "Index list with 0 items" ]]; then
+            echo "WSS_BLE_SKIP_NATIVE_PROBE=1" >> "$GITHUB_ENV"
+            echo "No Bluetooth controller is exposed by the hosted runner."
+            exit 0
+          fi
+
+          if (( btmgmt_status != 0 )); then
+            if [[ "$btmgmt_output" == *"Unable to open mgmt_socket"* ]]; then
+              echo "WSS_BLE_SKIP_NATIVE_PROBE=1" >> "$GITHUB_ENV"
+              echo "Bluetooth management interface: NOT AVAILABLE (acceptable)"
+              exit 0
+            fi
+
+            echo "Unexpected btmgmt failure." >&2
+            exit "$btmgmt_status"
+          fi
+
+          sudo systemctl start bluetooth.service || true
+
+          if ! busctl --system --no-pager status org.bluez >/dev/null 2>&1; then
+
+            sudo nohup "$bluetoothd" --nodetach >"$RUNNER_TEMP/bluetoothd.log" 2>&1 &
+
+            for _ in {1..20}; do
+              if busctl --system --no-pager status org.bluez >/dev/null 2>&1; then
+                break
+              fi
+              sleep 0.25
+            done
+          fi
+
+          if ! busctl --system --no-pager status org.bluez; then
+            cat "$RUNNER_TEMP/bluetoothd.log" 2>/dev/null || true
+            exit 1
+          fi
       - uses: actions/download-artifact@v4
         with:
-          name: ble-linux-x64
-          path: ${{ runner.temp }}/wss-ble-linux-x64
-      - name: Restore, build, and run BLE consumer
+          name: ble-unified
+          path: ${{ runner.temp }}/wss-ble-unified
+      - name: Restore, build, and run unified BLE consumer
         run: |
-          dotnet restore tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-linux-x64"
-          dotnet build tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-linux-x64"
-          dotnet run --project tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-linux-x64"
+          dotnet restore tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-unified"
+          dotnet build tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-unified"
+          dotnet run --project tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-unified"
 
   release:
     needs:
+      - core-conformance
+      - artifacts
       - core-consumer
       - serial-consumer
       - ble-consumer
@@ -183,11 +216,11 @@ jobs:
         with:
           name: serial
           path: ${{ runner.temp }}/release-input/serial
-      - name: Download BLE Linux x64 artifact
+      - name: Download unified BLE artifact
         uses: actions/download-artifact@v4
         with:
-          name: ble-linux-x64
-          path: ${{ runner.temp }}/release-input/ble-linux-x64
+          name: ble-unified
+          path: ${{ runner.temp }}/release-input/ble-unified
       - name: Package release assets and checksums
         shell: bash
         run: |
@@ -205,8 +238,8 @@ jobs:
             zip -q -r "$assets/WSS-Serial-${TAG}.zip" .
           )
           (
-            cd "$RUNNER_TEMP/release-input/ble-linux-x64"
-            zip -q -r "$assets/WSS-BLE-Linux-x64-${TAG}.zip" .
+            cd "$RUNNER_TEMP/release-input/ble-unified"
+            zip -q -r "$assets/WSS-BLE-Unified-${TAG}.zip" .
           )
 
           (
@@ -214,7 +247,7 @@ jobs:
             sha256sum \
               "WSS-Core-${TAG}.zip" \
               "WSS-Serial-${TAG}.zip" \
-              "WSS-BLE-Linux-x64-${TAG}.zip" \
+              "WSS-BLE-Unified-${TAG}.zip" \
               > SHA256SUMS.txt
           )
       - name: Create GitHub Release
@@ -235,7 +268,7 @@ jobs:
           gh release create "$TAG" \
             "WSS-Core-${TAG}.zip" \
             "WSS-Serial-${TAG}.zip" \
-            "WSS-BLE-Linux-x64-${TAG}.zip" \
+            "WSS-BLE-Unified-${TAG}.zip" \
             SHA256SUMS.txt \
             --verify-tag \
             --generate-notes \

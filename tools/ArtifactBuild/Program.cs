@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
@@ -37,11 +38,17 @@ internal static class Program
     {
         try
         {
+            if (args.Length == 1 && args[0] == "build-all")
+            {
+                BuildAll();
+                return 0;
+            }
+
             if (args.Length == 0 || (args[0] != "stage" && args[0] != "validate" && args[0] != "describe") ||
                 (args[0] == "stage" && args.Length != 7) ||
                 ((args[0] == "validate" || args[0] == "describe") && args.Length != 5))
             {
-                throw new ArgumentException("Usage: ArtifactBuild stage|validate|describe --manifest <path> --source|--package <path>.");
+                throw new ArgumentException("Usage: ArtifactBuild build-all | stage|validate|describe --manifest <path> --source|--package <path>.");
             }
 
             var manifest = ReadManifest(args[2]);
@@ -80,6 +87,98 @@ internal static class Program
         {
             Console.Error.WriteLine("ArtifactBuild: " + exception.Message);
             return 1;
+        }
+    }
+
+    private static void BuildAll()
+    {
+        var repositoryRoot = Directory.GetCurrentDirectory();
+        var projects = new[]
+        {
+            "WSS_Core_Interface.csproj",
+            "WSS.Transport.Serial/WSS.Transport.Serial.csproj",
+            "WSS.Transport.BLE/WSS.Transport.BLE.csproj",
+            "WSS.Transport.BLE.Windows/WSS.Transport.BLE.Windows.csproj",
+            "WSS.Transport.BLE.Linux/WSS.Transport.BLE.Linux.csproj"
+        };
+        var artifacts = new[]
+        {
+            new ArtifactDefinition("Core", "tools/ArtifactBuild/manifests/core.json",
+                "bin/Release/netstandard2.0", "artifacts/core"),
+            new ArtifactDefinition("Serial", "tools/ArtifactBuild/manifests/serial.json",
+                "WSS.Transport.Serial/bin/Release/net48", "artifacts/serial"),
+            new ArtifactDefinition("Unified Serial + BLE", "tools/ArtifactBuild/manifests/ble-unified.json",
+                "WSS.Transport.BLE/bin/Release/net9.0", "artifacts/ble-unified")
+        };
+
+        foreach (var requiredPath in projects.Concat(artifacts.Select(artifact => artifact.ManifestPath)))
+        {
+            if (!File.Exists(Path.Combine(repositoryRoot, requiredPath)))
+            {
+                throw new FileNotFoundException("Required build input was not found. Run build-all from the WSSCore repository root.", requiredPath);
+            }
+        }
+
+        RunBuild(repositoryRoot, projects[0]);
+        RunBuild(repositoryRoot, projects[1], "--no-dependencies");
+        RunBuild(repositoryRoot, projects[2], "--no-dependencies");
+        RunBuild(repositoryRoot, projects[3], "--no-dependencies", "-p:EnableWindowsTargeting=true");
+        RunBuild(repositoryRoot, projects[4], "--no-dependencies");
+
+        foreach (var artifact in artifacts)
+        {
+            var destination = Path.Combine(repositoryRoot, artifact.DestinationPath);
+            if (Directory.Exists(destination))
+            {
+                Directory.Delete(destination, recursive: true);
+            }
+        }
+
+        foreach (var artifact in artifacts)
+        {
+            var manifest = ReadManifest(Path.Combine(repositoryRoot, artifact.ManifestPath));
+            var source = Path.Combine(repositoryRoot, artifact.SourcePath);
+            var destination = Path.Combine(repositoryRoot, artifact.DestinationPath);
+            Stage(manifest, source, destination);
+            Validate(manifest, destination);
+            Console.WriteLine(artifact.Name + " validation: PASS");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("All WSS artifacts built successfully.");
+        Console.WriteLine();
+        foreach (var artifact in artifacts)
+        {
+            Console.WriteLine(artifact.Name + ":");
+            Console.WriteLine("  " + artifact.DestinationPath);
+            Console.WriteLine();
+        }
+    }
+
+    private static void RunBuild(string repositoryRoot, string projectPath, params string[] additionalArguments)
+    {
+        Console.WriteLine("Building " + projectPath + " (Release)...");
+        var startInfo = new ProcessStartInfo("dotnet")
+        {
+            WorkingDirectory = repositoryRoot,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add("build");
+        startInfo.ArgumentList.Add(projectPath);
+        startInfo.ArgumentList.Add("--configuration");
+        startInfo.ArgumentList.Add("Release");
+        startInfo.ArgumentList.Add("--nologo");
+        foreach (var argument in additionalArguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Could not start dotnet build for " + projectPath + ".");
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException("dotnet build failed for " + projectPath + " with exit code " + process.ExitCode + ".");
         }
     }
 
@@ -288,6 +387,8 @@ internal static class Program
     }
 
     private static string Normalize(string path) => path.Replace('\\', '/');
+
+    private sealed record ArtifactDefinition(string Name, string ManifestPath, string SourcePath, string DestinationPath);
 
     private sealed record AssemblyInfo(string Name, string Version, string Culture, string PublicKeyToken,
         string TargetFramework, HashSet<string> References);

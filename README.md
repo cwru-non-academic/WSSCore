@@ -68,7 +68,25 @@ dotnet build "WSS.Transport.Serial/WSS.Transport.Serial.csproj" -c Release --nol
 dotnet build "WSS.Transport.BLE/WSS.Transport.BLE.csproj" -c Release --nologo
 ```
 
-The `.NET 9` transport project restores BLE-specific dependencies such as `InTheHand.BluetoothLE` and `Linux.Bluetooth`. If you deploy the built DLLs directly instead of consuming them through NuGet, copy the resolved dependency assemblies alongside `WSS.Transport.BLE.dll`.
+The unified `.NET 9` BLE artifact includes the direct Windows WinRT and Linux BlueZ backends with their platform-local dependencies under `backends/windows` and `backends/linux`.
+
+### Building all release artifacts
+
+From the repository root, rebuild, stage, and validate all supported release artifacts with:
+
+```bash
+dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- build-all
+```
+
+The command produces the manifest-defined distributions in:
+
+```text
+artifacts/core/
+artifacts/serial/
+artifacts/ble-unified/
+```
+
+Rerunning the command safely replaces only these three generated artifact directories before staging and validating them again.
 
 ## CI, testing, and release workflow
 
@@ -94,7 +112,7 @@ The current consumer matrix is:
 | --- | --- | --- | --- |
 | Core | Yes | Yes | Yes |
 | Serial | Yes | Yes | Yes |
-| BLE Linux x64 | — | Yes | — |
+| BLE unified | Yes | Yes | — |
 
 A pull request should not be merged until its required artifact and consumer jobs pass.
 
@@ -124,7 +142,7 @@ Release assets are:
 ```text
 WSS-Core-<TAG>.zip
 WSS-Serial-<TAG>.zip
-WSS-BLE-Linux-x64-<TAG>.zip
+WSS-BLE-Unified-<TAG>.zip
 SHA256SUMS.txt
 ```
 
@@ -133,7 +151,7 @@ For example:
 ```text
 WSS-Core-v0.3.0-rc.4.zip
 WSS-Serial-v0.3.0-rc.4.zip
-WSS-BLE-Linux-x64-v0.3.0-rc.4.zip
+WSS-BLE-Unified-v0.3.0-rc.4.zip
 SHA256SUMS.txt
 ```
 

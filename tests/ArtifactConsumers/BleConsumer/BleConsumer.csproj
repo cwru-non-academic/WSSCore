@@ -9,9 +9,12 @@
   <ItemGroup>
     <ArtifactDependency Include="WSS.Transport.BLE.dll" />
     <ArtifactDependency Include="WSS_Core_Interface.dll" />
-    <ArtifactDependency Include="InTheHand.BluetoothLE.dll" />
-    <ArtifactDependency Include="Linux.Bluetooth.dll" />
-    <ArtifactDependency Include="Tmds.DBus.dll" />
+    <ArtifactDependency Include="backends/windows/WSS.Transport.BLE.Windows.dll" />
+    <ArtifactDependency Include="backends/windows/Microsoft.Windows.SDK.NET.dll" />
+    <ArtifactDependency Include="backends/windows/WinRT.Runtime.dll" />
+    <ArtifactDependency Include="backends/linux/WSS.Transport.BLE.Linux.dll" />
+    <ArtifactDependency Include="backends/linux/Linux.Bluetooth.dll" />
+    <ArtifactDependency Include="backends/linux/Tmds.DBus.dll" />
     <ArtifactDependency Include="Newtonsoft.Json.dll" />
     <ArtifactDependency Include="System.IO.Ports.dll" />
     <ArtifactDependency Include="System.Security.Permissions.dll" />
@@ -23,9 +26,6 @@
   <ItemGroup>
     <Reference Include="WSS.Transport.BLE"><HintPath>$(WSS_ARTIFACT_DIR)/WSS.Transport.BLE.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="WSS_Core_Interface"><HintPath>$(WSS_ARTIFACT_DIR)/WSS_Core_Interface.dll</HintPath><Private>true</Private></Reference>
-    <Reference Include="InTheHand.BluetoothLE"><HintPath>$(WSS_ARTIFACT_DIR)/InTheHand.BluetoothLE.dll</HintPath><Private>true</Private></Reference>
-    <Reference Include="Linux.Bluetooth"><HintPath>$(WSS_ARTIFACT_DIR)/Linux.Bluetooth.dll</HintPath><Private>true</Private></Reference>
-    <Reference Include="Tmds.DBus"><HintPath>$(WSS_ARTIFACT_DIR)/Tmds.DBus.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>$(WSS_ARTIFACT_DIR)/Newtonsoft.Json.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="System.IO.Ports"><HintPath>$(WSS_ARTIFACT_DIR)/System.IO.Ports.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="System.Security.Permissions"><HintPath>$(WSS_ARTIFACT_DIR)/System.Security.Permissions.dll</HintPath><Private>true</Private></Reference>
@@ -36,6 +36,7 @@
 
   <ItemGroup>
     <None Include="$(WSS_ARTIFACT_DIR)/runtimes/**" Link="runtimes/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(WSS_ARTIFACT_DIR)/backends/**" Link="backends/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Target Name="ValidateWssArtifact" BeforeTargets="Build">
