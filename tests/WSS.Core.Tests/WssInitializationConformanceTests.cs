@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Wss.CoreModule;
@@ -510,6 +511,132 @@ namespace WSS.Core.Tests
         }
 
         [Test]
+        public async Task RealCoreStopStimFromStartedWithActiveStreamLeavesStreamingStopped()
+        {
+            var scenario = WssBehaviorScenarios.StopStimulation;
+            string configPath = CreateCoreConfigPath();
+            var transport = new EmulatedWssTransport();
+            WssStimulationCore core = null;
+            try
+            {
+                core = CreateCore(transport, configPath);
+                core.Initialize();
+
+                for (int i = 0; i < 2000 && !core.Ready(); i++)
+                {
+                    core.Tick();
+                    await Task.Delay(1);
+                }
+
+                Assert.That(core.Ready(), Is.True,
+                    "Core did not reach Ready within the finite tick limit.");
+
+                long readySequence = transport.Conformance.MessageHistory.LastOrDefault()?.SequenceNumber ?? 0;
+                WssMessageObservation[] streamsWhileReady = Array.Empty<WssMessageObservation>();
+                for (int i = 0; i < 2000; i++)
+                {
+                    streamsWhileReady = transport.Conformance.MessageHistory
+                        .Where(item => item.SequenceNumber > readySequence && IsStream(item))
+                        .Take(2)
+                        .ToArray();
+                    if (streamsWhileReady.Length == 2)
+                        break;
+                    await Task.Delay(1);
+                }
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(core.Ready(), Is.True,
+                        "Core left Ready while observing the independently running stream task.");
+                    Assert.That(streamsWhileReady, Has.Length.EqualTo(2),
+                        "The background stream task did not emit multiple packets without additional Core ticks.");
+                });
+
+                // This is the only Tick after Ready: Ready -> Started. Deliberately do not Tick Started -> Streaming.
+                core.Tick();
+
+                object stateBeforeStop = GetPrivateField<object>(core, "_state");
+                Task activeStreamTask = GetPrivateField<Task>(core, "_streamTask");
+                Assert.Multiple(() =>
+                {
+                    Assert.That(stateBeforeStop.ToString(), Is.EqualTo("Started"),
+                        "The regression must issue Stop from the transient Started state.");
+                    Assert.That(activeStreamTask, Is.Not.Null,
+                        "The regression requires an existing private stream task.");
+                    Assert.That(activeStreamTask?.IsCompleted, Is.False,
+                        "The regression requires the private stream task to still be active.");
+                });
+
+                long lastPreStopSequence = streamsWhileReady[streamsWhileReady.Length - 1].SequenceNumber;
+                core.StopStim((WssTarget)scenario.Target);
+
+                WssMessageObservation stop = null;
+                long? stopCompletedSequence = null;
+                for (int i = 0; i < 2000; i++)
+                {
+                    core.Tick();
+                    var history = transport.Conformance.MessageHistory;
+                    stop = history.FirstOrDefault(item =>
+                        item.SequenceNumber > lastPreStopSequence &&
+                        item.Target == scenario.Target &&
+                        item.MessageId == scenario.ExpectedMessageId &&
+                        PayloadEquals(item, scenario.ExpectedMessageId, 0x01, scenario.ExpectedOperationValue));
+                    if (stop != null && core.Ready())
+                    {
+                        stopCompletedSequence = history[history.Count - 1].SequenceNumber;
+                        break;
+                    }
+                    await Task.Delay(1);
+                }
+
+                Task streamTaskAtCompletion = GetPrivateField<Task>(core, "_streamTask");
+                bool remainedStopped = !core.Started();
+                for (int i = 0; i < 100; i++)
+                {
+                    core.Tick();
+                    remainedStopped &= !core.Started();
+                    await Task.Delay(1);
+                }
+
+                var streamsAfterCompletion = stopCompletedSequence.HasValue
+                    ? transport.Conformance.MessageHistory
+                        .Where(item => item.SequenceNumber > stopCompletedSequence.Value && IsStream(item))
+                        .ToArray()
+                    : Array.Empty<WssMessageObservation>();
+                Task finalStreamTask = GetPrivateField<Task>(core, "_streamTask");
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(stop, Is.Not.Null, "Core did not transmit StimulationSwitch STOP.");
+                    Assert.That(stopCompletedSequence, Is.Not.Null,
+                        "Core did not return to Ready after processing StopStim.");
+                    Assert.That(scenario.ResumeStreamingExpected, Is.False,
+                        "The shared StopStimulation scenario must remain authoritative for quiescence.");
+                    Assert.That(core.Ready(), Is.True, "Core did not remain Ready after stopping stimulation.");
+                    Assert.That(core.Started(), Is.False, "Core reported Started after Stop completed.");
+                    Assert.That(activeStreamTask.IsCompleted, Is.True,
+                        "The stream task active in Started state did not terminate.");
+                    Assert.That(streamTaskAtCompletion == null || streamTaskAtCompletion.IsCompleted, Is.True,
+                        "An active stream task remained at the completed Ready boundary.");
+                    Assert.That(finalStreamTask == null || finalStreamTask.IsCompleted, Is.True,
+                        "Streaming restarted after the completed Ready boundary.");
+                    Assert.That(streamsAfterCompletion, Is.Empty,
+                        "A StreamChange packet was generated after the completed Ready boundary.");
+                    Assert.That(remainedStopped, Is.True,
+                        "Core left its stopped state during the post-completion quiescence window.");
+                });
+            }
+            finally
+            {
+                core?.Dispose();
+                if (core == null)
+                    transport.Dispose();
+                if (File.Exists(configPath))
+                    File.Delete(configPath);
+            }
+        }
+
+        [Test]
         public async Task CreateEventBeforeModuleQueryFailsForKnownFreshCapableDevice()
         {
             using var transport = new EmulatedWssTransport();
@@ -612,6 +739,14 @@ namespace WSS.Core.Tests
 
         private static bool PayloadEquals(WssMessageObservation observation, params byte[] expected)
             => observation.Payload.SequenceEqual(expected);
+
+        private static T GetPrivateField<T>(WssStimulationCore core, string fieldName)
+        {
+            var field = typeof(WssStimulationCore).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+            if (field == null)
+                throw new InvalidOperationException($"Private field '{fieldName}' was not found.");
+            return (T)field.GetValue(core);
+        }
 
         private static string FormatObservations(WssMessageObservation[] observations)
             => observations.Length == 0

@@ -57,12 +57,19 @@ jobs:
           if-no-files-found: error
 
   core-consumer:
+    name: Core consumer (${{ matrix.platform }})
     needs:
       - artifacts
       - core-conformance
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            platform: Windows
+          - os: ubuntu-latest
+            platform: Ubuntu
+          - os: macos-latest
+            platform: macOS
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -80,12 +87,19 @@ jobs:
           dotnet run --project tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core"
 
   serial-consumer:
+    name: Serial consumer (${{ matrix.platform }})
     needs:
       - artifacts
       - core-conformance
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            platform: Windows
+          - os: ubuntu-latest
+            platform: Ubuntu
+          - os: macos-latest
+            platform: macOS
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -103,13 +117,18 @@ jobs:
           dotnet run --project tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-serial"
 
   ble-consumer:
+    name: BLE consumer (${{ matrix.platform }})
     needs:
       - artifacts
       - core-conformance
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            platform: Windows
+          - os: ubuntu-latest
+            platform: Ubuntu
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

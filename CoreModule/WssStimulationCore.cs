@@ -35,6 +35,8 @@ namespace Wss.CoreModule
         private readonly Dictionary<WssTarget, ModuleSettings> _unitSettings = new Dictionary<WssTarget, ModuleSettings>();
         private int _maxWSS = 1;
         private readonly SemaphoreSlim _setupGate = new(1, 1);
+        private readonly object _streamGate = new object();
+        private int _streamStopsInProgress;
 
         // ---- background tasks ----
         private CancellationTokenSource _streamCts;
@@ -145,46 +147,68 @@ namespace Wss.CoreModule
                     break;
 
                 case CoreState.SettingUp:
-                    // Start or keep the runner. If a pass finished but queue isn't empty (new steps arrived),
-                    // restart the runner to drain remaining work.
-                    if (_setupRunner == null)
+                    if (!_setupGate.Wait(0))
+                        break;
+                    try
                     {
-                        EnsureSetupRunner();
-                    }
-                    else if (_setupRunner.IsFaulted)
-                    {
-                        var root = _setupRunner.Exception?.GetBaseException().Message ?? "Unknown error";
-                        _setupRunner = null;
-                        if (++_currentSetupTries > _maxSetupTries)
+                        if (_state != CoreState.SettingUp || _streamStopsInProgress > 0)
+                            break;
+
+                        // Start or keep the runner. If a pass finished but queue isn't empty (new steps arrived),
+                        // restart the runner to drain remaining work.
+                        if (_setupRunner == null)
                         {
-                            Log.Error($"Setup failed: {root} (exceeded {_maxSetupTries} attempts)");
-                            _state = CoreState.Error;
+                            EnsureSetupRunner();
                         }
-                        else
+                        else if (_setupRunner.IsFaulted)
                         {
-                            Log.Warn($"Setup failed: {root}. Retrying {_currentSetupTries}/{_maxSetupTries}...");
+                            var root = _setupRunner.Exception?.GetBaseException().Message ?? "Unknown error";
+                            _setupRunner = null;
+                            if (++_currentSetupTries > _maxSetupTries)
+                            {
+                                Log.Error($"Setup failed: {root} (exceeded {_maxSetupTries} attempts)");
+                                _state = CoreState.Error;
+                            }
+                            else
+                            {
+                                Log.Warn($"Setup failed: {root}. Retrying {_currentSetupTries}/{_maxSetupTries}...");
+                            }
+                        }
+                        else if (_setupRunner.IsCompleted && !SetupQueueEmpty())
+                        {
+                            EnsureSetupRunner();
+                        }
+                        else if (_setupRunner.IsCompleted && SetupQueueEmpty())
+                        {
+                            _state = CoreState.Ready;
                         }
                     }
-                    else if (_setupRunner.IsCompleted && !SetupQueueEmpty())
-                    {
-                        EnsureSetupRunner();
-                    }
-                    else if (_setupRunner.IsCompleted && SetupQueueEmpty())
-                    {
-                        _state = CoreState.Ready;
-                    }
+                    finally { _setupGate.Release(); }
                     break;
 
                 case CoreState.Ready:
-                    if (_wss.Started)
+                    if (!_setupGate.Wait(0))
+                        break;
+                    try
                     {
-                        _state = CoreState.Started;
+                        if (_state == CoreState.Ready && _streamStopsInProgress == 0 && _wss.Started)
+                            _state = CoreState.Started;
                     }
+                    finally { _setupGate.Release(); }
                     break;
 
                 case CoreState.Started:
-                    StartStreamingInternal();
-                    _state = CoreState.Streaming;
+                    if (!_setupGate.Wait(0))
+                        break;
+                    try
+                    {
+                        if (_state == CoreState.Started && _streamStopsInProgress == 0)
+                        {
+                            StartStreamingInternal();
+                            _state = CoreState.Streaming;
+                        }
+                    }
+                    finally { _setupGate.Release(); }
                     break;
 
                 case CoreState.Streaming:
@@ -192,7 +216,7 @@ namespace Wss.CoreModule
                     break;
 
                 case CoreState.Error:
-                    StopStreamingInternal();
+                    StopStreamingInternal().GetAwaiter().GetResult();
                     SafeDisconnect();
                     break;
             }
@@ -201,7 +225,7 @@ namespace Wss.CoreModule
         /// <inheritdoc/>
         public void Shutdown()
         {
-            StopStreamingInternal();
+            StopStreamingInternal().GetAwaiter().GetResult();
             if (_wss != null)
             {
                 try { _wss.ZeroOutStim(); } catch { }
@@ -755,81 +779,125 @@ namespace Wss.CoreModule
         /// <summary>Background task that pushes streaming packets to each WSS at ~12ms cadence.</summary>
         private void StartStreamingInternal()
         {
-            if (_streamTask != null && !_streamTask.IsCompleted) return;
-            _streamCts = new CancellationTokenSource();
-            var tk = _streamCts.Token;
-
-            _streamTask = Task.Run(async () =>
+            lock (_streamGate)
             {
-                while (!tk.IsCancellationRequested)
+                if (_streamTask != null && !_streamTask.IsCompleted) return;
+                _streamCts = new CancellationTokenSource();
+                var tk = _streamCts.Token;
+                _streamTask = Task.Run(() => StreamLoopAsync(tk), tk);
+            }
+        }
+
+        /// <summary>Push streaming packets until cancellation is requested.</summary>
+        private async Task StreamLoopAsync(CancellationToken tk)
+        {
+            while (!tk.IsCancellationRequested)
+            {
+                for (int w = 1; w <= _maxWSS; w++)
                 {
-                    for (int w = 1; w <= _maxWSS; w++)
+                    int wIdx    = w - 1;
+                    int baseIdx = wIdx * 3;
+
+                    var target = IntToWssTarget(w);
+                    var amps = new[] {
+                        AmpTo255Convention(_chAmps[baseIdx + 0], target),
+                        AmpTo255Convention(_chAmps[baseIdx + 1], target),
+                        AmpTo255Convention(_chAmps[baseIdx + 2], target)
+                    };
+                    var pws = new[] {
+                        _chPWs[baseIdx + 0],
+                        _chPWs[baseIdx + 1],
+                        _chPWs[baseIdx + 2]
+                    };
+
+                    // Desired per-channel IPIs for this WSS (source of truth)
+                    var desiredIpis = new[] {
+                        _chIPIs[baseIdx + 0],
+                        _chIPIs[baseIdx + 1],
+                        _chIPIs[baseIdx + 2]
+                    };
+
+                    // Per-channel change memory, gated by per-WSS cooldown
+                    bool anyChanged =
+                        _lastIpiSentPerCh[baseIdx + 0] != desiredIpis[0] ||
+                        _lastIpiSentPerCh[baseIdx + 1] != desiredIpis[1] ||
+                        _lastIpiSentPerCh[baseIdx + 2] != desiredIpis[2];
+
+                    if (anyChanged)
                     {
-                        int wIdx    = w - 1;
-                        int baseIdx = wIdx * 3;
-
-                        var target = IntToWssTarget(w);
-                        var amps = new[] {
-                            AmpTo255Convention(_chAmps[baseIdx + 0], target),
-                            AmpTo255Convention(_chAmps[baseIdx + 1], target),
-                            AmpTo255Convention(_chAmps[baseIdx + 2], target)
-                        };
-                        var pws = new[] {
-                            _chPWs[baseIdx + 0],
-                            _chPWs[baseIdx + 1],
-                            _chPWs[baseIdx + 2]
-                        };
-
-                        // Desired per-channel IPIs for this WSS (source of truth)
-                        var desiredIpis = new[] {
-                            _chIPIs[baseIdx + 0],
-                            _chIPIs[baseIdx + 1],
-                            _chIPIs[baseIdx + 2]
-                        };
-
-                        // Per-channel change memory, gated by per-WSS cooldown
-                        bool anyChanged =
-                            _lastIpiSentPerCh[baseIdx + 0] != desiredIpis[0] ||
-                            _lastIpiSentPerCh[baseIdx + 1] != desiredIpis[1] ||
-                            _lastIpiSentPerCh[baseIdx + 2] != desiredIpis[2];
-
-                        if (anyChanged)
+                        // Send one WSS-level IPI update (array API). This is the only time we send.
+                        _ = _wss.StreamChange(new StreamChangeRequest
                         {
-                            // Send one WSS-level IPI update (array API). This is the only time we send.
-                            _ = _wss.StreamChange(new StreamChangeRequest
-                            {
-                                PulseAmplitudes = amps,
-                                PulseWidths = pws,
-                                InterPulseIntervals = desiredIpis
-                            }, target);
+                            PulseAmplitudes = amps,
+                            PulseWidths = pws,
+                            InterPulseIntervals = desiredIpis
+                        }, target);
 
-                            // Update per-channel last-sent memory and start per-WSS cooldown
-                            _lastIpiSentPerCh[baseIdx + 0] = desiredIpis[0];
-                            _lastIpiSentPerCh[baseIdx + 1] = desiredIpis[1];
-                            _lastIpiSentPerCh[baseIdx + 2] = desiredIpis[2];
-                        }
-                        else
-                        {
-                            // Do not send any IPI during cooldown or if nothing changed
-                            _ = _wss.StreamChange(new StreamChangeRequest
-                            {
-                                PulseAmplitudes = amps,
-                                PulseWidths = pws
-                            }, target);
-                        }
-
-                        await Task.Delay(_delayMsBetweenPackets, tk);
+                        // Update per-channel last-sent memory and start per-WSS cooldown
+                        _lastIpiSentPerCh[baseIdx + 0] = desiredIpis[0];
+                        _lastIpiSentPerCh[baseIdx + 1] = desiredIpis[1];
+                        _lastIpiSentPerCh[baseIdx + 2] = desiredIpis[2];
                     }
+                    else
+                    {
+                        // Do not send any IPI during cooldown or if nothing changed
+                        _ = _wss.StreamChange(new StreamChangeRequest
+                        {
+                            PulseAmplitudes = amps,
+                            PulseWidths = pws
+                        }, target);
+                    }
+
+                    await Task.Delay(_delayMsBetweenPackets, tk);
                 }
-            }, tk);
+            }
         }
 
         /// <summary>Stop the streaming background task.</summary>
-        private void StopStreamingInternal()
+        private async Task StopStreamingInternal()
         {
-            _streamCts?.Cancel();
-            try { _streamTask?.Wait(250); } catch { }
-            _streamTask = null;
+            CancellationTokenSource capturedCts;
+            Task capturedTask;
+
+            lock (_streamGate)
+            {
+                capturedCts = _streamCts;
+                capturedTask = _streamTask;
+                capturedCts?.Cancel();
+            }
+
+            try
+            {
+                if (capturedTask != null)
+                    await capturedTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation is the expected streaming shutdown path.
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"Streaming task ended during shutdown: {ex.Message}");
+            }
+            finally
+            {
+                lock (_streamGate)
+                {
+                    if (ReferenceEquals(_streamTask, capturedTask))
+                        _streamTask = null;
+                    if (ReferenceEquals(_streamCts, capturedCts))
+                        _streamCts = null;
+                }
+
+                capturedCts?.Dispose();
+            }
+        }
+
+        /// <summary>True when the current streaming task exists and has not terminated.</summary>
+        private bool StreamTaskActive()
+        {
+            lock (_streamGate)
+                return _streamTask != null && !_streamTask.IsCompleted;
         }
 
         /// <summary>Disconnect transport safely.</summary>
@@ -850,25 +918,45 @@ namespace Wss.CoreModule
             bool resumeStreaming,
             params Func<Task<string>>[] newSteps)
         {
+            bool stopActiveStream = false;
+
             await _setupGate.WaitAsync();
             try
             {
                 if (!_steps.ContainsKey(t)) { _steps[t] = new List<Func<Task<string>>>(); _cursor[t] = 0; }
                 _steps[t].AddRange(newSteps);
 
+                bool streamTaskActive = StreamTaskActive();
+                bool shouldResumeStreaming = resumeStreaming &&
+                    (_state == CoreState.Streaming || streamTaskActive);
+
                 if (!resumeStreaming)
                     _resumeStreamingAfter = false;
+                else if (shouldResumeStreaming && _streamStopsInProgress == 0)
+                    _resumeStreamingAfter = true;
 
-                // pause streaming once; resume when queue drains
-                if (_state == CoreState.Streaming)
+                if (streamTaskActive)
                 {
-                    StopStreamingInternal();
-                    if (resumeStreaming)
-                        _resumeStreamingAfter = true;
+                    stopActiveStream = true;
+                    _streamStopsInProgress++;
                 }
                 _state = CoreState.SettingUp;
 
-                EnsureSetupRunner();
+                if (_streamStopsInProgress == 0)
+                    EnsureSetupRunner();
+            }
+            finally { _setupGate.Release(); }
+
+            if (!stopActiveStream) return;
+
+            await StopStreamingInternal();
+
+            await _setupGate.WaitAsync();
+            try
+            {
+                _streamStopsInProgress--;
+                if (_streamStopsInProgress == 0)
+                    EnsureSetupRunner();
             }
             finally { _setupGate.Release(); }
         }
@@ -902,10 +990,15 @@ namespace Wss.CoreModule
                     _cursor[t] = list.Count; // finished this target
                 }
 
-                if (SetupQueueEmpty())
+                await _setupGate.WaitAsync();
+                try
                 {
-                    if (_resumeStreamingAfter) { StartStreamingInternal(); _resumeStreamingAfter = false; }
+                    if (_streamStopsInProgress == 0 && SetupQueueEmpty())
+                    {
+                        if (_resumeStreamingAfter) { StartStreamingInternal(); _resumeStreamingAfter = false; }
+                    }
                 }
+                finally { _setupGate.Release(); }
                 // else: leave state as SettingUp; Tick() will Observe runner completed + !empty and spawn another pass
             }
             catch (Exception ex)
