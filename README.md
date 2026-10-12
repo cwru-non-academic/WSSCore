@@ -54,13 +54,17 @@ Copy the listed DLLs from this repository’s `bin` output into your app’s `li
 
 ## Transport project layout
 - `WSS_Core_Interface.csproj` remains the transport-agnostic core library targeting `netstandard2.0`.
-- `WSS.Transport.Serial/WSS.Transport.Serial.csproj` remains the legacy serial transport package targeting `net48`.
+- `WSS.Transport.Serial/WSS.Transport.Serial.csproj` targets `netstandard2.0` for the Core+Serial distribution.
 - `WSS.Transport.BLE/WSS.Transport.BLE.csproj` is the new modern transport package targeting `net9.0`.
 
 ## Choosing a transport build
-- Use `WSS.Transport.Serial` when you need the legacy `net48`/Unity-compatible serial-only build.
+- Use the **Core+Serial distribution** for the serial-only build. It contains separate `WSS_Core_Interface.dll` and `WSS.Transport.Serial.dll` assemblies, both targeting `.NET Standard 2.0`.
+- Unity 2022.3 Editor compilation and communication with a mock WSS stimulator over real Serial I/O have passed using these assemblies. Physical-stimulator testing and a built Windows standalone player remain unverified.
+- The distribution stages `System.IO.Ports` 8.0.0's `lib/net462` implementation after checking its identity against Serial's compile asset and emitted reference. The `net8` consumer is an assembly/API compatibility check using its own NuGet runtime support, separate from the Unity validation above.
+- The reproducible legacy `net48` source/build baseline is commit `97fd8ddfa115dc906ebe8a06afb0425227c874ea`. The modified branch no longer builds the legacy Serial assembly. Existing published releases remain unchanged.
 - Use `WSS.Transport.BLE` when your app targets `.NET 9` and needs BLE support.
 - `WSS.Transport.BLE` also includes the existing serial transport implementation, so modern desktop apps can choose either `BleNusTransport` or `SerialPortTransport` from the same package.
+- Core+Serial and BLE unified are independent deployment choices with different assemblies and dependency selections. Do not blindly combine their ZIP contents in one DLL folder. BLE remains a `.NET 9` distribution; Unity BLE compatibility has not been established.
 
 ## Building the transport projects
 ```bash
@@ -81,12 +85,11 @@ dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- build-all
 The command produces the manifest-defined distributions in:
 
 ```text
-artifacts/core/
-artifacts/serial/
+artifacts/core-serial/
 artifacts/ble-unified/
 ```
 
-Rerunning the command safely replaces only these three generated artifact directories before staging and validating them again.
+Rerunning the command safely replaces only these two generated artifact directories before staging and validating them again. CI uploads them as GitHub Actions workflow artifacts named `core-serial` and `ble-unified`; successful tagged releases package those same tested files as ZIP assets.
 
 ## CI, testing, and release workflow
 
@@ -104,14 +107,13 @@ A normal push or merge to `main` does not create a version tag and does not crea
 
 Before merging changes into `main`, open a pull request targeting `main`.
 
-The CI workflow builds and stages the Core, Serial, and BLE distributions and runs external consumer smoke tests against the staged DLLs rather than against the WSS source projects.
+The CI workflow builds, stages, validates, and uploads the Core+Serial and unchanged BLE distributions, then runs external consumer smoke tests against the downloaded artifact DLLs rather than against the WSS source projects.
 
 The current consumer matrix is:
 
 | Artifact | Windows | Linux | macOS |
 | --- | --- | --- | --- |
-| Core | Yes | Yes | Yes |
-| Serial | Yes | Yes | Yes |
+| Core+Serial (Core and Serial consumers) | Yes | Yes | Yes |
 | BLE unified | Yes | Yes | — |
 
 A pull request should not be merged until its required artifact and consumer jobs pass.
@@ -135,13 +137,14 @@ Always use a new release-candidate number for a new commit. Do not move or reuse
 
 Pushing the `v*` tag automatically runs the artifact workflow against the exact tagged commit.
 
-If all required jobs succeed, the release job publishes the already-tested artifacts. The release job does not rebuild WSS.
+If Core conformance, artifact build/validation, and all Core, Serial, and BLE consumer jobs succeed, the release job publishes the already-tested artifacts from the same workflow run without rebuilding or restaging WSS. Only `v*` tag pushes can publish; pull requests and manual workflow runs cannot.
+
+New releases provide one Core+Serial ZIP instead of separate Core and Serial downloads. Historical releases retain their existing `WSS-Core-<TAG>.zip` and `WSS-Serial-<TAG>.zip` assets and remain available unchanged.
 
 Release assets are:
 
 ```text
-WSS-Core-<TAG>.zip
-WSS-Serial-<TAG>.zip
+WSS-Core-Serial-<TAG>.zip
 WSS-BLE-Unified-<TAG>.zip
 SHA256SUMS.txt
 ```
@@ -149,8 +152,7 @@ SHA256SUMS.txt
 For example:
 
 ```text
-WSS-Core-v0.3.0-rc.4.zip
-WSS-Serial-v0.3.0-rc.4.zip
+WSS-Core-Serial-v0.3.0-rc.4.zip
 WSS-BLE-Unified-v0.3.0-rc.4.zip
 SHA256SUMS.txt
 ```
@@ -184,9 +186,9 @@ stage exact distributable files
         ↓
 validate staged artifacts
         ↓
-consumer tests
-        ↓
 upload workflow artifacts
+        ↓
+consumer verification against downloaded workflow artifacts
         ↓
 release job downloads the same tested artifacts
         ↓

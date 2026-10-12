@@ -31,6 +31,7 @@ Thumbs.db
 .env.*
 
 # Generated package staging directories (tracked build outputs are intentionally retained).
+/artifacts/core-serial/
 /artifacts/core/
 /artifacts/serial/
 /artifacts/ble-linux-x64/

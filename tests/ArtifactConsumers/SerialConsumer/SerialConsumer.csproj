@@ -15,9 +15,6 @@
     <ArtifactDependency Include="System.Memory.dll" />
     <ArtifactDependency Include="System.Numerics.Vectors.dll" />
     <ArtifactDependency Include="System.Runtime.CompilerServices.Unsafe.dll" />
-    <ArtifactDependency Include="System.Security.AccessControl.dll" />
-    <ArtifactDependency Include="System.Security.Permissions.dll" />
-    <ArtifactDependency Include="System.Security.Principal.Windows.dll" />
     <ArtifactDependency Include="System.IO.Ports.dll" />
   </ItemGroup>
 
@@ -29,10 +26,14 @@
     <Reference Include="System.Memory"><HintPath>$(WSS_ARTIFACT_DIR)/System.Memory.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="System.Numerics.Vectors"><HintPath>$(WSS_ARTIFACT_DIR)/System.Numerics.Vectors.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="System.Runtime.CompilerServices.Unsafe"><HintPath>$(WSS_ARTIFACT_DIR)/System.Runtime.CompilerServices.Unsafe.dll</HintPath><Private>true</Private></Reference>
-    <Reference Include="System.Security.AccessControl"><HintPath>$(WSS_ARTIFACT_DIR)/System.Security.AccessControl.dll</HintPath><Private>true</Private></Reference>
-    <Reference Include="System.Security.Permissions"><HintPath>$(WSS_ARTIFACT_DIR)/System.Security.Permissions.dll</HintPath><Private>true</Private></Reference>
-    <Reference Include="System.Security.Principal.Windows"><HintPath>$(WSS_ARTIFACT_DIR)/System.Security.Principal.Windows.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="System.IO.Ports"><HintPath>$(WSS_ARTIFACT_DIR)/System.IO.Ports.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>WssArtifactDirectory</_Parameter1>
+      <_Parameter2>$(WSS_ARTIFACT_DIR)</_Parameter2>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <Target Name="ValidateWssArtifact" BeforeTargets="Build">
