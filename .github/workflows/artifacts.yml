@@ -37,17 +37,11 @@ jobs:
           dotnet-version: 9.0.x
       - name: Build, stage, and validate all artifacts
         run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- build-all
-      - name: Upload Core artifact
+      - name: Upload Core+Serial artifact
         uses: actions/upload-artifact@v4
         with:
-          name: core
-          path: artifacts/core
-          if-no-files-found: error
-      - name: Upload Serial artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: serial
-          path: artifacts/serial
+          name: core-serial
+          path: artifacts/core-serial
           if-no-files-found: error
       - name: Upload unified BLE artifact
         uses: actions/upload-artifact@v4
@@ -78,13 +72,13 @@ jobs:
           dotnet-version: 9.0.x
       - uses: actions/download-artifact@v4
         with:
-          name: core
-          path: ${{ runner.temp }}/wss-core
+          name: core-serial
+          path: ${{ runner.temp }}/wss-core-serial
       - name: Restore, build, and run Core consumer
         run: |
-          dotnet restore tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core"
-          dotnet build tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core"
-          dotnet run --project tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core"
+          dotnet restore tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
+          dotnet build tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
+          dotnet run --project tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
 
   serial-consumer:
     name: Serial consumer (${{ matrix.platform }})
@@ -108,13 +102,13 @@ jobs:
           dotnet-version: 9.0.x
       - uses: actions/download-artifact@v4
         with:
-          name: serial
-          path: ${{ runner.temp }}/wss-serial
+          name: core-serial
+          path: ${{ runner.temp }}/wss-core-serial
       - name: Restore, build, and run Serial consumer
         run: |
-          dotnet restore tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-serial"
-          dotnet build tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-serial"
-          dotnet run --project tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-serial"
+          dotnet restore tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
+          dotnet build tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
+          dotnet run --project tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
 
   ble-consumer:
     name: BLE consumer (${{ matrix.platform }})
@@ -218,23 +212,18 @@ jobs:
       - core-consumer
       - serial-consumer
       - ble-consumer
-    if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: ${{ success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       TAG: ${{ github.ref_name }}
     steps:
-      - name: Download Core artifact
+      - name: Download Core+Serial artifact
         uses: actions/download-artifact@v4
         with:
-          name: core
-          path: ${{ runner.temp }}/release-input/core
-      - name: Download Serial artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: serial
-          path: ${{ runner.temp }}/release-input/serial
+          name: core-serial
+          path: ${{ runner.temp }}/release-input/core-serial
       - name: Download unified BLE artifact
         uses: actions/download-artifact@v4
         with:
@@ -249,12 +238,8 @@ jobs:
           mkdir -p "$assets"
 
           (
-            cd "$RUNNER_TEMP/release-input/core"
-            zip -q -r "$assets/WSS-Core-${TAG}.zip" .
-          )
-          (
-            cd "$RUNNER_TEMP/release-input/serial"
-            zip -q -r "$assets/WSS-Serial-${TAG}.zip" .
+            cd "$RUNNER_TEMP/release-input/core-serial"
+            zip -q -r "$assets/WSS-Core-Serial-${TAG}.zip" .
           )
           (
             cd "$RUNNER_TEMP/release-input/ble-unified"
@@ -264,8 +249,7 @@ jobs:
           (
             cd "$assets"
             sha256sum \
-              "WSS-Core-${TAG}.zip" \
-              "WSS-Serial-${TAG}.zip" \
+              "WSS-Core-Serial-${TAG}.zip" \
               "WSS-BLE-Unified-${TAG}.zip" \
               > SHA256SUMS.txt
           )
@@ -285,8 +269,7 @@ jobs:
           fi
 
           gh release create "$TAG" \
-            "WSS-Core-${TAG}.zip" \
-            "WSS-Serial-${TAG}.zip" \
+            "WSS-Core-Serial-${TAG}.zip" \
             "WSS-BLE-Unified-${TAG}.zip" \
             SHA256SUMS.txt \
             --verify-tag \

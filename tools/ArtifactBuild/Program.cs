@@ -15,6 +15,19 @@ internal sealed class Manifest
     public List<string> ForbiddenAssemblies { get; set; } = new();
     public Dictionary<string, ManagedAssemblyManifest> ManagedAssemblies { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public List<string> NativeFiles { get; set; } = new();
+    public List<string> ForbiddenDirectories { get; set; } = new();
+    public Dictionary<string, PackageOverride> PackageOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string ManifestDirectory { get; set; } = string.Empty;
+}
+
+internal sealed class PackageOverride
+{
+    public string AssetsFile { get; set; } = string.Empty;
+    public string Target { get; set; } = string.Empty;
+    public string Package { get; set; } = string.Empty;
+    public string Asset { get; set; } = string.Empty;
+    public string ReferenceAssembly { get; set; } = string.Empty;
 }
 
 internal sealed class ManagedAssemblyManifest
@@ -103,10 +116,8 @@ internal static class Program
         };
         var artifacts = new[]
         {
-            new ArtifactDefinition("Core", "tools/ArtifactBuild/manifests/core.json",
-                "bin/Release/netstandard2.0", "artifacts/core"),
-            new ArtifactDefinition("Serial", "tools/ArtifactBuild/manifests/serial.json",
-                "WSS.Transport.Serial/bin/Release/net48", "artifacts/serial"),
+            new ArtifactDefinition("Experimental Core + Serial", "tools/ArtifactBuild/manifests/core-serial.json",
+                "WSS.Transport.Serial/bin/Release/netstandard2.0", "artifacts/core-serial"),
             new ArtifactDefinition("Unified Serial + BLE", "tools/ArtifactBuild/manifests/ble-unified.json",
                 "WSS.Transport.BLE/bin/Release/net9.0", "artifacts/ble-unified")
         };
@@ -185,12 +196,25 @@ internal static class Program
     private static Manifest ReadManifest(string path)
     {
         using var stream = File.OpenRead(path);
-        return JsonSerializer.Deserialize<Manifest>(stream, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+        var manifest = JsonSerializer.Deserialize<Manifest>(stream, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             ?? throw new InvalidDataException("Manifest is empty.");
+        manifest.ManifestDirectory = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        return manifest;
     }
 
     private static void Validate(Manifest manifest, string packageDirectory)
     {
+        foreach (var directory in Directory.GetDirectories(packageDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relative = Normalize(Path.GetRelativePath(packageDirectory, directory));
+            if (manifest.ForbiddenDirectories.Any(forbidden =>
+                relative.Equals(Normalize(forbidden).TrimEnd('/'), StringComparison.OrdinalIgnoreCase) ||
+                relative.EndsWith("/" + Normalize(forbidden).TrimEnd('/'), StringComparison.OrdinalIgnoreCase) ||
+                relative.StartsWith(Normalize(forbidden).TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidDataException("Forbidden package directory is present: " + relative);
+            }
+        }
         var expected = new HashSet<string>(manifest.Files.Select(Normalize), PathComparer);
         var declaredManagedPaths = new HashSet<string>(manifest.ManagedAssemblies.Keys.Select(Normalize), PathComparer);
         var declaredNativePaths = new HashSet<string>(manifest.NativeFiles.Select(Normalize), PathComparer);
@@ -294,6 +318,12 @@ internal static class Program
 
     private static void Stage(Manifest manifest, string sourceDirectory, string destinationDirectory)
     {
+        var overrides = manifest.PackageOverrides.ToDictionary(entry => entry.Key,
+            entry => ResolvePackageOverride(manifest, entry.Key, entry.Value, sourceDirectory), PathComparer);
+        if (overrides.Keys.Any(path => !manifest.Files.Contains(path, PathComparer)))
+        {
+            throw new InvalidDataException("Package overrides must name manifest files.");
+        }
         if (Directory.Exists(destinationDirectory))
         {
             Directory.Delete(destinationDirectory, recursive: true);
@@ -301,7 +331,8 @@ internal static class Program
 
         foreach (var relativePath in manifest.Files)
         {
-            var source = Path.Combine(sourceDirectory, relativePath);
+            var source = overrides.TryGetValue(relativePath, out var approvedSource)
+                ? approvedSource : Path.Combine(sourceDirectory, relativePath);
             if (!File.Exists(source))
             {
                 throw new FileNotFoundException("Manifest file was not produced by the build.", source);
@@ -310,7 +341,69 @@ internal static class Program
             var destination = Path.Combine(destinationDirectory, relativePath);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             File.Copy(source, destination);
+            if (approvedSource != null)
+            {
+                using var sourceStream = File.OpenRead(source);
+                using var destinationStream = File.OpenRead(destination);
+                if (!SHA256.HashData(sourceStream).SequenceEqual(SHA256.HashData(destinationStream)))
+                {
+                    throw new InvalidDataException("Staged package override differs from approved source: " + relativePath);
+                }
+                Console.WriteLine("Verified package override: " + relativePath + " <- " + source);
+            }
         }
+    }
+
+    private static string ResolvePackageOverride(Manifest manifest, string file, PackageOverride entry, string sourceDirectory)
+    {
+        if (Path.IsPathRooted(entry.AssetsFile) || Path.IsPathRooted(entry.Asset) ||
+            Normalize(entry.Asset).Split('/').Any(part => part == ".."))
+        {
+            throw new InvalidDataException("Package override paths must be relative; assets must remain inside the package.");
+        }
+        using var assets = JsonDocument.Parse(File.ReadAllText(Path.Combine(manifest.ManifestDirectory, entry.AssetsFile)));
+        var library = assets.RootElement.GetProperty("libraries").GetProperty(entry.Package);
+        if (library.GetProperty("type").GetString() != "package" ||
+            !library.GetProperty("files").EnumerateArray().Any(asset => asset.GetString() == entry.Asset))
+        {
+            throw new InvalidDataException("Override asset is not declared by the restored package: " + entry.Asset);
+        }
+        var packagePath = library.GetProperty("path").GetString()!;
+        string ResolveAsset(string asset) => assets.RootElement.GetProperty("packageFolders").EnumerateObject()
+            .Select(folder => Path.Combine(folder.Name, packagePath, asset)).FirstOrDefault(File.Exists)
+            ?? throw new FileNotFoundException("Restored package asset was not found: " + asset);
+        var runtimePath = ResolveAsset(entry.Asset);
+        var compileAsset = assets.RootElement.GetProperty("targets").GetProperty(entry.Target)
+            .GetProperty(entry.Package).GetProperty("compile").EnumerateObject()
+            .Single(asset => Path.GetFileName(asset.Name).Equals(file, StringComparison.OrdinalIgnoreCase)).Name;
+        var runtime = ReadAssembly(runtimePath) ?? throw new InvalidDataException("Override is not managed.");
+        var compile = ReadAssembly(ResolveAsset(compileAsset)) ?? throw new InvalidDataException("Compile asset is not managed.");
+        var reference = ReadReferences(Path.Combine(sourceDirectory, entry.ReferenceAssembly))
+            .Single(identity => identity.Name == runtime.Name);
+        var identity = new AssemblyIdentity(runtime.Name, runtime.Version, runtime.Culture, runtime.PublicKeyToken);
+        if (identity != new AssemblyIdentity(compile.Name, compile.Version, compile.Culture, compile.PublicKeyToken) ||
+            identity != reference)
+        {
+            throw new InvalidDataException("Package override identity differs from compile asset or emitted reference: " + file);
+        }
+        Console.WriteLine("Compatible compile/reference/runtime identity: " + identity);
+        return runtimePath;
+    }
+
+    private static List<AssemblyIdentity> ReadReferences(string path)
+    {
+        using var stream = File.OpenRead(path);
+        using var pe = new PEReader(stream);
+        var metadata = pe.GetMetadataReader();
+        return metadata.AssemblyReferences.Select(handle =>
+        {
+            var reference = metadata.GetAssemblyReference(handle);
+            var key = reference.PublicKeyOrToken.IsNil ? Array.Empty<byte>() : metadata.GetBlobBytes(reference.PublicKeyOrToken);
+            var token = (reference.Flags & System.Reflection.AssemblyFlags.PublicKey) != 0
+                ? GetPublicKeyToken(key) : key.Length == 0 ? "null" : Convert.ToHexString(key).ToLowerInvariant();
+            return new AssemblyIdentity(metadata.GetString(reference.Name), reference.Version.ToString(),
+                NormalizeCulture(reference.Culture.IsNil ? string.Empty : metadata.GetString(reference.Culture)), token);
+        }).ToList();
     }
 
     private static AssemblyInfo? ReadAssembly(string path)
@@ -389,6 +482,7 @@ internal static class Program
     private static string Normalize(string path) => path.Replace('\\', '/');
 
     private sealed record ArtifactDefinition(string Name, string ManifestPath, string SourcePath, string DestinationPath);
+    private sealed record AssemblyIdentity(string Name, string Version, string Culture, string PublicKeyToken);
 
     private sealed record AssemblyInfo(string Name, string Version, string Culture, string PublicKeyToken,
         string TargetFramework, HashSet<string> References);
