@@ -109,15 +109,17 @@ See [consumer integration requirements](tools/ArtifactBuild/CSHARP-HANDOFF.md).
 ## CI and releases
 
 `.github/workflows/artifacts.yml` runs for PRs targeting `dev`, `main`, or
-`net2_BLE`, manual dispatch, and pushed `v*` tags. Independent component gates run
-Core functional tests once on Ubuntu, portable BLE on Linux/Windows, and Windows
-shim/production-native BLE tests on `windows-2022`. A separate Windows packaging
-job builds its own inputs and validates one universal ZIP without functional suites.
-Dedicated Serial artifact-consumer jobs extract that ZIP on Linux, Windows, and
-macOS; separate universal consumer jobs cover Core on all three and BLE on
-Linux/Windows only. These Serial checks do not exercise hardware. Missing Linux
-controllers are explicitly reported and do not suppress managed dependency checks.
-See [the CI coverage table](tests/README.md#ci) for the individual gates.
+`net2_BLE`, manual dispatch, and pushed `v*` tags. `Core conformance` runs the
+functional suite once on Linux. `Build and validate artifacts` builds its own inputs
+on `windows-2022` and validates one universal ZIP without functional suites.
+`Core consumer` and `Serial consumer` jobs run on Windows/Linux/macOS;
+`BLE consumer` jobs combine source functional suites and packaged consumers on
+Linux and Windows (`windows-2022` for isolated shim/production-native testing).
+All consumers use the same verified, extracted ZIP. Serial smoke checks do not
+exercise port I/O; classified Linux controller skips do not suppress dependencies.
+See [CI Jobs and Test Responsibilities](tests/README.md#ci-jobs-and-test-responsibilities)
+for the authoritative catalog and placement policy. Named logs, job summaries and
+downloadable NUnit TRX artifacts expose actual execution and failures.
 
 Only successful `v*` tag pushes publish after all component, packaging, and consumer
 jobs pass. The release job downloads the already-tested

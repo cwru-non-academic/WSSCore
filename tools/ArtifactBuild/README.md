@@ -103,14 +103,17 @@ no pre-release binary compatibility aliases are provided.
 
 ## CI/release gate
 
-The artifact workflow runs independent Core (once on Ubuntu) and BLE functional
-gates (portable on Linux/Windows, native/adapter on `windows-2022`). A dedicated
-`windows-2022` packaging job builds its own managed/Linux/production-native inputs,
-validates the payload and archive, and uploads one ZIP/checksum; it runs no functional
-suites. Separate Serial artifact-consumer jobs and universal Core consumer jobs run
-on Linux/Windows/macOS against that same ZIP; universal BLE consumers run on
-Linux/Windows only. Serial checks cover artifact behavior/dependency loading, not
-hardware. Linux no-controller classification skips only the native controller probe,
-never dependency checks. Case-sensitive duplicate rejection remains a Linux gate.
-Tag-gated publication requires all these jobs and reuses the validated ZIP/checksum
-without rebuilding, restaging, or rezipping. PRs do not publish.
+`Build and validate artifacts` on `windows-2022` builds its own managed/Linux/backend
+and production-native inputs, validates the payload and extracted archive, runs
+packaging rejection checks, and uploads one ZIP/checksum; it runs no functional suites.
+Independent `Core conformance` runs once on Linux. `Core consumer` and `Serial consumer`
+jobs run on Windows/Linux/macOS; `BLE consumer` jobs combine source functional/native
+tests and packaged consumers on Linux/Windows, keeping those project boundaries separate.
+Every consumer downloads that same ZIP. Platform-wide package validation runs in the
+Core consumer jobs; Linux case-sensitive rejection runs there once. BLE's classified
+controller skip suppresses only the native probe, never managed dependency checks.
+Serial smoke checks do not establish hardware communication. See the authoritative
+[CI/test catalog](../../tests/README.md#ci-jobs-and-test-responsibilities) for commands,
+coverage, placement rules and job-summary/TRX visibility.
+`Publish — Universal ZIP` requires all testing/packaging jobs and reuses the validated
+ZIP/checksum without rebuilding, restaging, or rezipping. PRs do not publish.
