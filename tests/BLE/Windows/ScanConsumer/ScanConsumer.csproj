@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <NativeBridgePath>$(MSBuildThisFileDirectory)..\..\..\..\tools\WindowsBleBridge\out\x64\$(Configuration)\WssBleWindows.dll</NativeBridgePath>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../../../tools/WindowsBleBridge/managed/WSS.Transport.BLE.Windows.Native.csproj" /></ItemGroup>
+  <Target Name="CopyProductionBridge" AfterTargets="Build" Condition="Exists('$(NativeBridgePath)')">
+    <Copy SourceFiles="$(NativeBridgePath)" DestinationFolder="$(TargetDir)" />
+  </Target>
+</Project>

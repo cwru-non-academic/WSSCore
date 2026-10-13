@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <AssemblyName>WSS.Transport.BLE</AssemblyName>
     <RootNamespace>WSS.Transport.BLE</RootNamespace>
@@ -18,14 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../WSS_Core_Interface.csproj" />
+    <ProjectReference Include="../WSS.Transport.Serial/WSS.Transport.Serial.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Compile Include="../WSS.Transport.Serial/SerialPortTransport.cs" Link="SerialPortTransport.cs" />
-    <Compile Include="../WSS.Transport.Serial/SerialPortTransportOptions.cs" Link="SerialPortTransportOptions.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="System.IO.Ports" Version="9.0.0" />
-  </ItemGroup>
 </Project>

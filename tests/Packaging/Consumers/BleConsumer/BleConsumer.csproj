@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework>
+    <TargetFramework Condition="'$(ConsumerTargetFramework)' != ''">$(ConsumerTargetFramework)</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="bin/**/*.cs;obj/**/*.cs" />
+    <Reference Include="WSS.Transport.BLE"><HintPath>$(WSS_ARTIFACT_DIR)/WSS.Transport.BLE.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="WSS.Transport.Serial"><HintPath>$(WSS_ARTIFACT_DIR)/WSS.Transport.Serial.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="WSS_Core_Interface"><HintPath>$(WSS_ARTIFACT_DIR)/WSS_Core_Interface.dll</HintPath><Private>true</Private></Reference>
+    <!-- NuGet selects the host Ports implementation; retain BOTH redistributed runtime trees. -->
+    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+    <None Condition="'$(WSS_ARTIFACT_DIR)' != ''" Include="$(WSS_ARTIFACT_DIR)/**/*.dll;$(WSS_ARTIFACT_DIR)/**/*.so" Exclude="$(WSS_ARTIFACT_DIR)/System.IO.Ports.dll;$(WSS_ARTIFACT_DIR)/WSS_Core_Interface.dll;$(WSS_ARTIFACT_DIR)/WSS.Transport.Serial.dll;$(WSS_ARTIFACT_DIR)/WSS.Transport.BLE.dll"
+          Link="%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <ArtifactDependency Include="WSS_Core_Interface.dll;WSS.Transport.Serial.dll;WSS.Transport.BLE.dll;Newtonsoft.Json.dll;System.IO.Ports.dll;System.Memory.dll;System.Buffers.dll;System.Numerics.Vectors.dll;System.Runtime.CompilerServices.Unsafe.dll;System.Security.Permissions.dll;System.Security.AccessControl.dll;System.Security.Principal.Windows.dll" />
+    <ArtifactDependency Include="backends/windows/WSS.Transport.BLE.Windows.dll;backends/windows/WSS.Transport.BLE.Windows.Native.dll;backends/windows/WssBleWindows.dll" />
+    <ArtifactDependency Include="backends/linux/WSS.Transport.BLE.Linux.dll;backends/linux/Linux.Bluetooth.dll;backends/linux/Tmds.DBus.dll;backends/linux/Microsoft.Bcl.AsyncInterfaces.dll;backends/linux/System.Reflection.Emit.dll;backends/linux/System.Reflection.Emit.ILGeneration.dll;backends/linux/System.Threading.Tasks.Extensions.dll" />
+    <ArtifactDependency Include="runtimes/win/lib/net8.0/System.IO.Ports.dll;runtimes/unix/lib/net8.0/System.IO.Ports.dll;runtimes/linux-x64/native/libSystem.IO.Ports.Native.so" />
+  </ItemGroup>
+  <Target Name="ValidateUniversal" BeforeTargets="ResolveReferences">
+    <Error Condition="'$(WSS_ARTIFACT_DIR)' == ''" Text="WSS_ARTIFACT_DIR must point to the complete universal distribution." />
+    <Error Condition="!Exists('$(WSS_ARTIFACT_DIR)/%(ArtifactDependency.Identity)')" Text="Universal dependency missing: %(ArtifactDependency.Identity)" />
+  </Target>
+</Project>

@@ -17,6 +17,7 @@ internal sealed class Manifest
     public List<string> NativeFiles { get; set; } = new();
     public List<string> ForbiddenDirectories { get; set; } = new();
     public Dictionary<string, PackageOverride> PackageOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> SourceFiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     [System.Text.Json.Serialization.JsonIgnore]
     public string ManifestDirectory { get; set; } = string.Empty;
 }
@@ -39,7 +40,7 @@ internal sealed class ManagedAssemblyManifest
     public string TargetFramework { get; set; } = string.Empty;
 }
 
-internal static class Program
+internal static partial class Program
 {
     private static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
     private static readonly HashSet<string> ForbiddenExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -51,15 +52,23 @@ internal static class Program
     {
         try
         {
-            if (args.Length == 1 && args[0] == "build-all")
+            if (args.Length >= 1 && args[0] == "build-all")
             {
-                BuildAll();
+                BuildUniversal(args.Skip(1).ToArray());
                 return 0;
             }
 
-            if (args.Length == 0 || (args[0] != "stage" && args[0] != "validate" && args[0] != "describe") ||
+            if (args.Length == 5 && args[0] == "archive" && args[1] == "--package" && args[3] == "--tag")
+            {
+                var universalManifest = ReadManifest("tools/ArtifactBuild/manifests/universal.json");
+                Validate(universalManifest, args[2]);
+                ArchiveUniversal(args[2], args[4]);
+                return 0;
+            }
+
+            if (args.Length == 0 || (args[0] != "stage" && args[0] != "validate" && args[0] != "describe" && args[0] != "references") ||
                 (args[0] == "stage" && args.Length != 7) ||
-                ((args[0] == "validate" || args[0] == "describe") && args.Length != 5))
+                ((args[0] == "validate" || args[0] == "describe" || args[0] == "references") && args.Length != 5))
             {
                 throw new ArgumentException("Usage: ArtifactBuild build-all | stage|validate|describe --manifest <path> --source|--package <path>.");
             }
@@ -93,6 +102,13 @@ internal static class Program
                 return 0;
             }
 
+            if (args[0] == "references")
+            {
+                Console.WriteLine(JsonSerializer.Serialize(manifest.ManagedAssemblies.Keys.ToDictionary(p => p,
+                    p => ReadReferences(Path.Combine(args[4], p))), new JsonSerializerOptions { WriteIndented = true }));
+                return 0;
+            }
+
             Validate(manifest, args[4]);
             return 0;
         }
@@ -100,69 +116,6 @@ internal static class Program
         {
             Console.Error.WriteLine("ArtifactBuild: " + exception.Message);
             return 1;
-        }
-    }
-
-    private static void BuildAll()
-    {
-        var repositoryRoot = Directory.GetCurrentDirectory();
-        var projects = new[]
-        {
-            "WSS_Core_Interface.csproj",
-            "WSS.Transport.Serial/WSS.Transport.Serial.csproj",
-            "WSS.Transport.BLE/WSS.Transport.BLE.csproj",
-            "WSS.Transport.BLE.Windows/WSS.Transport.BLE.Windows.csproj",
-            "WSS.Transport.BLE.Linux/WSS.Transport.BLE.Linux.csproj"
-        };
-        var artifacts = new[]
-        {
-            new ArtifactDefinition("Experimental Core + Serial", "tools/ArtifactBuild/manifests/core-serial.json",
-                "WSS.Transport.Serial/bin/Release/netstandard2.0", "artifacts/core-serial"),
-            new ArtifactDefinition("Unified Serial + BLE", "tools/ArtifactBuild/manifests/ble-unified.json",
-                "WSS.Transport.BLE/bin/Release/net9.0", "artifacts/ble-unified")
-        };
-
-        foreach (var requiredPath in projects.Concat(artifacts.Select(artifact => artifact.ManifestPath)))
-        {
-            if (!File.Exists(Path.Combine(repositoryRoot, requiredPath)))
-            {
-                throw new FileNotFoundException("Required build input was not found. Run build-all from the WSSCore repository root.", requiredPath);
-            }
-        }
-
-        RunBuild(repositoryRoot, projects[0]);
-        RunBuild(repositoryRoot, projects[1], "--no-dependencies");
-        RunBuild(repositoryRoot, projects[2], "--no-dependencies");
-        RunBuild(repositoryRoot, projects[3], "--no-dependencies", "-p:EnableWindowsTargeting=true");
-        RunBuild(repositoryRoot, projects[4], "--no-dependencies");
-
-        foreach (var artifact in artifacts)
-        {
-            var destination = Path.Combine(repositoryRoot, artifact.DestinationPath);
-            if (Directory.Exists(destination))
-            {
-                Directory.Delete(destination, recursive: true);
-            }
-        }
-
-        foreach (var artifact in artifacts)
-        {
-            var manifest = ReadManifest(Path.Combine(repositoryRoot, artifact.ManifestPath));
-            var source = Path.Combine(repositoryRoot, artifact.SourcePath);
-            var destination = Path.Combine(repositoryRoot, artifact.DestinationPath);
-            Stage(manifest, source, destination);
-            Validate(manifest, destination);
-            Console.WriteLine(artifact.Name + " validation: PASS");
-        }
-
-        Console.WriteLine();
-        Console.WriteLine("All WSS artifacts built successfully.");
-        Console.WriteLine();
-        foreach (var artifact in artifacts)
-        {
-            Console.WriteLine(artifact.Name + ":");
-            Console.WriteLine("  " + artifact.DestinationPath);
-            Console.WriteLine();
         }
     }
 
@@ -216,6 +169,7 @@ internal static class Program
             }
         }
         var expected = new HashSet<string>(manifest.Files.Select(Normalize), PathComparer);
+        if (expected.Count != manifest.Files.Count) throw new InvalidDataException("Duplicate manifest path.");
         var declaredManagedPaths = new HashSet<string>(manifest.ManagedAssemblies.Keys.Select(Normalize), PathComparer);
         var declaredNativePaths = new HashSet<string>(manifest.NativeFiles.Select(Normalize), PathComparer);
         if (!declaredManagedPaths.Concat(declaredNativePaths).ToHashSet(PathComparer).SetEquals(expected))
@@ -223,12 +177,15 @@ internal static class Program
             throw new InvalidDataException("Manifest must classify every staged file as a managed assembly or native file.");
         }
 
-        if (declaredNativePaths.Any(path => !path.EndsWith(".so", StringComparison.OrdinalIgnoreCase)))
+        if (declaredNativePaths.Any(path => !path.EndsWith(".so", StringComparison.OrdinalIgnoreCase) &&
+            !path.Equals("backends/windows/WssBleWindows.dll", StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidDataException("Native manifest entries must be .so files.");
+            throw new InvalidDataException("Unrecognized native payload.");
         }
-        var actual = new HashSet<string>(Directory.GetFiles(packageDirectory, "*", SearchOption.AllDirectories)
-            .Select(path => Normalize(Path.GetRelativePath(packageDirectory, path))), PathComparer);
+        var physicalFiles = Directory.GetFiles(packageDirectory, "*", SearchOption.AllDirectories)
+            .Select(path => Normalize(Path.GetRelativePath(packageDirectory, path))).ToArray();
+        var actual = new HashSet<string>(physicalFiles, PathComparer);
+        if (actual.Count != physicalFiles.Length) throw new InvalidDataException("Case-colliding duplicate physical package path.");
         if (!expected.SetEquals(actual))
         {
             throw new InvalidDataException("Package file set differs from its exact manifest. Missing: " +
@@ -293,6 +250,7 @@ internal static class Program
             }
         }
 
+        if (manifest.SourceFiles.Count != 0) ValidateUniversal(manifest, packageDirectory);
         Console.WriteLine("Validated " + packageDirectory + " against exact manifest.");
     }
 
@@ -332,7 +290,9 @@ internal static class Program
         foreach (var relativePath in manifest.Files)
         {
             var source = overrides.TryGetValue(relativePath, out var approvedSource)
-                ? approvedSource : Path.Combine(sourceDirectory, relativePath);
+                ? approvedSource : manifest.SourceFiles.TryGetValue(relativePath, out var projectSource)
+                    ? Path.GetFullPath(Path.Combine(manifest.ManifestDirectory, projectSource))
+                    : Path.Combine(sourceDirectory, relativePath);
             if (!File.Exists(source))
             {
                 throw new FileNotFoundException("Manifest file was not produced by the build.", source);
@@ -373,9 +333,10 @@ internal static class Program
             .Select(folder => Path.Combine(folder.Name, packagePath, asset)).FirstOrDefault(File.Exists)
             ?? throw new FileNotFoundException("Restored package asset was not found: " + asset);
         var runtimePath = ResolveAsset(entry.Asset);
-        var compileAsset = assets.RootElement.GetProperty("targets").GetProperty(entry.Target)
+        if (manifest.NativeFiles.Contains(file, PathComparer)) return runtimePath;
+        var compileAsset = GetRestoredTarget(assets.RootElement.GetProperty("targets"), entry.Target)
             .GetProperty(entry.Package).GetProperty("compile").EnumerateObject()
-            .Single(asset => Path.GetFileName(asset.Name).Equals(file, StringComparison.OrdinalIgnoreCase)).Name;
+            .Single(asset => Path.GetFileName(asset.Name).Equals(Path.GetFileName(file), StringComparison.OrdinalIgnoreCase)).Name;
         var runtime = ReadAssembly(runtimePath) ?? throw new InvalidDataException("Override is not managed.");
         var compile = ReadAssembly(ResolveAsset(compileAsset)) ?? throw new InvalidDataException("Compile asset is not managed.");
         var reference = ReadReferences(Path.Combine(sourceDirectory, entry.ReferenceAssembly))
@@ -481,7 +442,6 @@ internal static class Program
 
     private static string Normalize(string path) => path.Replace('\\', '/');
 
-    private sealed record ArtifactDefinition(string Name, string ManifestPath, string SourcePath, string DestinationPath);
     private sealed record AssemblyIdentity(string Name, string Version, string Culture, string PublicKeyToken);
 
     private sealed record AssemblyInfo(string Name, string Version, string Culture, string PublicKeyToken,

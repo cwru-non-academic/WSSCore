@@ -1,30 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0-windows10.0.19041</TargetFramework>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>WSS.Transport.BLE.Windows</AssemblyName>
-    <RootNamespace>WSS.Transport.BLE.Windows</RootNamespace>
-    <Platforms>AnyCPU</Platforms>
-    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>WSS.Transport.BLE.Windows</AssemblyName>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="../WSS.Transport.BLE/WSS.Transport.BLE.csproj" />
+    <ProjectReference Include="../WSS_Core_Interface.csproj" />
+    <ProjectReference Include="../tools/WindowsBleBridge/managed/WSS.Transport.BLE.Windows.Native.csproj" />
+    <InternalsVisibleTo Include="WSS.BLE.Windows.Tests" />
   </ItemGroup>
-
-  <Target Name="CopyWindowsBackendToFacadeOutput" AfterTargets="Build">
-    <PropertyGroup>
-      <FacadeBackendDirectory>../WSS.Transport.BLE/bin/$(Configuration)/net9.0/backends/windows</FacadeBackendDirectory>
-    </PropertyGroup>
-    <ItemGroup>
-      <WindowsBackendFile Include="$(TargetPath)" />
-      <WindowsBackendFile Include="$(TargetDir)Microsoft.Windows.SDK.NET.dll" />
-      <WindowsBackendFile Include="$(TargetDir)WinRT.Runtime.dll" />
-    </ItemGroup>
-    <MakeDir Directories="$(FacadeBackendDirectory)" />
-    <Copy SourceFiles="@(WindowsBackendFile)" DestinationFolder="$(FacadeBackendDirectory)" />
-  </Target>
 </Project>

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable>
+    <AssemblyName>WSS.BLE.Windows.Tests</AssemblyName><PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <NativeShimPath>$(MSBuildThisFileDirectory)..\NativeTestShim\bin\x64\$(Configuration)\WssBleWindows.dll</NativeShimPath>
+    <ProductionNativePath>$(MSBuildThisFileDirectory)..\..\..\..\tools\WindowsBleBridge\out\x64\$(Configuration)\WssBleWindows.dll</ProductionNativePath>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    <ProjectReference Include="../../../../tools/WindowsBleBridge/managed/WSS.Transport.BLE.Windows.Native.csproj" />
+    <ProjectReference Include="../../../../WSS.Transport.BLE.Windows/WSS.Transport.BLE.Windows.csproj" />
+    <AssemblyMetadata Include="ProductionNativePath" Value="$([System.IO.Path]::GetFullPath('$(ProductionNativePath)'))" />
+  </ItemGroup>
+  <Target Name="CopyTestShimOnly" AfterTargets="Build" Condition="Exists('$(NativeShimPath)')">
+    <Copy SourceFiles="$(NativeShimPath)" DestinationFolder="$(TargetDir)" />
+  </Target>
+</Project>

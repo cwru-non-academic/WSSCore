@@ -1,0 +1,13 @@
+LIBRARY WssBleWindows
+EXPORTS
+    wss_ble_get_abi_info
+    wss_ble_create
+    wss_ble_initialize
+    wss_ble_query_adapter
+    wss_ble_scan_start
+    wss_ble_scan_stop
+    wss_ble_cancel
+    wss_ble_destroy
+    wss_ble_nus_connect
+    wss_ble_nus_write
+    wss_ble_nus_disconnect
