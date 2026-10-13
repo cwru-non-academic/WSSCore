@@ -103,9 +103,14 @@ no pre-release binary compatibility aliases are provided.
 
 ## CI/release gate
 
-The existing artifact workflow runs Linux portable and Windows native/adapter tests,
-packages once, and gives every consumer job the same ZIP. Core/Serial smoke checks
-run on Windows/Linux/macOS; BLE checks run on Windows/Linux. Linux no-controller
-classification skips only the native controller probe, never dependency checks.
-Case-sensitive duplicate rejection is a Linux gate. Tag-gated publication reuses the
-validated ZIP/checksum without rebuilding, restaging, or rezipping.
+The artifact workflow runs independent Core (once on Ubuntu) and BLE functional
+gates (portable on Linux/Windows, native/adapter on `windows-2022`). A dedicated
+`windows-2022` packaging job builds its own managed/Linux/production-native inputs,
+validates the payload and archive, and uploads one ZIP/checksum; it runs no functional
+suites. Separate Serial artifact-consumer jobs and universal Core consumer jobs run
+on Linux/Windows/macOS against that same ZIP; universal BLE consumers run on
+Linux/Windows only. Serial checks cover artifact behavior/dependency loading, not
+hardware. Linux no-controller classification skips only the native controller probe,
+never dependency checks. Case-sensitive duplicate rejection remains a Linux gate.
+Tag-gated publication requires all these jobs and reuses the validated ZIP/checksum
+without rebuilding, restaging, or rezipping. PRs do not publish.

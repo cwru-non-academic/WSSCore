@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 jobs:
-  portable-tests:
-    name: Portable Core and BLE tests (Linux)
+  core-tests:
+    name: Test — Core
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,15 +23,23 @@ jobs:
             9.0.x
       - run: dotnet restore tests/Core/WSS.Core.Tests/WSS.Core.Tests.csproj --locked-mode --nologo
       - run: dotnet test tests/Core/WSS.Core.Tests/WSS.Core.Tests.csproj -c Release --no-restore --nologo
+
+  ble-linux-tests:
+    name: Test — BLE (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
       - run: dotnet restore tests/BLE/WSS.BLE.Tests/WSS.BLE.Tests.csproj --locked-mode --nologo
       - run: dotnet test tests/BLE/WSS.BLE.Tests/WSS.BLE.Tests.csproj -c Release --no-restore --nologo
 
-  artifacts:
-    name: Windows native tests and universal packaging
-    needs: portable-tests
+  ble-windows-tests:
+    name: Test — BLE (Windows)
     runs-on: windows-2022
-    env:
-      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'ci' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -46,14 +54,33 @@ jobs:
         run: ./tools/WindowsBleBridge/build.ps1 -Configuration Release -Architecture x64
       - name: Run native bridge, adapter, and production-native regression tests
         run: dotnet test tests/BLE/Windows/WSS.BLE.Windows.Tests/WSS.BLE.Windows.Tests.csproj -c Release --no-build --no-restore --nologo
-      - name: Run Windows Core tests
-        run: dotnet test tests/Core/WSS.Core.Tests/WSS.Core.Tests.csproj -c Release -p:RestoreLockedMode=true --nologo
       - name: Build Linux Standard backend without rebuilding shared assemblies
         run: dotnet build WSS.Transport.BLE.Linux/WSS.Transport.BLE.Linux.csproj -c Release --no-dependencies -p:RestoreLockedMode=true --nologo
       - name: Run Windows portable BLE facade and Linux compatibility tests
         run: dotnet test tests/BLE/WSS.BLE.Tests/WSS.BLE.Tests.csproj -c Release -p:RestoreLockedMode=true -p:BuildProjectReferences=false --nologo
-      - name: Validate closure and create the one ZIP and checksum
-        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- build-all --no-build --destination "${{ runner.temp }}/release-assets/WSS-Universal" --tag "${{ env.RELEASE_TAG }}"
+
+  package-universal:
+    name: Package — Universal ZIP (Windows)
+    runs-on: windows-2022
+    env:
+      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'ci' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+      - name: Build own managed and production-native inputs, validate closure, and create the one ZIP and checksum
+        # build-all invokes the production-only bridge build (no test shim or functional suites).
+        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- build-all --destination "${{ runner.temp }}/release-assets/WSS-Universal" --tag "${{ env.RELEASE_TAG }}"
+      - name: Verify checksum and archive extraction before upload
+        shell: pwsh
+        run: ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-assets" -Destination "$env:RUNNER_TEMP/package-verification"
+      - name: Validate extracted manifest, native exports, and dependencies
+        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- validate --manifest tools/ArtifactBuild/manifests/universal.json --package "${{ runner.temp }}/package-verification/WSS-Universal"
+      - name: Universal rejection contract checks
+        run: python tests/Packaging/verify_universal.py "${{ runner.temp }}/package-verification/WSS-Universal"
       - name: Upload the single release archive and metadata
         uses: actions/upload-artifact@v4
         with:
@@ -62,16 +89,54 @@ jobs:
             ${{ runner.temp }}/release-assets/WSS-Universal-*.zip
             ${{ runner.temp }}/release-assets/SHA256SUMS.txt
           if-no-files-found: error
-      - name: Universal rejection contract checks
-        run: python tests/Packaging/verify_universal.py "${{ runner.temp }}/release-assets/WSS-Universal"
 
-  consumers:
-    name: Same universal archive consumer (${{ matrix.os }})
-    needs: artifacts
+  serial-tests:
+    name: Test — Serial (${{ matrix.platform }})
+    needs: package-universal
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - platform: Linux
+            os: ubuntu-latest
+          - platform: Windows
+            os: windows-latest
+          - platform: macOS
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: universal-release-assets
+          path: ${{ runner.temp }}/release-input
+      - name: Verify checksum and extract the identical universal payload
+        shell: pwsh
+        run: ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-input" -Destination "$env:RUNNER_TEMP/universal"
+      - name: Validate exact managed and native package identities
+        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- validate --manifest tools/ArtifactBuild/manifests/universal.json --package "${{ runner.temp }}/universal/WSS-Universal"
+      # Artifact/dependency checks only; future platform-specific Serial functional tests belong here.
+      - name: Serial artifact-only consumer
+        run: dotnet run --project tests/Packaging/Consumers/SerialConsumer/SerialConsumer.csproj -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal" --nologo
+
+  universal-consumers:
+    name: Test — Universal ZIP Consumer (${{ matrix.platform }})
+    needs: package-universal
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            os: ubuntu-latest
+          - platform: Windows
+            os: windows-latest
+          - platform: macOS
+            os: macos-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -95,8 +160,6 @@ jobs:
       - name: Universal rejection contract checks (Linux filesystem)
         if: runner.os == 'Linux'
         run: python tests/Packaging/verify_universal.py "${{ runner.temp }}/universal/WSS-Universal"
-      - name: Serial artifact-only consumer
-        run: dotnet run --project tests/Packaging/Consumers/SerialConsumer/SerialConsumer.csproj -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal" --nologo
       - name: Install BlueZ and classify controller availability
         if: runner.os == 'Linux'
         shell: bash
@@ -142,8 +205,9 @@ jobs:
         if: runner.os == 'Windows'
         run: dotnet run --project tests/Packaging/Consumers/BleConsumer/BleConsumer.csproj -c Release -p:ConsumerTargetFramework=net8.0 -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal"
 
-  release:
-    needs: [portable-tests, artifacts, consumers]
+  publish-universal:
+    name: Publish — Universal ZIP
+    needs: [core-tests, ble-linux-tests, ble-windows-tests, package-universal, serial-tests, universal-consumers]
     if: ${{ success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:

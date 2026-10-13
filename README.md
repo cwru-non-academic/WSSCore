@@ -109,13 +109,18 @@ See [consumer integration requirements](tools/ArtifactBuild/CSHARP-HANDOFF.md).
 ## CI and releases
 
 `.github/workflows/artifacts.yml` runs for PRs targeting `dev`, `main`, or
-`net2_BLE`, manual dispatch, and pushed `v*` tags. It runs portable tests on Linux,
-Core/portable/native tests on Windows, and builds one validated universal ZIP.
-Artifact-only consumers extract that same ZIP on Windows, Linux, and macOS;
-BLE checks run on Windows/Linux only. Missing Linux controllers are explicitly
-reported and do not suppress managed dependency checks.
+`net2_BLE`, manual dispatch, and pushed `v*` tags. Independent component gates run
+Core functional tests once on Ubuntu, portable BLE on Linux/Windows, and Windows
+shim/production-native BLE tests on `windows-2022`. A separate Windows packaging
+job builds its own inputs and validates one universal ZIP without functional suites.
+Dedicated Serial artifact-consumer jobs extract that ZIP on Linux, Windows, and
+macOS; separate universal consumer jobs cover Core on all three and BLE on
+Linux/Windows only. These Serial checks do not exercise hardware. Missing Linux
+controllers are explicitly reported and do not suppress managed dependency checks.
+See [the CI coverage table](tests/README.md#ci) for the individual gates.
 
-Only successful `v*` tag pushes publish. The release job downloads the already-tested
+Only successful `v*` tag pushes publish after all component, packaging, and consumer
+jobs pass. The release job downloads the already-tested
 ZIP/checksum and verifies them without rebuilding or repackaging. Hyphenated tags
 are prereleases. PRs, ordinary branch pushes, and manual validation do not publish.
 Hardware diagnostics are opt-in and are not release-gate substitutes for automated tests.

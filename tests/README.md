@@ -78,10 +78,20 @@ against physical hardware as part of these automated checks.
 
 ## CI
 
-The existing artifact workflow runs Core/portable BLE on Linux and Windows, Windows
-shim/production-native suites, and one universal build. Consumer jobs extract the
-same ZIP on Windows/Linux/macOS for Core/Serial; BLE runs on Windows/Linux, with a
-Windows .NET 8 consumer in addition to .NET 9. Linux case-sensitive package rejection
-is checked there. Controller skips are narrowly classified and explicitly reported.
-ScanConsumer/peripheral diagnostics are not automatic CI gates. Publication remains
-tag-gated and uses the already-tested ZIP/checksum.
+The [artifact workflow](../.github/workflows/artifacts.yml) separates these gates:
+
+| Job | Coverage/responsibility |
+| --- | --- |
+| `Test — Core` | All 69 Core NUnit cases, once on Ubuntu; platform-independent functional coverage |
+| `Test — BLE (Linux)` | Portable BLE NUnit suite, including Linux compatibility/behavior checks; no controller required |
+| `Test — BLE (Windows)` | Portable BLE plus all Windows shim/production-native NUnit cases on `windows-2022`; native files remain isolated |
+| `Test — Serial (Linux/Windows/macOS)` | Separate platform jobs running SerialConsumer against the extracted ZIP, preserving behavior/dependency-loading checks; not comprehensive hardware Serial tests |
+| `Package — Universal ZIP (Windows)` | Independently builds managed/Linux/production-native inputs on `windows-2022`, validates manifest/exports/dependencies and archive integrity, uploads one ZIP/checksum; no functional suites |
+| `Test — Universal ZIP Consumer (Linux/Windows/macOS)` | CoreConsumer on all three platforms; BleConsumer on Linux/Windows with automatic and explicit registration, plus Windows .NET 8 alongside .NET 9; no SerialConsumer |
+| `Publish — Universal ZIP` | Requires every component, packaging, and consumer gate; publishes only on successful `v*` tag pushes, reusing the tested ZIP/checksum without rebuilding |
+
+All Serial and universal consumer jobs download, verify, and extract the same ZIP.
+Linux universal consumers retain BlueZ dependency checks, narrowly classified and
+reported controller skips, and case-sensitive package rejection. macOS has no BLE
+gate. Serial jobs leave room for future platform-specific functional tests.
+ScanConsumer/peripheral diagnostics are not automatic CI gates; PRs never publish.
