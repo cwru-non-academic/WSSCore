@@ -29,7 +29,7 @@ jobs:
   artifacts:
     name: Windows native tests and universal packaging
     needs: portable-tests
-    runs-on: windows-latest
+    runs-on: windows-2022
     env:
       RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'ci' }}
     steps:
