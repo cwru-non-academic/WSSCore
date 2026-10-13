@@ -11,8 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="bin/**/*.cs" />
-    <Compile Remove="obj/**/*.cs" />
+    <Compile Remove="**/bin/**/*.cs" />
+    <Compile Remove="**/obj/**/*.cs" />
     <Compile Remove="WSS.Transport.Serial/**/*.cs" />
     <Compile Remove="WSS.Transport.BLE/**/*.cs" />
     <Compile Remove="WSS.Transport.BLE.Linux/**/*.cs" />

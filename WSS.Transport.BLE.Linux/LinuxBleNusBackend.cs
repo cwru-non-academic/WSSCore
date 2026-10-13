@@ -426,5 +426,8 @@ internal sealed class LinuxBleNusBackend : IBleNusBackend, IBleNativeStackProbe
         }
     }
 
-    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+    private void ThrowIfDisposed()
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(LinuxBleNusBackend));
+    }
 }

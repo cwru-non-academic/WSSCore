@@ -1,217 +1,365 @@
-name: Build runtime artifacts
+name: Build universal WSS release
 
 on:
   pull_request:
-    branches:
-      - dev
-      - main
+    branches: [dev, main, net2_BLE]
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  core-conformance:
+  core-tests:
     name: Core conformance
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - name: Check out source
+        id: checkout
+        uses: actions/checkout@v4
+      - name: Install .NET SDKs
+        id: setup_dotnet
+        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
-      - name: Restore Core conformance dependencies
-        run: dotnet restore tests/WSS.Core.Tests/WSS.Core.Tests.csproj --locked-mode --nologo
-      - name: Run Core conformance
-        run: dotnet test tests/WSS.Core.Tests/WSS.Core.Tests.csproj --configuration Release --no-restore --nologo
+          dotnet-version: |
+            8.0.x
+            9.0.x
+      - name: Restore Core conformance with locked dependencies
+        id: restore_core
+        run: dotnet restore tests/Core/WSS.Core.Tests/WSS.Core.Tests.csproj --locked-mode --nologo
+      - name: Run Core source-project conformance tests
+        id: core_conformance
+        run: dotnet test tests/Core/WSS.Core.Tests/WSS.Core.Tests.csproj -c Release --no-restore --nologo --logger "trx;LogFileName=core.trx" --results-directory "${{ runner.temp }}/test-results"
+      - name: Retain detailed Core test results
+        id: upload_test_results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-conformance-results
+          path: ${{ runner.temp }}/test-results/**/*.trx
+          if-no-files-found: ignore
+      - name: Summarize actual execution
+        if: always()
+        shell: pwsh
+        env:
+          REPORT_TITLE: Core conformance
+          REPORT_PURPOSE: Source-project Core protocol, configuration, initialization, and emulated transport conformance.
+          REPORT_STEPS: ${{ toJSON(steps) }}
+        run: python tools/ci/summarize.py
 
-  artifacts:
+  ble-linux-tests:
+    name: BLE consumer (Linux)
+    needs: package-universal
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        id: checkout
+        uses: actions/checkout@v4
+      - name: Install .NET SDKs
+        id: setup_dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+      - name: Restore portable BLE with locked dependencies
+        id: restore_portable_ble
+        run: dotnet restore tests/BLE/WSS.BLE.Tests/WSS.BLE.Tests.csproj --locked-mode --nologo
+      - name: Run portable BLE source-project tests including Linux compatibility
+        id: portable_ble_tests
+        run: dotnet test tests/BLE/WSS.BLE.Tests/WSS.BLE.Tests.csproj -c Release --no-restore --nologo --logger "trx;LogFileName=portable-ble.trx" --results-directory "${{ runner.temp }}/test-results"
+      - name: Download the authoritative universal ZIP
+        id: download_universal_zip
+        uses: actions/download-artifact@v4
+        with:
+          name: universal-release-assets
+          path: ${{ runner.temp }}/release-input
+      - name: Verify checksum and extract the identical universal payload
+        id: verify_and_extract_zip
+        shell: pwsh
+        run: ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-input" -Destination "$env:RUNNER_TEMP/universal"
+      - name: Install BlueZ and classify controller availability
+        id: bluez_controller_classification
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes bluez
+          bluetoothd="$(command -v bluetoothd || true)"
+          if [[ -z "$bluetoothd" ]]; then bluetoothd=/usr/libexec/bluetooth/bluetoothd; fi
+          test -x "$bluetoothd"
+          "$bluetoothd" --version
+          busctl --system --no-pager list >/dev/null
+          set +e
+          output="$(sudo btmgmt info 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if { (( status == 0 )) && [[ "$output" == 'Index list with 0 items' ]]; } || [[ "$output" == *'Unable to open mgmt_socket'* ]]; then
+            echo 'WSS_BLE_SKIP_NATIVE_PROBE=1' >> "$GITHUB_ENV"
+            echo 'No controller/management interface; managed dependency tests still mandatory. Native probe NOT EXECUTED.'
+            exit 0
+          fi
+          if (( status != 0 )); then exit "$status"; fi
+          sudo systemctl start bluetooth.service || true
+          if ! busctl --system --no-pager status org.bluez >/dev/null 2>&1; then
+            sudo nohup "$bluetoothd" --nodetach >"$RUNNER_TEMP/bluetoothd.log" 2>&1 &
+            for _ in {1..20}; do
+              if busctl --system --no-pager status org.bluez >/dev/null 2>&1; then break; fi
+              sleep 0.25
+            done
+          fi
+          busctl --system --no-pager status org.bluez
+      - name: Build BLE consumer .NET 9 against packaged DLLs
+        id: build_ble_consumer_net9
+        run: dotnet build tests/Packaging/Consumers/BleConsumer/BleConsumer.csproj -c Release -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal" --nologo
+      - name: Run BLE consumer .NET 9 automatic backend loading (no stimulation)
+        id: ble_consumer_net9_automatic
+        run: dotnet run --project tests/Packaging/Consumers/BleConsumer/BleConsumer.csproj -c Release --no-build --no-restore -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal"
+      - name: Run BLE consumer .NET 9 explicit Linux backend registration
+        id: ble_consumer_net9_explicit
+        run: dotnet run --project tests/Packaging/Consumers/BleConsumer/BleConsumer.csproj -c Release --no-build --no-restore -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal" -- --register
+      - name: Retain detailed portable BLE test results
+        id: upload_test_results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ble-linux-results
+          path: ${{ runner.temp }}/test-results/**/*.trx
+          if-no-files-found: ignore
+      - name: Summarize actual execution
+        if: always()
+        shell: pwsh
+        env:
+          REPORT_TITLE: BLE consumer (Linux)
+          REPORT_PURPOSE: Portable source-project BLE functionality and packaged Linux backend/dependency activation; no peripheral connections or writes.
+          REPORT_STEPS: ${{ toJSON(steps) }}
+        run: python tools/ci/summarize.py
+
+  ble-windows-tests:
+    name: BLE consumer (Windows)
+    needs: package-universal
+    runs-on: windows-2022
+    steps:
+      - name: Check out source
+        id: checkout
+        uses: actions/checkout@v4
+      - name: Install .NET SDKs
+        id: setup_dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+      - name: Restore native bridge tests with locked dependencies
+        id: restore_native_ble
+        run: dotnet restore tests/BLE/Windows/WSS.BLE.Windows.Tests/WSS.BLE.Windows.Tests.csproj --locked-mode --nologo
+      - name: Build production Release/x64 DLL and isolated test shim
+        id: build_production_native_and_isolated_shim
+        shell: pwsh
+        run: ./tools/WindowsBleBridge/build.ps1 -Configuration Release -Architecture x64
+      - name: Run native bridge/adapter, isolated shim, and production regression NUnit tests
+        id: native_bridge_adapter_shim_and_production_regressions
+        run: dotnet test tests/BLE/Windows/WSS.BLE.Windows.Tests/WSS.BLE.Windows.Tests.csproj -c Release --no-build --no-restore --nologo --logger "trx;LogFileName=windows-native.trx" --results-directory "${{ runner.temp }}/test-results"
+      - name: Build Linux Standard backend without rebuilding shared assemblies
+        id: build_linux_compatibility_backend
+        run: dotnet build WSS.Transport.BLE.Linux/WSS.Transport.BLE.Linux.csproj -c Release --no-dependencies -p:RestoreLockedMode=true --nologo
+      - name: Run Windows portable BLE facade and Linux compatibility tests
+        id: portable_ble_tests
+        run: dotnet test tests/BLE/WSS.BLE.Tests/WSS.BLE.Tests.csproj -c Release -p:RestoreLockedMode=true -p:BuildProjectReferences=false --nologo --logger "trx;LogFileName=portable-ble.trx" --results-directory "${{ runner.temp }}/test-results"
+      - name: Download the authoritative universal ZIP
+        id: download_universal_zip
+        uses: actions/download-artifact@v4
+        with:
+          name: universal-release-assets
+          path: ${{ runner.temp }}/release-input
+      - name: Verify checksum and extract the identical universal payload
+        id: verify_and_extract_zip
+        shell: pwsh
+        run: ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-input" -Destination "$env:RUNNER_TEMP/universal"
+      - name: Build BLE consumer .NET 9 against packaged DLLs
+        id: build_ble_consumer_net9
+        run: dotnet build tests/Packaging/Consumers/BleConsumer/BleConsumer.csproj -c Release -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal" --nologo
+      - name: Run BLE consumer .NET 9 automatic Windows backend selection (no stimulation)
+        id: ble_consumer_net9_automatic
+        run: dotnet run --project tests/Packaging/Consumers/BleConsumer/BleConsumer.csproj -c Release --no-build --no-restore -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal"
+      - name: Run BLE consumer .NET 9 explicit Windows backend registration
+        id: ble_consumer_net9_explicit
+        run: dotnet run --project tests/Packaging/Consumers/BleConsumer/BleConsumer.csproj -c Release --no-build --no-restore -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal" -- --register
+      - name: Run BLE consumer .NET 8 automatic Windows backend selection
+        id: ble_consumer_net8_automatic
+        run: dotnet run --project tests/Packaging/Consumers/BleConsumer/BleConsumer.csproj -c Release -p:ConsumerTargetFramework=net8.0 -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal"
+      - name: Retain detailed portable and Windows native BLE test results
+        id: upload_test_results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ble-windows-results
+          path: ${{ runner.temp }}/test-results/**/*.trx
+          if-no-files-found: ignore
+      - name: Summarize actual execution
+        if: always()
+        shell: pwsh
+        env:
+          REPORT_TITLE: BLE consumer (Windows)
+          REPORT_PURPOSE: Portable and native source-project BLE tests with isolated shim/production DLLs, plus packaged Windows BLE consumers on .NET 9 and .NET 8.
+          REPORT_STEPS: ${{ toJSON(steps) }}
+        run: python tools/ci/summarize.py
+
+  package-universal:
     name: Build and validate artifacts
-    runs-on: windows-latest
+    runs-on: windows-2022
+    env:
+      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'ci' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - name: Check out source
+        id: checkout
+        uses: actions/checkout@v4
+      - name: Install .NET SDKs
+        id: setup_dotnet
+        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
-      - name: Build, stage, and validate all artifacts
-        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- build-all
-      - name: Upload Core+Serial artifact
+          dotnet-version: |
+            8.0.x
+            9.0.x
+      - name: Build own managed and production-native inputs, validate closure, and create the one ZIP and checksum
+        id: build_and_package_universal
+        # build-all invokes the production-only bridge build (no test shim or functional suites).
+        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- build-all --destination "${{ runner.temp }}/release-assets/WSS-Universal" --tag "${{ env.RELEASE_TAG }}"
+      - name: Verify checksum and archive extraction before upload
+        id: verify_and_extract_zip
+        shell: pwsh
+        run: ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-assets" -Destination "$env:RUNNER_TEMP/package-verification"
+      - name: Validate extracted manifest, native exports, and dependencies
+        id: validate_package_contract
+        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- validate --manifest tools/ArtifactBuild/manifests/universal.json --package "${{ runner.temp }}/package-verification/WSS-Universal"
+      - name: Universal rejection contract checks
+        id: package_rejection_checks
+        run: python tests/Packaging/verify_universal.py "${{ runner.temp }}/package-verification/WSS-Universal"
+      - name: Upload the single release archive and metadata
+        id: upload_universal_assets
         uses: actions/upload-artifact@v4
         with:
-          name: core-serial
-          path: artifacts/core-serial
+          name: universal-release-assets
+          path: |
+            ${{ runner.temp }}/release-assets/WSS-Universal-*.zip
+            ${{ runner.temp }}/release-assets/SHA256SUMS.txt
           if-no-files-found: error
-      - name: Upload unified BLE artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ble-unified
-          path: artifacts/ble-unified
-          if-no-files-found: error
+      - name: Summarize actual execution
+        if: always()
+        shell: pwsh
+        env:
+          REPORT_TITLE: Build and validate artifacts
+          REPORT_PURPOSE: Build and validate one authoritative universal ZIP/checksum from this runner's own managed, Linux backend, and production-native inputs; no functional suites.
+          REPORT_STEPS: ${{ toJSON(steps) }}
+        run: python tools/ci/summarize.py
 
-  core-consumer:
-    name: Core consumer (${{ matrix.platform }})
-    needs:
-      - artifacts
-      - core-conformance
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            platform: Windows
-          - os: ubuntu-latest
-            platform: Ubuntu
-          - os: macos-latest
-            platform: macOS
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-serial
-          path: ${{ runner.temp }}/wss-core-serial
-      - name: Restore, build, and run Core consumer
-        run: |
-          dotnet restore tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
-          dotnet build tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
-          dotnet run --project tests/ArtifactConsumers/CoreConsumer/CoreConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
-
-  serial-consumer:
+  serial-tests:
     name: Serial consumer (${{ matrix.platform }})
-    needs:
-      - artifacts
-      - core-conformance
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            platform: Windows
-          - os: ubuntu-latest
-            platform: Ubuntu
-          - os: macos-latest
-            platform: macOS
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-serial
-          path: ${{ runner.temp }}/wss-core-serial
-      - name: Restore, build, and run Serial consumer
-        run: |
-          dotnet restore tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
-          dotnet build tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
-          dotnet run --project tests/ArtifactConsumers/SerialConsumer/SerialConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-core-serial"
-
-  ble-consumer:
-    name: BLE consumer (${{ matrix.platform }})
-    needs:
-      - artifacts
-      - core-conformance
+    needs: package-universal
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            platform: Windows
-          - os: ubuntu-latest
-            platform: Ubuntu
+          - platform: Linux
+            os: ubuntu-latest
+          - platform: Windows
+            os: windows-latest
+          - platform: macOS
+            os: macos-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - name: Check out source
+        id: checkout
+        uses: actions/checkout@v4
+      - name: Install .NET SDKs
+        id: setup_dotnet
+        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
-      - name: Install and verify BlueZ
+          dotnet-version: |
+            8.0.x
+            9.0.x
+      - name: Download the authoritative universal ZIP
+        id: download_universal_zip
+        uses: actions/download-artifact@v4
+        with:
+          name: universal-release-assets
+          path: ${{ runner.temp }}/release-input
+      - name: Verify checksum and extract the identical universal payload
+        id: verify_and_extract_zip
+        shell: pwsh
+        run: ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-input" -Destination "$env:RUNNER_TEMP/universal"
+      # Artifact/dependency checks only; future platform-specific Serial functional tests belong here.
+      - name: Serial artifact-only consumer
+        id: serial_artifact_consumer
+        run: dotnet run --project tests/Packaging/Consumers/SerialConsumer/SerialConsumer.csproj -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal" --nologo
+      - name: Summarize actual execution
+        if: always()
+        shell: pwsh
+        env:
+          REPORT_TITLE: Serial consumer (${{ matrix.platform }})
+          REPORT_PURPOSE: Packaged Serial construction/options/state/disposal and Core/Serial/Ports dependency compatibility; no Serial port I/O.
+          REPORT_STEPS: ${{ toJSON(steps) }}
+        run: python tools/ci/summarize.py
+
+  core-consumers:
+    name: Core consumer (${{ matrix.platform }})
+    needs: package-universal
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            os: ubuntu-latest
+          - platform: Windows
+            os: windows-latest
+          - platform: macOS
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out source
+        id: checkout
+        uses: actions/checkout@v4
+      - name: Install .NET SDKs
+        id: setup_dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+      - name: Download the authoritative universal ZIP
+        id: download_universal_zip
+        uses: actions/download-artifact@v4
+        with:
+          name: universal-release-assets
+          path: ${{ runner.temp }}/release-input
+      - name: Verify checksum and extract the identical universal payload
+        id: verify_and_extract_zip
+        shell: pwsh
+        run: ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-input" -Destination "$env:RUNNER_TEMP/universal"
+      - name: Validate exact managed and native package identities
+        id: validate_package_contract
+        run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- validate --manifest tools/ArtifactBuild/manifests/universal.json --package "${{ runner.temp }}/universal/WSS-Universal"
+      - name: Core artifact-only consumer
+        id: core_artifact_consumer
+        run: dotnet run --project tests/Packaging/Consumers/CoreConsumer/CoreConsumer.csproj -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal" --nologo
+      - name: Universal rejection contract checks (Linux filesystem)
+        id: linux_package_rejection_checks
         if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
+        run: python tests/Packaging/verify_universal.py "${{ runner.temp }}/universal/WSS-Universal"
+      - name: Summarize actual execution
+        if: always()
+        shell: pwsh
+        env:
+          REPORT_TITLE: Core consumer (${{ matrix.platform }})
+          REPORT_PURPOSE: Packaged Core public API/emulated operation and platform-wide universal inventory, identity, dependency, and native validation.
+          REPORT_STEPS: ${{ toJSON(steps) }}
+        run: python tools/ci/summarize.py
 
-          sudo apt-get update
-          sudo apt-get install --yes bluez
-
-          bluetoothd="$(command -v bluetoothd || true)"
-          if [[ -z "$bluetoothd" ]]; then
-            bluetoothd=/usr/libexec/bluetooth/bluetoothd
-          fi
-
-          if [[ ! -x "$bluetoothd" ]]; then
-            echo "BlueZ bluetoothd executable was not found or is not executable: $bluetoothd" >&2
-            exit 1
-          fi
-
-          "$bluetoothd" --version
-          echo "BlueZ runtime: PASS"
-
-          busctl --system --no-pager list >/dev/null
-          echo "System D-Bus: PASS"
-
-          set +e
-          btmgmt_output="$(sudo btmgmt info 2>&1)"
-          btmgmt_status=$?
-          set -e
-          printf '%s\n' "$btmgmt_output"
-
-          if (( btmgmt_status == 0 )) && [[ "$btmgmt_output" == "Index list with 0 items" ]]; then
-            echo "WSS_BLE_SKIP_NATIVE_PROBE=1" >> "$GITHUB_ENV"
-            echo "No Bluetooth controller is exposed by the hosted runner."
-            exit 0
-          fi
-
-          if (( btmgmt_status != 0 )); then
-            if [[ "$btmgmt_output" == *"Unable to open mgmt_socket"* ]]; then
-              echo "WSS_BLE_SKIP_NATIVE_PROBE=1" >> "$GITHUB_ENV"
-              echo "Bluetooth management interface: NOT AVAILABLE (acceptable)"
-              exit 0
-            fi
-
-            echo "Unexpected btmgmt failure." >&2
-            exit "$btmgmt_status"
-          fi
-
-          sudo systemctl start bluetooth.service || true
-
-          if ! busctl --system --no-pager status org.bluez >/dev/null 2>&1; then
-
-            sudo nohup "$bluetoothd" --nodetach >"$RUNNER_TEMP/bluetoothd.log" 2>&1 &
-
-            for _ in {1..20}; do
-              if busctl --system --no-pager status org.bluez >/dev/null 2>&1; then
-                break
-              fi
-              sleep 0.25
-            done
-          fi
-
-          if ! busctl --system --no-pager status org.bluez; then
-            cat "$RUNNER_TEMP/bluetoothd.log" 2>/dev/null || true
-            exit 1
-          fi
-      - uses: actions/download-artifact@v4
-        with:
-          name: ble-unified
-          path: ${{ runner.temp }}/wss-ble-unified
-      - name: Restore, build, and run unified BLE consumer
-        run: |
-          dotnet restore tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-unified"
-          dotnet build tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-unified"
-          dotnet run --project tests/ArtifactConsumers/BleConsumer/BleConsumer.csproj --no-build --no-restore --nologo -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/wss-ble-unified"
-
-  release:
-    needs:
-      - core-conformance
-      - artifacts
-      - core-consumer
-      - serial-consumer
-      - ble-consumer
+  publish-universal:
+    name: Publish — Universal ZIP
+    needs: [core-tests, ble-linux-tests, ble-windows-tests, package-universal, serial-tests, core-consumers]
     if: ${{ success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:
@@ -219,59 +367,35 @@ jobs:
     env:
       TAG: ${{ github.ref_name }}
     steps:
-      - name: Download Core+Serial artifact
+      - name: Check out reporting tools
+        id: checkout
+        uses: actions/checkout@v4
+      - name: Download the tested universal release assets
+        id: download_universal_zip
         uses: actions/download-artifact@v4
         with:
-          name: core-serial
-          path: ${{ runner.temp }}/release-input/core-serial
-      - name: Download unified BLE artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ble-unified
-          path: ${{ runner.temp }}/release-input/ble-unified
-      - name: Package release assets and checksums
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          assets="$RUNNER_TEMP/release-assets"
-          mkdir -p "$assets"
-
-          (
-            cd "$RUNNER_TEMP/release-input/core-serial"
-            zip -q -r "$assets/WSS-Core-Serial-${TAG}.zip" .
-          )
-          (
-            cd "$RUNNER_TEMP/release-input/ble-unified"
-            zip -q -r "$assets/WSS-BLE-Unified-${TAG}.zip" .
-          )
-
-          (
-            cd "$assets"
-            sha256sum \
-              "WSS-Core-Serial-${TAG}.zip" \
-              "WSS-BLE-Unified-${TAG}.zip" \
-              > SHA256SUMS.txt
-          )
-      - name: Create GitHub Release
+          name: universal-release-assets
+          path: ${{ runner.temp }}/release-assets
+      - name: Verify and publish only the gated universal archive and checksum
+        id: verify_and_publish_tested_zip
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-
           cd "$RUNNER_TEMP/release-assets"
-
+          test -f "WSS-Universal-${TAG}.zip"
+          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 2
+          sha256sum --check SHA256SUMS.txt
           prerelease_args=()
-          if [[ "$TAG" == *-* ]]; then
-            prerelease_args+=(--prerelease)
-          fi
-
-          gh release create "$TAG" \
-            "WSS-Core-Serial-${TAG}.zip" \
-            "WSS-BLE-Unified-${TAG}.zip" \
-            SHA256SUMS.txt \
-            --verify-tag \
-            --generate-notes \
-            "${prerelease_args[@]}"
+          if [[ "$TAG" == *-* ]]; then prerelease_args+=(--prerelease); fi
+          gh release create "$TAG" "WSS-Universal-${TAG}.zip" SHA256SUMS.txt --verify-tag --generate-notes "${prerelease_args[@]}"
+      - name: Summarize actual execution
+        if: always()
+        shell: pwsh
+        env:
+          REPORT_TITLE: Publish — Universal ZIP
+          REPORT_PURPOSE: Publish only the gated, checksum-verified universal ZIP and checksum from a v-tag push; no rebuild or repackaging.
+          REPORT_STEPS: ${{ toJSON(steps) }}
+        run: python tools/ci/summarize.py

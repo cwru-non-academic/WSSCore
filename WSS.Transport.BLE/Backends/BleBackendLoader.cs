@@ -1,130 +1,78 @@
 using System.Reflection;
-using System.Runtime.Loader;
+using System.Runtime.InteropServices;
 
 namespace Wss.Transports.Backends;
 
 internal static class BleBackendLoader
 {
-    private const string LinuxAssemblyName = "WSS.Transport.BLE.Linux";
-    private const string LinuxFactoryTypeName = "Wss.Transports.Backends.Linux.LinuxBleNusBackendFactory";
-    private const string WindowsAssemblyName = "WSS.Transport.BLE.Windows";
-    private const string WindowsFactoryTypeName = "Wss.Transports.Backends.Windows.WindowsBleNusBackendFactory";
-
     private static readonly object Gate = new();
-    private static IBleNusBackendFactory? _backendFactory;
-    private static BleBackendLoadContext? _loadContext;
-    private static string? _loadedPlatform;
+    private static readonly Dictionary<string, IBleNusBackendFactory> Factories = new();
+    private static readonly HashSet<string> Activated = new();
+
+    internal static void RegisterFactory(string platform, IBleNusBackendFactory factory)
+    {
+        GetBackendIdentity(platform);
+        if (factory == null) throw new ArgumentNullException(nameof(factory));
+        lock (Gate)
+        {
+            if (Factories.TryGetValue(platform, out var existing))
+            {
+                if (existing.GetType() == factory.GetType()) return;
+                if (Activated.Contains(platform))
+                    throw new InvalidOperationException($"The '{platform}' BLE backend is already activated; its factory cannot be replaced.");
+            }
+            Factories[platform] = factory;
+        }
+    }
 
     internal static IBleNusBackend CreateBackend(BleNusTransportOptions options) =>
         CreateBackendForPlatform(options, GetCurrentPlatform());
 
     internal static IBleNusBackend CreateBackendForPlatform(BleNusTransportOptions options, string platform)
     {
+        if (options == null) throw new ArgumentNullException(nameof(options));
+        GetBackendIdentity(platform);
         lock (Gate)
         {
-            if (_loadedPlatform == null)
-            {
-                _loadedPlatform = platform;
-            }
-            else if (!string.Equals(_loadedPlatform, platform, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"The '{_loadedPlatform}' BLE backend is already loaded in this process; the backend load context cannot be switched to '{platform}'.");
-            }
-
-            _backendFactory ??= LoadFactory(platform);
-            return _backendFactory.Create(options);
+            if (!Factories.TryGetValue(platform, out var factory))
+                Factories[platform] = factory = LoadFactory(platform);
+            var backend = factory.Create(options);
+            Activated.Add(platform);
+            return backend;
         }
+    }
+
+    internal static string GetCurrentPlatform()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return "windows";
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) return "linux";
+        throw new PlatformNotSupportedException("BLE is supported only on Linux and Windows.");
     }
 
     private static IBleNusBackendFactory LoadFactory(string platform)
     {
-        (string platformDirectory, string assemblyName, string factoryTypeName) = GetBackendIdentity(platform);
-        string backendPath = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "backends",
-            platformDirectory,
-            assemblyName + ".dll"));
-
-        if (!File.Exists(backendPath))
+        var (assemblyName, factoryName) = GetBackendIdentity(platform);
+        string path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "backends", platform, assemblyName + ".dll"));
+        Assembly? assembly = AppDomain.CurrentDomain.GetAssemblies().SingleOrDefault(a => a.GetName().Name == assemblyName);
+        if (assembly == null && !File.Exists(path))
+            throw new FileNotFoundException($"The BLE backend for {platform} was not found at '{path}'. Deploy its dependencies or register the platform backend explicitly.", path);
+        try
         {
-            throw new FileNotFoundException(
-                $"The BLE backend for {platformDirectory} was not found at '{backendPath}'.",
-                backendPath);
+            assembly = assembly ?? Assembly.LoadFrom(path);
+            var type = assembly.GetType(factoryName, throwOnError: true)!;
+            return Activator.CreateInstance(type, nonPublic: true) as IBleNusBackendFactory
+                ?? throw new InvalidCastException($"Factory '{factoryName}' does not implement the shared BLE contract.");
         }
-
-        _loadContext ??= new BleBackendLoadContext(backendPath, typeof(IBleNusBackend).Assembly);
-        Assembly backendAssembly = _loadContext.LoadFromAssemblyPath(backendPath);
-        Type factoryType = backendAssembly.GetType(factoryTypeName, throwOnError: true)!;
-        object factory = Activator.CreateInstance(factoryType, nonPublic: true)
-            ?? throw new InvalidOperationException($"Unable to create BLE backend factory '{factoryTypeName}'.");
-
-        return factory as IBleNusBackendFactory
-            ?? throw new InvalidCastException(
-                $"BLE backend factory '{factoryTypeName}' does not implement the facade backend contract.");
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Unable to activate the {platform} BLE backend '{assemblyName}'. Check its compatible managed dependencies and shared WSS assemblies.", ex);
+        }
     }
 
-    private static string GetCurrentPlatform()
+    private static (string AssemblyName, string FactoryName) GetBackendIdentity(string platform) => platform switch
     {
-        if (OperatingSystem.IsLinux())
-        {
-            return "linux";
-        }
-
-        if (OperatingSystem.IsWindows())
-        {
-            return "windows";
-        }
-
-        throw new PlatformNotSupportedException("BLE is supported only on Linux and Windows.");
-    }
-
-    private static (string PlatformDirectory, string AssemblyName, string FactoryTypeName) GetBackendIdentity(string platform) =>
-        platform switch
-        {
-            "linux" => ("linux", LinuxAssemblyName, LinuxFactoryTypeName),
-            "windows" => ("windows", WindowsAssemblyName, WindowsFactoryTypeName),
-            _ => throw new ArgumentOutOfRangeException(nameof(platform), platform, "Unknown BLE backend platform.")
-        };
-
-    private sealed class BleBackendLoadContext : AssemblyLoadContext
-    {
-        private readonly string _backendDirectory;
-        private readonly AssemblyDependencyResolver _resolver;
-        private readonly Assembly _sharedFacadeAssembly;
-
-        internal BleBackendLoadContext(string backendPath, Assembly sharedFacadeAssembly)
-            : base("WSS.Transport.BLE.Backend", isCollectible: false)
-        {
-            _backendDirectory = Path.GetDirectoryName(backendPath)!;
-            _resolver = new AssemblyDependencyResolver(backendPath);
-            _sharedFacadeAssembly = sharedFacadeAssembly;
-        }
-
-        protected override Assembly? Load(AssemblyName assemblyName)
-        {
-            if (AssemblyName.ReferenceMatchesDefinition(assemblyName, _sharedFacadeAssembly.GetName()))
-            {
-                return _sharedFacadeAssembly;
-            }
-
-            string? assemblyPath = _resolver.ResolveAssemblyToPath(assemblyName);
-            if (assemblyPath == null && assemblyName.Name != null)
-            {
-                string adjacentPath = Path.Combine(_backendDirectory, assemblyName.Name + ".dll");
-                if (File.Exists(adjacentPath))
-                {
-                    assemblyPath = adjacentPath;
-                }
-            }
-
-            return assemblyPath == null ? null : LoadFromAssemblyPath(assemblyPath);
-        }
-
-        protected override nint LoadUnmanagedDll(string unmanagedDllName)
-        {
-            string? libraryPath = _resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
-            return libraryPath == null ? nint.Zero : LoadUnmanagedDllFromPath(libraryPath);
-        }
-    }
+        "windows" => ("WSS.Transport.BLE.Windows", "Wss.Transports.Backends.Windows.WindowsBleNusBackendFactory"),
+        "linux" => ("WSS.Transport.BLE.Linux", "Wss.Transports.Backends.Linux.LinuxBleNusBackendFactory"),
+        _ => throw new ArgumentOutOfRangeException(nameof(platform), platform, "Unknown BLE backend platform.")
+    };
 }

@@ -58,6 +58,13 @@ public sealed class BleNusTransport : ITransport, IDisposable
     {
     }
 
+    internal BleNusTransport(BleNusTransportOptions options, IBleNusBackend backend)
+    {
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _options.Validate();
+        _backend = backend ?? throw new ArgumentNullException(nameof(backend));
+    }
+
     /// <summary>
     /// Gets whether the transport currently has an active BLE session and both required GATT characteristics.
     /// </summary>
@@ -141,7 +148,7 @@ public sealed class BleNusTransport : ITransport, IDisposable
     public Task SendAsync(byte[] data, CancellationToken ct = default)
     {
         ThrowIfDisposed();
-        ArgumentNullException.ThrowIfNull(data);
+        if (data == null) throw new ArgumentNullException(nameof(data));
         return _backend.SendAsync(data, ct);
     }
 
@@ -175,5 +182,8 @@ public sealed class BleNusTransport : ITransport, IDisposable
     /// <returns>A new options object with <see cref="BleNusTransportOptions.DeviceName"/> set.</returns>
     public static BleNusTransportOptions CreateDefaultOptions(string deviceName) => new() { DeviceName = deviceName };
 
-    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+    private void ThrowIfDisposed()
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(BleNusTransport));
+    }
 }
