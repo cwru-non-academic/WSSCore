@@ -117,3 +117,31 @@ Serial smoke checks do not establish hardware communication. See the authoritati
 coverage, placement rules and job-summary/TRX visibility.
 `Publish — Universal ZIP` requires all testing/packaging jobs and reuses the validated
 ZIP/checksum without rebuilding, restaging, or rezipping. PRs do not publish.
+
+## Automatic dev propagation
+
+Ordinary `dev` pushes run this same producer and all existing tests/consumers. The gated
+`Start routine downstream validation` job reuses its uploaded `universal-release-assets`
+artifact and checksum (no second build, release or tag) and automatically dispatches the
+existing Integration `promote-wss.yml` on `dev` with the exact commit, producer run ID,
+artifact ID and `WSS-Universal-ci.zip` SHA-256. Integration waits for this entire producer
+run to complete successfully before issuing downstream preflight dispatch credentials.
+PR synthetic merge SHAs, manual producer runs and tag pushes never enter this routine path.
+
+Integration automatically validates the same candidate in Integration and CLI preflights,
+constructs/checks schema-2 approval, and opens/reuses a lib-only Integration PR. Reviewed
+Integration merge starts the existing CLI gitlink-only PR cascade; both PRs retain normal
+committed-state CI and human merges. Identical complete payload bytes produce a verified
+no-op rather than a metadata-only PR. Correlation is `wss-<run-id>-<artifact-id>` throughout.
+
+Deploy the Integration automation first. The existing `WSS_GITHUB_APP_ID` variable and
+`WSS_GITHUB_APP_PRIVATE_KEY` secret must be available in Core; its App token requests only
+Integration Actions write. Missing credentials/permissions or failed handoff fail clearly.
+Nothing in this path authorizes an auto-merge or protection bypass.
+
+For the controlled acceptance run, `WSS_Core_Interface.csproj` adds only
+`AssemblyMetadata("WssPropagationAcceptance", "automatic-universal-v1")`, changing a
+packaged assembly without changing public APIs or stimulation behavior. Publish/merge only
+with authorization, and observe the automatic push path rather than dispatching workflows
+manually. A local build/safety check is not a hosted end-to-end acceptance pass; record the
+actual producer/preflight runs, artifact/hash and both PRs after authorized execution.

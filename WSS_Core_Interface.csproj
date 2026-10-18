@@ -10,6 +10,11 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
+  <!-- Controlled propagation acceptance candidate: metadata only, no API/runtime change. -->
+  <ItemGroup>
+    <AssemblyMetadata Include="WssPropagationAcceptance" Value="automatic-universal-v1" />
+  </ItemGroup>
+
   <ItemGroup>
     <Compile Remove="**/bin/**/*.cs" />
     <Compile Remove="**/obj/**/*.cs" />
