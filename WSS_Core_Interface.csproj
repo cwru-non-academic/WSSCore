@@ -12,7 +12,7 @@
 
   <!-- Controlled propagation acceptance candidate: metadata only, no API/runtime change. -->
   <ItemGroup>
-    <AssemblyMetadata Include="WssPropagationAcceptance" Value="automatic-universal-v2" />
+    <AssemblyMetadata Include="WssPropagationAcceptance" Value="automatic-universal-v3" />
   </ItemGroup>
 
   <ItemGroup>
