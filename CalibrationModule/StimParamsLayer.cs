@@ -13,6 +13,7 @@ namespace Wss.CalibrationModule
         private readonly IStimulationCore _core;          // required core
         private readonly StimParamsConfigController _ctrl;      // params context
         private readonly IBasicStimulation _basic;       // optional BASIC capability
+        private readonly IAdvancedEventProgrammer _advanced; // optional ADVANCED capability
         private int _totalChannels;
         private float[] _lastAmp;
 
@@ -24,6 +25,7 @@ namespace Wss.CalibrationModule
         /// <param name="core">Initialized stimulation core to wrap.</param>
         /// <param name="pathOrDir">Params file path or directory.</param>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="core"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="pathOrDir"/> is null or whitespace.</exception>
         public StimParamsLayer(IStimulationCore core, string pathOrDir)
         {
             _core = core ?? throw new ArgumentNullException(nameof(core));
@@ -31,6 +33,7 @@ namespace Wss.CalibrationModule
             int maxWss = _core.GetCoreConfigController().MaxWss;
             _ctrl = new StimParamsConfigController(pathOrDir, maxWss);
             _basic = _core as IBasicStimulation;
+            _advanced = _core as IAdvancedEventProgrammer;
 
             _totalChannels = _ctrl.PerWss * Math.Max(1, maxWss);
             _lastAmp = new float[_totalChannels];
@@ -40,13 +43,13 @@ namespace Wss.CalibrationModule
         // ---- IStimParamsCore ----
 
         /// <inheritdoc/>
-        public void StimulateNormalized(int channel, float value01)
+        public void StimulateNormalized(int channel, float normalizedValue)
         {
             if (channel < 1 || channel > _totalChannels)
                 throw new ArgumentOutOfRangeException(nameof(channel), $"Channel must be 1..{_totalChannels}.");
 
             // Clamp without Math.Clamp for netstandard2.0
-            if (value01 < 0f) value01 = 0f; else if (value01 > 1f) value01 = 1f;
+            if (normalizedValue < 0f) normalizedValue = 0f; else if (normalizedValue > 1f) normalizedValue = 1f;
 
             string baseKey = $"stim.ch.{channel}";
             string ampMode = _ctrl.GetChannelAmpMode(channel);
@@ -64,13 +67,13 @@ namespace Wss.CalibrationModule
 
                 float defPw = _ctrl.TryGetStimParam($"{baseKey}.defaultPW", out var dPw) ? dPw : 50f;
                 pulseWidth = (int)Math.Round(defPw);
-                if (value01 <= 0f)
+                if (normalizedValue <= 0f)
                 {
                     amp = 0f;
                 }
                 else
                 {
-                    amp = paMin + (paMax - paMin) * value01;
+                    amp = paMin + (paMax - paMin) * normalizedValue;
                 }
                 reportedDrive = amp;
             }
@@ -81,13 +84,13 @@ namespace Wss.CalibrationModule
                 if (pwMax < pwMin) { var tmp = pwMin; pwMin = pwMax; pwMax = tmp; }
 
                 amp = _ctrl.TryGetStimParam($"{baseKey}.defaultPA", out var defaultPa) ? defaultPa : 1f;
-                if (value01 <= 0f)
+                if (normalizedValue <= 0f)
                 {
                     pulseWidth = 0;
                 }
                 else
                 {
-                    pulseWidth = (int)Math.Round(pwMin + (pwMax - pwMin) * value01);
+                    pulseWidth = (int)Math.Round(pwMin + (pwMax - pwMin) * normalizedValue);
                 }
                 reportedDrive = pulseWidth;
             }
@@ -278,6 +281,18 @@ namespace Wss.CalibrationModule
                 return true;
             }
             basic = null!;
+            return false;
+        }
+
+        /// <inheritdoc/>
+        public bool TryGetAdvancedEventProgrammer(out IAdvancedEventProgrammer programmer)
+        {
+            if (_advanced != null)
+            {
+                programmer = _advanced;
+                return true;
+            }
+            programmer = null!;
             return false;
         }
 

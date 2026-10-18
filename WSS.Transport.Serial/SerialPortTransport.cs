@@ -4,8 +4,9 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Wss.CoreModule;
 
-namespace Wss.CoreModule
+namespace Wss.Transports
 {
     /// <summary>
     /// Serial-port implementation of <see cref="ITransport"/> for WSS communications.

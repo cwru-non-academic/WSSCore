@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>WSS.Transport.BLE.Windows.Native</AssemblyName>
+    <RootNamespace>Wss.Ble.Windows.Native</RootNamespace>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup><InternalsVisibleTo Include="WSS.BLE.Windows.Tests" /></ItemGroup>
+</Project>

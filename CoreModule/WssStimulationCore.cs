@@ -6,13 +6,15 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
+using Wss.Transports;
+
 namespace Wss.CoreModule
 {
     /// <summary>
     /// Stimulation core that manages connection, setup (via a queued step runner), and a background
     /// streaming loop. Public mutator methods enqueue device edits and return immediately.
     /// </summary>
-    public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation
+    public sealed class WssStimulationCore : IStimulationCore, IBasicStimulation, IAdvancedEventProgrammer
     {
         #region ========== Fields & nested types ==========
         // ---- transport & config ----
@@ -33,6 +35,8 @@ namespace Wss.CoreModule
         private readonly Dictionary<WssTarget, ModuleSettings> _unitSettings = new Dictionary<WssTarget, ModuleSettings>();
         private int _maxWSS = 1;
         private readonly SemaphoreSlim _setupGate = new(1, 1);
+        private readonly object _streamGate = new object();
+        private int _streamStopsInProgress;
 
         // ---- background tasks ----
         private CancellationTokenSource _streamCts;
@@ -143,46 +147,68 @@ namespace Wss.CoreModule
                     break;
 
                 case CoreState.SettingUp:
-                    // Start or keep the runner. If a pass finished but queue isn't empty (new steps arrived),
-                    // restart the runner to drain remaining work.
-                    if (_setupRunner == null)
+                    if (!_setupGate.Wait(0))
+                        break;
+                    try
                     {
-                        EnsureSetupRunner();
-                    }
-                    else if (_setupRunner.IsFaulted)
-                    {
-                        var root = _setupRunner.Exception?.GetBaseException().Message ?? "Unknown error";
-                        _setupRunner = null;
-                        if (++_currentSetupTries > _maxSetupTries)
+                        if (_state != CoreState.SettingUp || _streamStopsInProgress > 0)
+                            break;
+
+                        // Start or keep the runner. If a pass finished but queue isn't empty (new steps arrived),
+                        // restart the runner to drain remaining work.
+                        if (_setupRunner == null)
                         {
-                            Log.Error($"Setup failed: {root} (exceeded {_maxSetupTries} attempts)");
-                            _state = CoreState.Error;
+                            EnsureSetupRunner();
                         }
-                        else
+                        else if (_setupRunner.IsFaulted)
                         {
-                            Log.Warn($"Setup failed: {root}. Retrying {_currentSetupTries}/{_maxSetupTries}...");
+                            var root = _setupRunner.Exception?.GetBaseException().Message ?? "Unknown error";
+                            _setupRunner = null;
+                            if (++_currentSetupTries > _maxSetupTries)
+                            {
+                                Log.Error($"Setup failed: {root} (exceeded {_maxSetupTries} attempts)");
+                                _state = CoreState.Error;
+                            }
+                            else
+                            {
+                                Log.Warn($"Setup failed: {root}. Retrying {_currentSetupTries}/{_maxSetupTries}...");
+                            }
+                        }
+                        else if (_setupRunner.IsCompleted && !SetupQueueEmpty())
+                        {
+                            EnsureSetupRunner();
+                        }
+                        else if (_setupRunner.IsCompleted && SetupQueueEmpty())
+                        {
+                            _state = CoreState.Ready;
                         }
                     }
-                    else if (_setupRunner.IsCompleted && !SetupQueueEmpty())
-                    {
-                        EnsureSetupRunner();
-                    }
-                    else if (_setupRunner.IsCompleted && SetupQueueEmpty())
-                    {
-                        _state = CoreState.Ready;
-                    }
+                    finally { _setupGate.Release(); }
                     break;
 
                 case CoreState.Ready:
-                    if (_wss.Started)
+                    if (!_setupGate.Wait(0))
+                        break;
+                    try
                     {
-                        _state = CoreState.Started;
+                        if (_state == CoreState.Ready && _streamStopsInProgress == 0 && _wss.Started)
+                            _state = CoreState.Started;
                     }
+                    finally { _setupGate.Release(); }
                     break;
 
                 case CoreState.Started:
-                    StartStreamingInternal();
-                    _state = CoreState.Streaming;
+                    if (!_setupGate.Wait(0))
+                        break;
+                    try
+                    {
+                        if (_state == CoreState.Started && _streamStopsInProgress == 0)
+                        {
+                            StartStreamingInternal();
+                            _state = CoreState.Streaming;
+                        }
+                    }
+                    finally { _setupGate.Release(); }
                     break;
 
                 case CoreState.Streaming:
@@ -190,7 +216,7 @@ namespace Wss.CoreModule
                     break;
 
                 case CoreState.Error:
-                    StopStreamingInternal();
+                    StopStreamingInternal().GetAwaiter().GetResult();
                     SafeDisconnect();
                     break;
             }
@@ -199,7 +225,7 @@ namespace Wss.CoreModule
         /// <inheritdoc/>
         public void Shutdown()
         {
-            StopStreamingInternal();
+            StopStreamingInternal().GetAwaiter().GetResult();
             if (_wss != null)
             {
                 try { _wss.ZeroOutStim(); } catch { }
@@ -302,15 +328,14 @@ namespace Wss.CoreModule
                 case CoreState.SettingUp:
                 case CoreState.Ready:
                 case CoreState.Started:
-                    _ = ScheduleSetupChangeAsync(targetWSS,
+                    _ = ScheduleSetupChangeAsync(targetWSS, false,
                         () => StepLogger(_wss.StopStim(targetWSS),      $"StopStim[{targetWSS}]")
                     );
                     break;
                 case CoreState.Streaming:
-                    _ = ScheduleSetupChangeAsync(targetWSS,
+                    _ = ScheduleSetupChangeAsync(targetWSS, false,
                         () => StepLogger(_wss.StopStim(targetWSS),      $"StopStim[{targetWSS}]")
                     );
-                    StopStreamingInternal();
                     break;
             }
         }
@@ -342,7 +367,30 @@ namespace Wss.CoreModule
                 () => StepLogger(_wss.EditEventPw(eventID, new[] { 0, 0, _currentIPD }, targetWSS), $"UpdateIPD[{targetWSS}], Event[{eventID}]")
             );
         }
-        
+
+        /// <inheritdoc/>
+        public void UpdateEventRatio(int ratio, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            if (ratio != 1 && ratio != 2 && ratio != 4 && ratio != 8)
+                throw new ArgumentOutOfRangeException(nameof(ratio), "Ratio must be one of {1,2,4,8}.");
+
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventRatio(1, ratio, targetWSS), $"UpdateEventRatio[{targetWSS}], Event[1]"),
+                () => StepLogger(_wss.EditEventRatio(2, ratio, targetWSS), $"UpdateEventRatio[{targetWSS}], Event[2]"),
+                () => StepLogger(_wss.EditEventRatio(3, ratio, targetWSS), $"UpdateEventRatio[{targetWSS}], Event[3]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventRatio(int ratio, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            if (ratio != 1 && ratio != 2 && ratio != 4 && ratio != 8)
+                throw new ArgumentOutOfRangeException(nameof(ratio), "Ratio must be one of {1,2,4,8}.");
+
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventRatio(eventID, ratio, targetWSS), $"UpdateEventRatio[{targetWSS}], Event[{eventID}]")
+            );
+        }
 
         /// <inheritdoc/>
         public void UpdateWaveform(int[] waveform, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
@@ -410,6 +458,197 @@ namespace Wss.CoreModule
         {
             return _coreConfig;
         }
+
+        // ---- IBasicStimulation (setup edits) ----
+
+        /// <inheritdoc/>
+        public void UpdateEventDelay(int delayMs, int eventID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventDelay(eventID, delayMs, targetWSS), $"UpdateEventDelay[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventDelay(int delayMs, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventDelay(1, delayMs, targetWSS), $"UpdateEventDelay[{targetWSS}], Event[1]"),
+                () => StepLogger(_wss.EditEventDelay(2, delayMs, targetWSS), $"UpdateEventDelay[{targetWSS}], Event[2]"),
+                () => StepLogger(_wss.EditEventDelay(3, delayMs, targetWSS), $"UpdateEventDelay[{targetWSS}], Event[3]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SetEventEnabled(int eventID, bool enabled, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventEnableBit(eventID, enabled ? 1 : 0, targetWSS), $"SetEventEnabled[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SetEventEnabled(bool enabled, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventEnableBit(1, enabled ? 1 : 0, targetWSS), $"SetEventEnabled[{targetWSS}], Event[1]"),
+                () => StepLogger(_wss.EditEventEnableBit(2, enabled ? 1 : 0, targetWSS), $"SetEventEnabled[{targetWSS}], Event[2]"),
+                () => StepLogger(_wss.EditEventEnableBit(3, enabled ? 1 : 0, targetWSS), $"SetEventEnabled[{targetWSS}], Event[3]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void CreateContactConfig(ContactConfigDefinition definition, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            if (definition == null) throw new ArgumentNullException(nameof(definition));
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.CreateContactConfig(definition, targetWSS), $"CreateContactConfig[{targetWSS}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void DeleteContactConfig(int contactConfigID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.DeleteContactConfig(contactConfigID, targetWSS), $"DeleteContactConfig[{targetWSS}], ID[{contactConfigID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventContactConfig(int eventID, int contactConfigID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventContactConfig(eventID, contactConfigID, targetWSS), $"UpdateEventContactConfig[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventContactConfig(int contactConfigID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventContactConfig(1, contactConfigID, targetWSS), $"UpdateEventContactConfig[{targetWSS}], Event[1]"),
+                () => StepLogger(_wss.EditEventContactConfig(2, contactConfigID, targetWSS), $"UpdateEventContactConfig[{targetWSS}], Event[2]"),
+                () => StepLogger(_wss.EditEventContactConfig(3, contactConfigID, targetWSS), $"UpdateEventContactConfig[{targetWSS}], Event[3]")
+            );
+        }
+
+        // ---- IAdvancedEventProgrammer ----
+
+        /// <inheritdoc/>
+        public void CreateEvent(CreateEventRequest request, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.CreateEvent(request, targetWSS), $"CreateEvent[{targetWSS}], Event[{request.EventId}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void DeleteEvent(int eventID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.DeleteEvent(eventID, targetWSS), $"DeleteEvent[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventPulseWidths(int eventID, int standardPw, int rechargePw, int ipd, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventPw(eventID, new[] { standardPw, rechargePw, ipd }, targetWSS), $"UpdateEventPulseWidths[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateEventAmplitudes(int eventID, int[] standardAmplitudes, int[] rechargeAmplitudes, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.EditEventAmp(eventID, standardAmplitudes, rechargeAmplitudes, targetWSS), $"UpdateEventAmplitudes[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void CreateSchedule(ScheduleDefinition definition, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            if (definition == null) throw new ArgumentNullException(nameof(definition));
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.CreateSchedule(definition, targetWSS), $"CreateSchedule[{targetWSS}], Schedule[{definition.ScheduleId}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void DeleteSchedule(int scheduleID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.DeleteSchedule(scheduleID, targetWSS), $"DeleteSchedule[{targetWSS}], Schedule[{scheduleID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void UpdateScheduleDuration(int scheduleID, int durationMs, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.ChangeScheduleDuration(scheduleID, durationMs, targetWSS), $"UpdateScheduleDuration[{targetWSS}], Schedule[{scheduleID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void AddEventToSchedule(int eventID, int scheduleID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.AddEventToSchedule(eventID, scheduleID, targetWSS), $"AddEventToSchedule[{targetWSS}], Event[{eventID}], Schedule[{scheduleID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void RemoveEventFromSchedule(int eventID, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.DeleteEventFromSchedule(eventID, targetWSS), $"RemoveEventFromSchedule[{targetWSS}], Event[{eventID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void MoveEventToSchedule(int eventID, int scheduleID, int delayMs, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.MoveEventToSchedule(eventID, scheduleID, delayMs, targetWSS), $"MoveEventToSchedule[{targetWSS}], Event[{eventID}], Schedule[{scheduleID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SetScheduleGroup(int scheduleID, int syncSignal, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.ChangeScheduleGroup(scheduleID, syncSignal, targetWSS), $"SetScheduleGroup[{targetWSS}], Schedule[{scheduleID}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SetScheduleState(int scheduleID, ScheduleState state, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            ValidateScheduleState(state);
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.ChangeScheduleState(scheduleID, (int)state, targetWSS), $"SetScheduleState[{targetWSS}], Schedule[{scheduleID}], State[{state}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SetGroupState(int syncSignal, ScheduleState state, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            ValidateScheduleState(state);
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.ChangeGroupState(syncSignal, (int)state, targetWSS), $"SetGroupState[{targetWSS}], SyncSignal[{syncSignal}], State[{state}]")
+            );
+        }
+
+        /// <inheritdoc/>
+        public void SyncGroup(int syncSignal, WssTarget targetWSS = WssTarget.Broadcast)
+        {
+            _ = ScheduleSetupChangeAsync(targetWSS,
+                () => StepLogger(_wss.SyncGroup(syncSignal, targetWSS), $"SyncGroup[{targetWSS}], SyncSignal[{syncSignal}]")
+            );
+        }
         #endregion
 
         #region ========== Setup seeding (NormalSetup) ==========
@@ -417,7 +656,7 @@ namespace Wss.CoreModule
         /// Seeds the per-target setup step lists for a full initial configuration and starts
         /// the setup runner. Used once after connect.
         /// </summary>
-        public void NormalSetup()
+        private void NormalSetup()
         {
             var tgts = Targets(_maxWSS);
             foreach (var t in tgts)
@@ -540,81 +779,125 @@ namespace Wss.CoreModule
         /// <summary>Background task that pushes streaming packets to each WSS at ~12ms cadence.</summary>
         private void StartStreamingInternal()
         {
-            if (_streamTask != null && !_streamTask.IsCompleted) return;
-            _streamCts = new CancellationTokenSource();
-            var tk = _streamCts.Token;
-
-            _streamTask = Task.Run(async () =>
+            lock (_streamGate)
             {
-                while (!tk.IsCancellationRequested)
+                if (_streamTask != null && !_streamTask.IsCompleted) return;
+                _streamCts = new CancellationTokenSource();
+                var tk = _streamCts.Token;
+                _streamTask = Task.Run(() => StreamLoopAsync(tk), tk);
+            }
+        }
+
+        /// <summary>Push streaming packets until cancellation is requested.</summary>
+        private async Task StreamLoopAsync(CancellationToken tk)
+        {
+            while (!tk.IsCancellationRequested)
+            {
+                for (int w = 1; w <= _maxWSS; w++)
                 {
-                    for (int w = 1; w <= _maxWSS; w++)
+                    int wIdx    = w - 1;
+                    int baseIdx = wIdx * 3;
+
+                    var target = IntToWssTarget(w);
+                    var amps = new[] {
+                        AmpTo255Convention(_chAmps[baseIdx + 0], target),
+                        AmpTo255Convention(_chAmps[baseIdx + 1], target),
+                        AmpTo255Convention(_chAmps[baseIdx + 2], target)
+                    };
+                    var pws = new[] {
+                        _chPWs[baseIdx + 0],
+                        _chPWs[baseIdx + 1],
+                        _chPWs[baseIdx + 2]
+                    };
+
+                    // Desired per-channel IPIs for this WSS (source of truth)
+                    var desiredIpis = new[] {
+                        _chIPIs[baseIdx + 0],
+                        _chIPIs[baseIdx + 1],
+                        _chIPIs[baseIdx + 2]
+                    };
+
+                    // Per-channel change memory, gated by per-WSS cooldown
+                    bool anyChanged =
+                        _lastIpiSentPerCh[baseIdx + 0] != desiredIpis[0] ||
+                        _lastIpiSentPerCh[baseIdx + 1] != desiredIpis[1] ||
+                        _lastIpiSentPerCh[baseIdx + 2] != desiredIpis[2];
+
+                    if (anyChanged)
                     {
-                        int wIdx    = w - 1;
-                        int baseIdx = wIdx * 3;
-
-                        var target = IntToWssTarget(w);
-                        var amps = new[] {
-                            AmpTo255Convention(_chAmps[baseIdx + 0], target),
-                            AmpTo255Convention(_chAmps[baseIdx + 1], target),
-                            AmpTo255Convention(_chAmps[baseIdx + 2], target)
-                        };
-                        var pws = new[] {
-                            _chPWs[baseIdx + 0],
-                            _chPWs[baseIdx + 1],
-                            _chPWs[baseIdx + 2]
-                        };
-
-                        // Desired per-channel IPIs for this WSS (source of truth)
-                        var desiredIpis = new[] {
-                            _chIPIs[baseIdx + 0],
-                            _chIPIs[baseIdx + 1],
-                            _chIPIs[baseIdx + 2]
-                        };
-
-                        // Per-channel change memory, gated by per-WSS cooldown
-                        bool anyChanged =
-                            _lastIpiSentPerCh[baseIdx + 0] != desiredIpis[0] ||
-                            _lastIpiSentPerCh[baseIdx + 1] != desiredIpis[1] ||
-                            _lastIpiSentPerCh[baseIdx + 2] != desiredIpis[2];
-
-                        if (anyChanged)
+                        // Send one WSS-level IPI update (array API). This is the only time we send.
+                        _ = _wss.StreamChange(new StreamChangeRequest
                         {
-                            // Send one WSS-level IPI update (array API). This is the only time we send.
-                            _ = _wss.StreamChange(new StreamChangeRequest
-                            {
-                                PulseAmplitudes = amps,
-                                PulseWidths = pws,
-                                InterPulseIntervals = desiredIpis
-                            }, target);
+                            PulseAmplitudes = amps,
+                            PulseWidths = pws,
+                            InterPulseIntervals = desiredIpis
+                        }, target);
 
-                            // Update per-channel last-sent memory and start per-WSS cooldown
-                            _lastIpiSentPerCh[baseIdx + 0] = desiredIpis[0];
-                            _lastIpiSentPerCh[baseIdx + 1] = desiredIpis[1];
-                            _lastIpiSentPerCh[baseIdx + 2] = desiredIpis[2];
-                        }
-                        else
-                        {
-                            // Do not send any IPI during cooldown or if nothing changed
-                            _ = _wss.StreamChange(new StreamChangeRequest
-                            {
-                                PulseAmplitudes = amps,
-                                PulseWidths = pws
-                            }, target);
-                        }
-
-                        await Task.Delay(_delayMsBetweenPackets, tk);
+                        // Update per-channel last-sent memory and start per-WSS cooldown
+                        _lastIpiSentPerCh[baseIdx + 0] = desiredIpis[0];
+                        _lastIpiSentPerCh[baseIdx + 1] = desiredIpis[1];
+                        _lastIpiSentPerCh[baseIdx + 2] = desiredIpis[2];
                     }
+                    else
+                    {
+                        // Do not send any IPI during cooldown or if nothing changed
+                        _ = _wss.StreamChange(new StreamChangeRequest
+                        {
+                            PulseAmplitudes = amps,
+                            PulseWidths = pws
+                        }, target);
+                    }
+
+                    await Task.Delay(_delayMsBetweenPackets, tk);
                 }
-            }, tk);
+            }
         }
 
         /// <summary>Stop the streaming background task.</summary>
-        private void StopStreamingInternal()
+        private async Task StopStreamingInternal()
         {
-            _streamCts?.Cancel();
-            try { _streamTask?.Wait(250); } catch { }
-            _streamTask = null;
+            CancellationTokenSource capturedCts;
+            Task capturedTask;
+
+            lock (_streamGate)
+            {
+                capturedCts = _streamCts;
+                capturedTask = _streamTask;
+                capturedCts?.Cancel();
+            }
+
+            try
+            {
+                if (capturedTask != null)
+                    await capturedTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation is the expected streaming shutdown path.
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"Streaming task ended during shutdown: {ex.Message}");
+            }
+            finally
+            {
+                lock (_streamGate)
+                {
+                    if (ReferenceEquals(_streamTask, capturedTask))
+                        _streamTask = null;
+                    if (ReferenceEquals(_streamCts, capturedCts))
+                        _streamCts = null;
+                }
+
+                capturedCts?.Dispose();
+            }
+        }
+
+        /// <summary>True when the current streaming task exists and has not terminated.</summary>
+        private bool StreamTaskActive()
+        {
+            lock (_streamGate)
+                return _streamTask != null && !_streamTask.IsCompleted;
         }
 
         /// <summary>Disconnect transport safely.</summary>
@@ -627,18 +910,53 @@ namespace Wss.CoreModule
         #region ========== Setup runner internals ==========
         /// <summary>Append steps to a target, pause streaming if needed, and ensure the runner is active.</summary>
         private async Task ScheduleSetupChangeAsync(WssTarget t, params Func<Task<string>>[] newSteps)
+            => await ScheduleSetupChangeAsync(t, true, newSteps);
+
+        /// <summary>Append steps with explicit control over whether paused streaming resumes.</summary>
+        private async Task ScheduleSetupChangeAsync(
+            WssTarget t,
+            bool resumeStreaming,
+            params Func<Task<string>>[] newSteps)
         {
+            bool stopActiveStream = false;
+
             await _setupGate.WaitAsync();
             try
             {
                 if (!_steps.ContainsKey(t)) { _steps[t] = new List<Func<Task<string>>>(); _cursor[t] = 0; }
                 _steps[t].AddRange(newSteps);
 
-                // pause streaming once; resume when queue drains
-                if (_state == CoreState.Streaming) { StopStreamingInternal(); _resumeStreamingAfter = true; }
+                bool streamTaskActive = StreamTaskActive();
+                bool shouldResumeStreaming = resumeStreaming &&
+                    (_state == CoreState.Streaming || streamTaskActive);
+
+                if (!resumeStreaming)
+                    _resumeStreamingAfter = false;
+                else if (shouldResumeStreaming && _streamStopsInProgress == 0)
+                    _resumeStreamingAfter = true;
+
+                if (streamTaskActive)
+                {
+                    stopActiveStream = true;
+                    _streamStopsInProgress++;
+                }
                 _state = CoreState.SettingUp;
 
-                EnsureSetupRunner();
+                if (_streamStopsInProgress == 0)
+                    EnsureSetupRunner();
+            }
+            finally { _setupGate.Release(); }
+
+            if (!stopActiveStream) return;
+
+            await StopStreamingInternal();
+
+            await _setupGate.WaitAsync();
+            try
+            {
+                _streamStopsInProgress--;
+                if (_streamStopsInProgress == 0)
+                    EnsureSetupRunner();
             }
             finally { _setupGate.Release(); }
         }
@@ -672,10 +990,15 @@ namespace Wss.CoreModule
                     _cursor[t] = list.Count; // finished this target
                 }
 
-                if (SetupQueueEmpty())
+                await _setupGate.WaitAsync();
+                try
                 {
-                    if (_resumeStreamingAfter) { StartStreamingInternal(); _resumeStreamingAfter = false; }
+                    if (_streamStopsInProgress == 0 && SetupQueueEmpty())
+                    {
+                        if (_resumeStreamingAfter) { StartStreamingInternal(); _resumeStreamingAfter = false; }
+                    }
                 }
+                finally { _setupGate.Release(); }
                 // else: leave state as SettingUp; Tick() will Observe runner completed + !empty and spawn another pass
             }
             catch (Exception ex)
@@ -863,6 +1186,12 @@ namespace Wss.CoreModule
             if (!_wss.TryGetModuleQueryData(target, out var data) || data == null)
                 return false;
             return ModuleSettings.TryDecode(data, out settings);
+        }
+
+        private static void ValidateScheduleState(ScheduleState state)
+        {
+            if (state != ScheduleState.Active && state != ScheduleState.Ready && state != ScheduleState.Suspend)
+                throw new ArgumentOutOfRangeException(nameof(state), "State must be Active, Ready, or Suspend.");
         }
         #endregion
     }

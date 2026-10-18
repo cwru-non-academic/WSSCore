@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>WSS.Transport.BLE.Linux</AssemblyName>
+    <RootNamespace>WSS.Transport.BLE.Linux</RootNamespace>
+    <Platforms>AnyCPU</Platforms>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../WSS.Transport.BLE/WSS.Transport.BLE.csproj" />
+    <ProjectReference Include="../WSS_Core_Interface.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Linux.Bluetooth" Version="5.67.1" />
+  </ItemGroup>
+
+</Project>

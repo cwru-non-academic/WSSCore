@@ -1,0 +1,2 @@
+# Isolated native build output; the repository already ignores bin/obj/packages.
+/out/

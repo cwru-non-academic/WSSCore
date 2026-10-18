@@ -1,0 +1,42 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{BC8A1FFA-BEE3-4634-8014-F334798102B3}") = "WssBleWindows", "native\WssBleWindows.vcxproj", "{EC643393-D2C8-4B4A-86D5-3F7357222411}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WSS.Transport.BLE.Windows.Native", "managed\WSS.Transport.BLE.Windows.Native.csproj", "{DD3AE13A-C0AA-4E5B-94D0-429131EC2301}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScanConsumer", "..\..\tests\BLE\Windows\ScanConsumer\ScanConsumer.csproj", "{7DC4FEEB-EFC4-4BC5-867B-3E047E975AA4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WSS.BLE.Windows.Tests", "..\..\tests\BLE\Windows\WSS.BLE.Windows.Tests\WSS.BLE.Windows.Tests.csproj", "{A74DAC28-A46C-467A-94B3-AED6647D83E6}"
+EndProject
+Project("{BC8A1FFA-BEE3-4634-8014-F334798102B3}") = "NativeTestShim", "..\..\tests\BLE\Windows\NativeTestShim\WssBleWindows.TestShim.vcxproj", "{E20D5A3F-DC54-4422-BBD8-0F7B66F06F56}"
+EndProject
+Global
+    GlobalSection(SolutionConfigurationPlatforms) = preSolution
+        Debug|x64 = Debug|x64
+        Release|x64 = Release|x64
+    EndGlobalSection
+    GlobalSection(ProjectConfigurationPlatforms) = postSolution
+        {EC643393-D2C8-4B4A-86D5-3F7357222411}.Debug|x64.ActiveCfg = Debug|x64
+        {EC643393-D2C8-4B4A-86D5-3F7357222411}.Debug|x64.Build.0 = Debug|x64
+        {EC643393-D2C8-4B4A-86D5-3F7357222411}.Release|x64.ActiveCfg = Release|x64
+        {EC643393-D2C8-4B4A-86D5-3F7357222411}.Release|x64.Build.0 = Release|x64
+        {E20D5A3F-DC54-4422-BBD8-0F7B66F06F56}.Debug|x64.ActiveCfg = Debug|x64
+        {E20D5A3F-DC54-4422-BBD8-0F7B66F06F56}.Debug|x64.Build.0 = Debug|x64
+        {E20D5A3F-DC54-4422-BBD8-0F7B66F06F56}.Release|x64.ActiveCfg = Release|x64
+        {E20D5A3F-DC54-4422-BBD8-0F7B66F06F56}.Release|x64.Build.0 = Release|x64
+        {DD3AE13A-C0AA-4E5B-94D0-429131EC2301}.Debug|x64.ActiveCfg = Debug|Any CPU
+        {DD3AE13A-C0AA-4E5B-94D0-429131EC2301}.Debug|x64.Build.0 = Debug|Any CPU
+        {DD3AE13A-C0AA-4E5B-94D0-429131EC2301}.Release|x64.ActiveCfg = Release|Any CPU
+        {DD3AE13A-C0AA-4E5B-94D0-429131EC2301}.Release|x64.Build.0 = Release|Any CPU
+        {7DC4FEEB-EFC4-4BC5-867B-3E047E975AA4}.Debug|x64.ActiveCfg = Debug|Any CPU
+        {7DC4FEEB-EFC4-4BC5-867B-3E047E975AA4}.Debug|x64.Build.0 = Debug|Any CPU
+        {7DC4FEEB-EFC4-4BC5-867B-3E047E975AA4}.Release|x64.ActiveCfg = Release|Any CPU
+        {7DC4FEEB-EFC4-4BC5-867B-3E047E975AA4}.Release|x64.Build.0 = Release|Any CPU
+        {A74DAC28-A46C-467A-94B3-AED6647D83E6}.Debug|x64.ActiveCfg = Debug|Any CPU
+        {A74DAC28-A46C-467A-94B3-AED6647D83E6}.Debug|x64.Build.0 = Debug|Any CPU
+        {A74DAC28-A46C-467A-94B3-AED6647D83E6}.Release|x64.ActiveCfg = Release|Any CPU
+        {A74DAC28-A46C-467A-94B3-AED6647D83E6}.Release|x64.Build.0 = Release|Any CPU
+    EndGlobalSection
+EndGlobal

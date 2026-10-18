@@ -1,7 +1,8 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-namespace Wss.CoreModule
+
+namespace Wss.Transports
 {
     /// <summary>
     /// Abstraction over a byte-stream transport (e.g., Serial, Bluetooth, TCP).

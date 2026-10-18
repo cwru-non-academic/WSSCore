@@ -7,14 +7,23 @@
     <Platforms>AnyCPU</Platforms>
     <!-- Ensure all PackageReference dependencies are copied to bin for easy redistribution -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
+  <!-- Controlled propagation acceptance candidate: metadata only, no API/runtime change. -->
   <ItemGroup>
-    <Compile Remove="bin/**/*.cs" />
-    <Compile Remove="obj/**/*.cs" />
-    <Compile Remove="BleNusTransport.cs" />
+    <AssemblyMetadata Include="WssPropagationAcceptance" Value="automatic-universal-v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="**/bin/**/*.cs" />
+    <Compile Remove="**/obj/**/*.cs" />
     <Compile Remove="WSS.Transport.Serial/**/*.cs" />
     <Compile Remove="WSS.Transport.BLE/**/*.cs" />
+    <Compile Remove="WSS.Transport.BLE.Linux/**/*.cs" />
+    <Compile Remove="WSS.Transport.BLE.Windows/**/*.cs" />
+    <Compile Remove="tests/**/*.cs" />
+    <Compile Remove="tools/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>

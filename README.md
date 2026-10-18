@@ -1,71 +1,128 @@
-@ -1,6 +1,54 @@
-# WSSInterfacingCode
-C# class that has all the methods to communicate with the WSS and software specific classes that implements some of the functionalities necessary for that program.
+# WSSCore
 
-All documentation about this API and its implementations can be found in [GitHub Pages](https://cwru-non-academic.github.io/WSS_Documentation/).
+WSSCore provides the shared WSS protocol and transport implementations for C# and
+Unity applications. API and application documentation is available on
+[GitHub Pages](https://cwru-non-academic.github.io/WSS_Documentation/).
 
-## Linux serial setup
-- Install the native dependency that backs `System.IO.Ports`. On Debian/Ubuntu-based distros run `sudo apt install libudev1` (Unity build hosts may also require `libudev-dev`). Most other distros ship the equivalent package by default.
-- Ensure your user can access `/dev/tty*` devices. Add yourself to the `dialout` (or distro-specific) group via `sudo usermod -a -G dialout $USER`, then log out and back in so the new group takes effect.
-- You can confirm permissions with `ls -l /dev/ttyUSB0`; the owner or group should include your account after the step above. Without this, `SerialPort.Open()` will throw `UnauthorizedAccessException`.
-- Unity on Linux/WSL uses the same transport class, so the same `libudev` dependency and group membership apply when running in the editor or player.
+## Architecture
 
-## Standalone C# apps
-When building a separate .NET console/worker app that references the compiled `WSS_Core_Interface.dll`, ensure the project targets a modern framework (e.g., `net8.0`) and explicitly references the dependencies that live outside the base runtime. The sample below mirrors a working setup:
+All six WSS managed libraries target **.NET Standard 2.0**:
 
-```xml
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+| Project | Responsibility / dependencies |
+| --- | --- |
+| `WSS_Core_Interface.csproj` | Protocol, command handling, configuration, and shared transport interfaces |
+| `WSS.Transport.Serial` | Serial transport; references Core and System.IO.Ports 8.0.0 |
+| `WSS.Transport.BLE` | Portable BLE facade; references Core and Serial |
+| `WSS.Transport.BLE.Windows` | Windows adapter implementing the common BLE contract; references facade, Core, and native wrapper |
+| `tools/WindowsBleBridge/managed` | `WSS.Transport.BLE.Windows.Native.dll`: P/Invoke, callbacks, marshaling, resource ownership |
+| `WSS.Transport.BLE.Linux` | BlueZ backend; references facade, Core, Linux.Bluetooth, and Tmds.DBus |
 
-  <ItemGroup>
-    <PackageReference Include="System.Security.Permissions" Version="7.0.0" />
-    <PackageReference Include="System.IO.Ports" Version="7.0.0" />
-  </ItemGroup>
+The Windows wrapper calls the separate production C++/WinRT **`WssBleWindows.dll`**.
+Windows BLE requires a Windows x64 process. Linux BLE requires BlueZ and system
+D-Bus. There are no macOS/Android BLE backends or Python bindings.
 
-  <ItemGroup>
-    <Reference Include="WSS_Core_Interface">
-      <HintPath>..\lib\WSS_Core_Interface.dll</HintPath>
-    </Reference>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>..\lib\Newtonsoft.Json.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Buffers">
-      <HintPath>..\lib\System.Buffers.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Memory">
-      <HintPath>..\lib\System.Memory.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Numerics.Vectors">
-      <HintPath>..\lib\System.Numerics.Vectors.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Runtime.CompilerServices.Unsafe">
-      <HintPath>..\lib\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-</Project>
+## Build
+
+Install .NET 8 (test runtime) and .NET 9 (ArtifactBuild), with NuGet access.
+Managed projects can be built without a native compiler:
+
+```powershell
+dotnet restore WSS_Core_Interface.sln --locked-mode
+dotnet build WSS_Core_Interface.sln -c Release --no-restore
 ```
 
-Copy the listed DLLs from this repository’s `bin` output into your app’s `lib` folder (or use NuGet where possible) so the runtime can resolve them when your executable starts.
+The root solution builds the six managed libraries and portable test projects.
+Windows native builds additionally require VS 2022/MSVC v143 and Windows SDK
+10.0.22621.0. The pinned C++/WinRT package is restored by Visual Studio MSBuild.
+Build production native code, the isolated test shim, and Windows test/diagnostic
+projects with:
 
-## Transport project layout
-- `WSS_Core_Interface.csproj` remains the transport-agnostic core library targeting `netstandard2.0`.
-- `WSS.Transport.Serial/WSS.Transport.Serial.csproj` remains the legacy serial transport package targeting `net48`.
-- `WSS.Transport.BLE/WSS.Transport.BLE.csproj` is the new modern transport package targeting `net9.0`.
-
-## Choosing a transport build
-- Use `WSS.Transport.Serial` when you need the legacy `net48`/Unity-compatible serial-only build.
-- Use `WSS.Transport.BLE` when your app targets `.NET 9` and needs BLE support.
-- `WSS.Transport.BLE` also includes the existing serial transport implementation, so modern desktop apps can choose either `BleNusTransport` or `SerialPortTransport` from the same package.
-
-## Building the transport projects
-```bash
-dotnet build "WSS.Transport.Serial/WSS.Transport.Serial.csproj" -c Release --nologo
-dotnet build "WSS.Transport.BLE/WSS.Transport.BLE.csproj" -c Release --nologo
+```powershell
+./tools/WindowsBleBridge/build.ps1 -Configuration Release -Architecture x64
 ```
 
-The `.NET 9` transport project restores BLE-specific dependencies such as `InTheHand.BluetoothLE` and `Linux.Bluetooth`. If you deploy the built DLLs directly instead of consuming them through NuGet, copy the resolved dependency assemblies alongside `WSS.Transport.BLE.dll`.
+See [Windows toolchain and ABI instructions](tools/WindowsBleBridge/README.md)
+for direct MSBuild commands and alternate SDK selection. See
+[tests/README.md](tests/README.md) for automated test commands and safety boundaries.
+
+## One universal distribution
+
+Build the complete release from the repository root on Windows:
+
+```powershell
+dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- build-all
+```
+
+This produces `artifacts/universal/`, `artifacts/WSS-Universal-local.zip`, and
+`artifacts/SHA256SUMS.txt`. The payload destination must be new. Use
+`--destination <new-payload-directory> --tag <TAG>` to select a different output.
+
+Every supported consumer uses the same release input:
+
+```text
+WSS-Universal-<TAG>.zip
+SHA256SUMS.txt
+```
+
+The ZIP contains one `WSS-Universal/` directory: one shared Core/Serial/BLE set,
+both backend dependency trees, production Windows native code, and the Ports
+runtime assets. Verify the checksum before extraction and preserve the complete
+payload for redistribution. Do not mix independently sourced DLLs or download
+separate platform packages. The [artifact guide](tools/ArtifactBuild/README.md)
+lists the exact inventory, deployment rules, and validation commands.
+
+## C# and Unity consumption
+
+Reference `WSS_Core_Interface.dll`, `WSS.Transport.Serial.dll`, and
+`WSS.Transport.BLE.dll` as needed from the same extracted artifact. Serial types
+are defined directly in the Serial assembly; the BLE assembly does not forward them.
+Rebuild internal libraries, applications, and Unity assembly references against the
+final assembly set. Constructors/options and shared transport contracts are preserved.
+
+The facade automatically loads the current platform backend from
+`AppContext.BaseDirectory/backends/windows` or `backends/linux`. Deploy the full
+backend/runtime trees without duplicate shared WSS DLLs in backend directories.
+Hosts that preload backend assemblies can register explicitly:
+
+```csharp
+Wss.Transports.Backends.Windows.WindowsBleBackend.Register();
+// On Linux:
+Wss.Transports.Backends.Linux.LinuxBleBackend.Register();
+```
+
+For .NET applications use `System.IO.Ports` NuGet **8.0.0** to select the host
+runtime implementation; do not overwrite it with the portable root net462 asset.
+Keep the original complete artifact for redistribution. Unity plugin deployment
+and native resolution are host-specific; configure the production native DLL for
+Windows x86_64, preload/register if needed, and validate Editor/player loading.
+See [consumer integration requirements](tools/ArtifactBuild/CSHARP-HANDOFF.md).
+
+### Linux serial setup
+
+- On Debian/Ubuntu install `libudev1`; Unity build hosts may also need `libudev-dev`.
+- Grant access to the intended `/dev/tty*` device, commonly by adding the user to
+  `dialout` with `sudo usermod -a -G dialout $USER`, then logging out and back in.
+- Check device permissions with `ls -l /dev/ttyUSB0`. Missing access can cause
+  `SerialPort.Open()` to throw `UnauthorizedAccessException`.
+- Linux Unity/WSL hosts have the same OS dependency and device-access requirements.
+
+## CI and releases
+
+`.github/workflows/artifacts.yml` runs for PRs targeting `dev`, `main`, or
+`net2_BLE`, manual dispatch, and pushed `v*` tags. `Core conformance` runs the
+functional suite once on Linux. `Build and validate artifacts` builds its own inputs
+on `windows-2022` and validates one universal ZIP without functional suites.
+`Core consumer` and `Serial consumer` jobs run on Windows/Linux/macOS;
+`BLE consumer` jobs combine source functional suites and packaged consumers on
+Linux and Windows (`windows-2022` for isolated shim/production-native testing).
+All consumers use the same verified, extracted ZIP. Serial smoke checks do not
+exercise port I/O; classified Linux controller skips do not suppress dependencies.
+See [CI Jobs and Test Responsibilities](tests/README.md#ci-jobs-and-test-responsibilities)
+for the authoritative catalog and placement policy. Named logs, job summaries and
+downloadable NUnit TRX artifacts expose actual execution and failures.
+
+Only successful `v*` tag pushes publish after all component, packaging, and consumer
+jobs pass. The release job downloads the already-tested
+ZIP/checksum and verifies them without rebuilding or repackaging. Hyphenated tags
+are prereleases. PRs, ordinary branch pushes, and manual validation do not publish.
+Hardware diagnostics are opt-in and are not release-gate substitutes for automated tests.

@@ -1,7 +1,9 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-namespace Wss.CoreModule
+using Wss.CoreModule;
+
+namespace Wss.Transports
 {
     /// <summary>
     /// In-memory transport for debugging and unit tests. No real I/O.
