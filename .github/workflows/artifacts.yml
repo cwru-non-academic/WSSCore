@@ -4,6 +4,7 @@ on:
   pull_request:
     branches: [dev, main, net2_BLE]
   push:
+    branches: [dev]
     tags: ['v*']
   workflow_dispatch:
 
@@ -210,6 +211,8 @@ jobs:
   package-universal:
     name: Build and validate artifacts
     runs-on: windows-2022
+    outputs:
+      artifact-id: ${{ steps.upload_universal_assets.outputs.artifact-id }}
     env:
       RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'ci' }}
     steps:
@@ -356,6 +359,64 @@ jobs:
           REPORT_PURPOSE: Packaged Core public API/emulated operation and platform-wide universal inventory, identity, dependency, and native validation.
           REPORT_STEPS: ${{ toJSON(steps) }}
         run: python tools/ci/summarize.py
+
+  propagate-universal:
+    name: Start routine downstream validation
+    needs: [core-tests, ble-linux-tests, ble-windows-tests, package-universal, serial-tests, core-consumers]
+    if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/dev' && github.repository == 'cwru-non-academic/WSSCore' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: universal-release-assets
+          path: ${{ runner.temp }}/release-input
+      - name: Verify the already-tested archive and handoff identity
+        id: candidate
+        shell: pwsh
+        env:
+          APP_ID: ${{ vars.WSS_GITHUB_APP_ID }}
+          APP_KEY: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          ARTIFACT_ID: ${{ needs.package-universal.outputs.artifact-id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:APP_ID -or -not $env:APP_KEY) { throw 'WSS GitHub App credentials are unavailable to WSSCore; downstream propagation cannot start.' }
+          if ($env:ARTIFACT_ID -cnotmatch '^[1-9][0-9]*$') { throw 'Missing universal producer artifact ID.' }
+          ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-input" -Destination "$env:RUNNER_TEMP/handoff-verification"
+          $hash = (Get-FileHash "$env:RUNNER_TEMP/release-input/WSS-Universal-ci.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
+      - name: Create Integration dispatch-only App token
+        id: integration-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: CSharp_WSS_Integration_Lib
+          permission-actions: write
+      - name: Hand off to the existing routine Integration promotion workflow
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ steps.integration-token.outputs.token }}
+          PRODUCER_SHA: ${{ github.sha }}
+          PRODUCER_RUN: ${{ github.run_id }}
+          ARTIFACT_ID: ${{ needs.package-universal.outputs.artifact-id }}
+          SHA256: ${{ steps.candidate.outputs.sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $body = @{
+            ref = 'dev'
+            inputs = @{
+              wss_run_id = $env:PRODUCER_RUN; wss_commit = $env:PRODUCER_SHA
+              wss_artifact_id = $env:ARTIFACT_ID; wss_sha256 = $env:SHA256
+              correlation_id = "wss-$env:PRODUCER_RUN-$env:ARTIFACT_ID"
+            }
+          } | ConvertTo-Json -Depth 4 -Compress
+          $body | gh api --method POST repos/cwru-non-academic/CSharp_WSS_Integration_Lib/actions/workflows/promote-wss.yml/dispatches --input -
+          if ($LASTEXITCODE -ne 0) { throw 'Routine handoff failed: verify App installation, Integration Actions-write permission, and the deployed dev workflow.' }
+          "Automatic candidate: commit $env:PRODUCER_SHA; run $env:PRODUCER_RUN; artifact $env:ARTIFACT_ID; WSS-Universal-ci.zip; SHA-256 $env:SHA256. Integration waits for this producer run to complete successfully." >> $env:GITHUB_STEP_SUMMARY
 
   publish-universal:
     name: Publish — Universal ZIP
