@@ -1,5 +1,13 @@
 # Core to Python promotion handoff
 
+The CLI/ROS fan-out extension additionally requires the ROS normal, preflight and
+promotion workflows on `ROS_Python_WSS_Application` default main, plus a published
+dev branch in every Python consumer. This is a read-only destination check before
+any dispatch token. The producer tuple and Core dispatch target remain unchanged;
+new `wss-python-promotion/v2` approvals are constructed and validated by the Python
+integration, with both application proofs required. This handoff-only change does
+not contain the separate local Core channel-capacity fix and does not run its test.
+
 `propagate-python.yml` listens on the default branch for completion of **Build
 universal WSS release**. Only a successful canonical `artifacts.yml` **push to dev**
 is eligible; opening/updating a PR, workflow_dispatch, tags, failures and fork
