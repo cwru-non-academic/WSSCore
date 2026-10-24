@@ -9,6 +9,7 @@ function Read-GhJson([string]$Path) {
 $repository='cwru-non-academic/WSSCore'
 $wrapper='cwru-non-academic/Python_WSS_Integration_Lib'
 $cli='cwru-non-academic/CLI_Python_WSS_Application'
+$ros='cwru-non-academic/ROS_Python_WSS_Application'
 if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REPOSITORY -cne $repository -or $env:GITHUB_EVENT_NAME -cne 'workflow_run') { throw 'Only the trusted Core completion workflow prepares automatic handoffs.' }
 $event=Get-Content -LiteralPath $EventPath -Raw | ConvertFrom-Json
 $id=[string]$event.workflow_run.id
@@ -46,11 +47,13 @@ if (!(Test-Path -LiteralPath $archive -PathType Leaf)) { throw 'Core dev must su
 $candidate=[ordered]@{repository=$repository;commit=$run.head_sha;run_id=$id;artifact_id=[string]$artifact.id;archive='WSS-Universal-ci.zip';sha256=(Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()}
 $candidate | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $WorkRoot 'candidate.json')
 # Check default-branch availability before minting any downstream write token.
-foreach ($destination in @(@{repo=$wrapper;paths=@('.github/workflows/promote-wss.yml','.github/workflows/wss-preflight.yml','.github/workflows/dispatch-cli-promotion.yml')},@{repo=$cli;paths=@('.github/workflows/promote-integration.yml','.github/workflows/wss-preflight.yml')})) {
+foreach ($destination in @(@{repo=$wrapper;paths=@('.github/workflows/promote-wss.yml','.github/workflows/wss-preflight.yml','.github/workflows/dispatch-cli-promotion.yml')},@{repo=$cli;paths=@('.github/workflows/promote-integration.yml','.github/workflows/wss-preflight.yml')},@{repo=$ros;paths=@('.github/workflows/promote-integration.yml','.github/workflows/wss-preflight.yml','.github/workflows/ros-ci.yml')})) {
     $metadata=Read-GhJson "repos/$($destination.repo)"
     $tree=Read-GhJson "repos/$($destination.repo)/git/trees/$($metadata.default_branch)?recursive=1"
     if ($tree.truncated) { throw 'Destination tree response is truncated.' }
     foreach ($path in $destination.paths) { if ($path -cnotin $tree.tree.path) { throw "Publish $path to $($destination.repo) default branch $($metadata.default_branch) through a human-reviewed merge before enabling handoff." } }
+    $dev=Read-GhJson "repos/$($destination.repo)/branches/dev"
+    if ($dev.commit.sha -cnotmatch '^[0-9a-f]{40}$') { throw "A published dev baseline is required in $($destination.repo) before handoff." }
 }
 $title="Promote universal WSS / wss-$id-$($artifact.id)"
 $runPages=& gh api --paginate --slurp "repos/$wrapper/actions/workflows/promote-wss.yml/runs?event=workflow_dispatch&per_page=100"
