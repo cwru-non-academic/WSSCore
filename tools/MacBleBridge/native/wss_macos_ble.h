@@ -9,7 +9,7 @@ extern "C" {
  * user code or destroy from a callback. Accepted commands complete exactly once
  * unless destroy suppresses them. Destroy synchronously fences callbacks.
  * Owner serializes submissions with destroy. IDs are nonzero, never reused.
- * kind: 1 completion, 2 advertisement (UTF-8 UUID + newline + name),
+ * kind: 1 completion, 2 advertisement (UTF-8 UUID + newline + RSSI + newline + name),
  * 3 notification, 4 link loss. budget is write-with-response maximum length.
  * status: 0 success, 1 invalid argument, 2 invalid state, 4 cancelled,
  * 5 timeout, 6 unavailable/off, 8 denied, 9 native failure, 10 busy, 11 overflow.

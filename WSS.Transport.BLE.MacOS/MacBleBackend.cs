@@ -266,9 +266,13 @@ internal sealed class MacBleNusBackend : IBleNusBackend, IBleNativeStackProbe
     public async Task DisconnectAsync(CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        InvalidateSession();
         await _lifecycle.WaitAsync(token).ConfigureAwait(false);
-        try { lock (_gate) if (_disposed || _native == null) return; await CommandAsync(6, 0, CancellationToken.None).ConfigureAwait(false); }
+        try
+        {
+            lock (_gate) if (_disposed || _native == null) return;
+            InvalidateSession();
+            await CommandAsync(6, 0, CancellationToken.None).ConfigureAwait(false);
+        }
         finally { _lifecycle.Release(); }
         // A receive handler may synchronously disconnect; never join the pump here.
     }

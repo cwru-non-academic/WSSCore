@@ -20,6 +20,8 @@ public class MacBleContractTests
         internal uint Budget = 3;
         internal bool LoseAdapterDuringScan;
         internal byte[]? InitialNotification;
+        internal bool HoldConnect;
+        internal readonly TaskCompletionSource<ulong> ConnectStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Submit(uint command, ulong operation, ulong session, string? device, string? service, string? rx, string? tx, byte[] data, uint timeout)
         {
             if (Disposed) throw new ObjectDisposedException(nameof(Fake));
@@ -27,6 +29,8 @@ public class MacBleContractTests
             {
                 Session = session;
                 if (InitialNotification != null) Emit(new MacEvent { Kind = 3, Session = session, Data = InitialNotification });
+                ConnectStarted.TrySetResult(operation);
+                if (HoldConnect) return 0;
             }
             if (command == 5)
             {
@@ -50,6 +54,21 @@ public class MacBleContractTests
     private static MacBleNusBackend Backend(Fake fake) => new(new BleNusTransportOptions { DeviceId = Device }, fake);
     private static async Task Connect(MacBleNusBackend backend) => await backend.ConnectAsync(new BleCandidate(Device, "fake"), CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(3));
 
+    [Test]
+    public async Task CancelledQueuedDisconnectDoesNotInvalidateInFlightConnection()
+    {
+        var fake = new Fake { HoldConnect = true };
+        using var backend = Backend(fake);
+        var connecting = backend.ConnectAsync(new BleCandidate(Device, "fake"), CancellationToken.None);
+        var operation = await fake.ConnectStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        using var cancel = new CancellationTokenSource();
+        var disconnecting = backend.DisconnectAsync(cancel.Token);
+        cancel.Cancel();
+        Assert.ThrowsAsync<OperationCanceledException>(async () => await disconnecting.WaitAsync(TimeSpan.FromSeconds(3)));
+        fake.Emit(new MacEvent { Kind = 1, Operation = operation, Session = fake.Session, Budget = 3 });
+        await connecting.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.That(backend.IsConnected, Is.True);
+    }
     [Test]
     public async Task NotificationArrivingBeforeConnectContinuationIsRetained()
     {
