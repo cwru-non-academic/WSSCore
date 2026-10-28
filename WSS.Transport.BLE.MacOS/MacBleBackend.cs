@@ -72,7 +72,7 @@ internal sealed class MacBleNusBackend : IBleNusBackend, IBleNativeStackProbe
                 if (_discovered.Count >= 256 && !_discovered.ContainsKey(text[0])) return;
                 _discovered[text[0]] = new BleCandidate(text[0], text[2], rssi == 127 ? null : rssi);
             }
-            else if (e.Session == _session && _session != 0)
+            else if (e.Session == _session && _session != 0 && _budget != 0)
             {
                 if (e.Kind == 4 || (e.Kind == 3 && _notifications.Count >= 256))
                 {

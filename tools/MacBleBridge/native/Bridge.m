@@ -92,9 +92,19 @@
     [peer setNotifyValue:YES forCharacteristic:_tx];
 }
 - (void)peripheral:(CBPeripheral*)peer didUpdateNotificationStateForCharacteristic:(CBCharacteristic*)characteristic error:(NSError*)error {
-    if (peer != _peer || characteristic != _tx || _command != 4 || !_operation) return;
-    if (error || !characteristic.isNotifying) { [self fail:9]; return; }
-    _ready = YES; [self complete:0];
+    if (peer != _peer || characteristic != _tx) return;
+    if (error || !characteristic.isNotifying) {
+        uint64_t session = _session; BOOL active = _ready;
+        [self fail:9]; if (active) [self emit:4 operation:0 session:session status:9 data:nil]; return;
+    }
+    if (_command == 4 && _operation) { _ready = YES; [self complete:0]; }
+}
+- (void)peripheral:(CBPeripheral*)peer didModifyServices:(NSArray<CBService*>*)services {
+    if (peer != _peer) return;
+    for (CBService* service in services) if ([service.UUID isEqual:_serviceUUID]) {
+        uint64_t session = _session; BOOL active = _ready;
+        [self fail:9]; if (active) [self emit:4 operation:0 session:session status:9 data:nil]; return;
+    }
 }
 - (void)peripheral:(CBPeripheral*)peer didUpdateValueForCharacteristic:(CBCharacteristic*)characteristic error:(NSError*)error {
     if (peer != _peer || characteristic != _tx || !_ready) return;

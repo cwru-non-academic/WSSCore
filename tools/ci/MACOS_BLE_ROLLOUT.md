@@ -56,6 +56,18 @@ new payload is declared. Never loosen the allowlist to arbitrary extra files.
 
 ## Acceptance order
 
+Current Python dev sources use `.github/scripts/Universal-WssFiles.ps1` for the
+exact file allowlist, `.github/scripts/PythonPromotion.ps1` for producer proof,
+and `.github/scripts/Invoke-PlatformCompatibility.ps1` for platform evidence.
+The latter currently prints a macOS skip and records `ble = 'skipped: backend not
+implemented'`; replace that branch with actual packaged backend/native ABI proof
+for the new inventory. `conformance/platform_smoke.py` currently proves only
+Serial/loader and CLI help; extend it to prove BLE construction and the installed
+macOS native asset without initializing a radio. Its shared C# fixture commit
+must also include macOS-aware `BleBackendLoadingTests` and output copying before
+pinning that fixture into Python. These file paths were inspected read-only;
+no receiver changes or dispatches were made by this Core worker.
+
 1. Review Core source/tests and obtain green canonical producer gates for the draft
    PR, including both macOS slices; retain the run/artifact/checksum tuple.
 2. Review/prepare Python integration and CLI receiver CI/schema separately. Do not
