@@ -10,12 +10,12 @@ using Wss.Transports.Backends;
 // Never discover/connect a peripheral or write stimulation payloads.
 bool linuxLoadOnly = args.Contains("--linux-load-only");
 string platform = linuxLoadOnly ? "linux" : BleBackendLoader.GetCurrentPlatform();
-string backendName = platform == "windows" ? "WSS.Transport.BLE.Windows" : "WSS.Transport.BLE.Linux";
+string backendName = platform == "windows" ? "WSS.Transport.BLE.Windows" : platform == "macos" ? "WSS.Transport.BLE.MacOS" : "WSS.Transport.BLE.Linux";
 string directory = Path.Combine(AppContext.BaseDirectory, "backends", platform);
 if (args.Contains("--register"))
 {
     var assembly = Assembly.LoadFrom(Path.Combine(directory, backendName + ".dll"));
-    string bootstrap = platform == "windows" ? "Wss.Transports.Backends.Windows.WindowsBleBackend" : "Wss.Transports.Backends.Linux.LinuxBleBackend";
+    string bootstrap = platform == "windows" ? "Wss.Transports.Backends.Windows.WindowsBleBackend" : platform == "macos" ? "Wss.Transports.Backends.MacOS.MacBleBackend" : "Wss.Transports.Backends.Linux.LinuxBleBackend";
     assembly.GetType(bootstrap, true)!.GetMethod("Register")!.Invoke(null, null);
     assembly.GetType(bootstrap, true)!.GetMethod("Register")!.Invoke(null, null);
 }
@@ -99,6 +99,23 @@ if (platform == "linux" && Environment.GetEnvironmentVariable("WSS_BLE_SKIP_NATI
     Console.WriteLine("Linux dependency checks: PASS; controller probe explicitly skipped (not runtime success).");
     return;
 }
+if (platform == "macos")
+{
+    Assembly.LoadFrom(Path.Combine(directory, backendName + ".dll"))
+        .GetType("Wss.Transports.Backends.MacOS.MacBleBackend", true)!.GetMethod("VerifyNativeAbi")!.Invoke(null, null);
+    // Mandatory native load and ABI query. Hosted CI deliberately does not create
+    // CBCentralManager or trigger a TCC prompt. Radio operation is not proved here.
+    var module = NativeLibrary.Load(Path.Combine(directory, "libwss_macos_ble.dylib"));
+    try
+    {
+        foreach (string export in new[] { "wss_mac_abi", "wss_mac_create", "wss_mac_destroy", "wss_mac_submit", "wss_mac_cancel" }) NativeLibrary.GetExport(module, export);
+        var abi = Marshal.GetDelegateForFunctionPointer<MacAbi>(NativeLibrary.GetExport(module, "wss_mac_abi"));
+        if (abi() != 0x10000) throw new InvalidOperationException("macOS ABI mismatch.");
+    }
+    finally { NativeLibrary.Free(module); }
+    Console.WriteLine("macOS managed backend/dependency/native ABI loading: PASS. Bluetooth authorization, adapter and peripheral I/O: NOT EXECUTED.");
+    return;
+}
 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 var probe = await ((IBleNativeStackProbe)backend).ProbeNativeStackAsync(timeout.Token);
 Console.WriteLine($"{platform} native stack probe: {probe}");
@@ -126,3 +143,5 @@ static string? DistributedFramework(string path)
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate int GetAbiInfo(IntPtr info);
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate uint MacAbi();

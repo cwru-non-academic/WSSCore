@@ -46,7 +46,8 @@ internal static class BleBackendLoader
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return "windows";
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) return "linux";
-        throw new PlatformNotSupportedException("BLE is supported only on Linux and Windows.");
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) return "macos";
+        throw new PlatformNotSupportedException("BLE is supported only on Linux, Windows and macOS.");
     }
 
     private static IBleNusBackendFactory LoadFactory(string platform)
@@ -73,6 +74,7 @@ internal static class BleBackendLoader
     {
         "windows" => ("WSS.Transport.BLE.Windows", "Wss.Transports.Backends.Windows.WindowsBleNusBackendFactory"),
         "linux" => ("WSS.Transport.BLE.Linux", "Wss.Transports.Backends.Linux.LinuxBleNusBackendFactory"),
+        "macos" => ("WSS.Transport.BLE.MacOS", "Wss.Transports.Backends.MacOS.MacBleNusBackendFactory"),
         _ => throw new ArgumentOutOfRangeException(nameof(platform), platform, "Unknown BLE backend platform.")
     };
 }

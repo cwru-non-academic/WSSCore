@@ -32,6 +32,9 @@ internal static partial class Program
             if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Production Windows native builds require Windows. Validate the same completed universal payload on Linux.");
             RunBuild(root, "WSS.Transport.BLE.Windows/WSS.Transport.BLE.Windows.csproj", "-p:RestoreLockedMode=true");
             RunBuild(root, "WSS.Transport.BLE.Linux/WSS.Transport.BLE.Linux.csproj", "--no-dependencies", "-p:RestoreLockedMode=true");
+            RunBuild(root, "WSS.Transport.BLE.MacOS/WSS.Transport.BLE.MacOS.csproj", "--no-dependencies", "-p:RestoreLockedMode=true");
+            if (!File.Exists(Path.Combine(root, "tools/MacBleBridge/out/libwss_macos_ble.dylib")))
+                throw new FileNotFoundException("Build/download the current source revision's universal macOS native artifact before aggregation.");
             // Native source is built, never sourced from a candidate or a prior distribution.
             RunProcess("powershell", root, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "tools/WindowsBleBridge/build.ps1", "-ProductionOnly");
         }
@@ -54,7 +57,7 @@ internal static partial class Program
 
     private static void VerifyRestoredClosure(Manifest manifest, string common)
     {
-        foreach (var project in new[] { "WSS.Transport.BLE", "WSS.Transport.BLE.Windows", "WSS.Transport.BLE.Linux" })
+        foreach (var project in new[] { "WSS.Transport.BLE", "WSS.Transport.BLE.Windows", "WSS.Transport.BLE.Linux", "WSS.Transport.BLE.MacOS" })
         {
             var projectRoot = Path.GetFullPath(Path.Combine(manifest.ManifestDirectory, "../../..", project));
             var output = Path.Combine(projectRoot, "bin/Release/netstandard2.0");
@@ -145,7 +148,30 @@ internal static partial class Program
         var elf = File.ReadAllBytes(Path.Combine(package, "runtimes/linux-x64/native/libSystem.IO.Ports.Native.so"));
         if (elf.Length < 20 || !elf.Take(5).SequenceEqual(new byte[] { 0x7f, 0x45, 0x4c, 0x46, 2 }) || elf[5] != 1 || BitConverter.ToUInt16(elf, 18) != 62)
             throw new InvalidDataException("Linux serial native payload must be ELF64 little-endian x86-64.");
-        Console.WriteLine("Universal shared identities, compatible references, AMD64 ABI exports, ELF64: PASS");
+        ValidateMacBinary(File.ReadAllBytes(Path.Combine(package, "backends/macos/libwss_macos_ble.dylib")));
+        Console.WriteLine("Universal shared identities, compatible references, AMD64 ABI exports, ELF64, universal macOS dylib: PASS");
+    }
+
+    private static void ValidateMacBinary(byte[] data)
+    {
+        static uint Big(byte[] b, int offset) => System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(offset, 4));
+        if (data.Length < 48 || Big(data, 0) != 0xcafebabe || Big(data, 4) != 2)
+            throw new InvalidDataException("macOS payload must be a universal Mach-O dylib containing exactly x86_64 and arm64.");
+        var architectures = new HashSet<uint>();
+        var ranges = new List<(uint Offset, uint Size)>();
+        for (int i = 0; i < 2; i++)
+        {
+            int entry = 8 + i * 20;
+            uint cpu = Big(data, entry), offset = Big(data, entry + 8), size = Big(data, entry + 12);
+            if (!architectures.Add(cpu) || (cpu != 0x01000007 && cpu != 0x0100000c) || offset < 48 ||
+                size < 32 || (ulong)offset + size > (ulong)data.Length ||
+                ranges.Any(r => (ulong)offset < (ulong)r.Offset + r.Size && (ulong)r.Offset < (ulong)offset + size))
+                throw new InvalidDataException("Invalid universal Mach-O architecture/range.");
+            ranges.Add((offset, size));
+            int start = checked((int)offset);
+            if (BitConverter.ToUInt32(data, start) != 0xfeedfacf || BitConverter.ToUInt32(data, start + 4) != cpu || BitConverter.ToUInt32(data, start + 12) != 6)
+                throw new InvalidDataException("macOS slice must be a matching 64-bit Mach-O dylib.");
+        }
     }
 
     private static JsonElement GetRestoredTarget(JsonElement targets, string target)

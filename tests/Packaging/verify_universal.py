@@ -34,6 +34,13 @@ with tempfile.TemporaryDirectory(prefix='wss-package-contract-') as temporary:
         print('PASS: reject ' + name)
 
     reject('missing-dbus', lambda p: (p / 'backends/linux/Tmds.DBus.dll').unlink(), 'Package file set differs')
+    reject('missing-macos-native', lambda p: (p / 'backends/macos/libwss_macos_ble.dylib').unlink(), 'Package file set differs')
+    def corrupt_macos(p):
+        binary = p / 'backends/macos/libwss_macos_ble.dylib'
+        data = bytearray(binary.read_bytes())
+        struct.pack_into('>I', data, 8, 7)  # reject a 32-bit CPU declaration
+        binary.write_bytes(data)
+    reject('wrong-macos-architecture', corrupt_macos, 'Mach-O')
     reject('unexpected-backend-placement', lambda p: shutil.copy2(p / 'backends/windows/WSS.Transport.BLE.Windows.dll', p / 'WSS.Transport.BLE.Windows.dll'), 'Package file set differs')
     reject('unexpected-winrt', lambda p: shutil.copy2(p / 'WSS.Transport.BLE.dll', p / 'backends/windows/WinRT.Runtime.dll'), 'Package file set differs')
     reject('duplicate-wss-identity', lambda p: shutil.copy2(p / 'WSS_Core_Interface.dll', p / 'backends/linux/WSS_Core_Interface.dll'), 'Package file set differs')

@@ -14,14 +14,14 @@ is eligible; opening/updating a PR, workflow_dispatch, tags, failures and fork
 producers do not publish Python dependency requests.
 
 The handler independently reads the exact producer run, requires its commit in
-Core dev and all eleven existing producer jobs successful, selects the unique
+Core dev and all fourteen required producer jobs successful (including the universal macOS build and both macOS BLE consumers), selects the unique
 unexpired `universal-release-assets` artifact ID, downloads that run's artifact,
 checks the archive checksum, and passes its immutable commit/run/artifact/archive/
 SHA256 tuple. It never rebuilds or executes the downloaded payload.
 
 The completion handler is a separate workflow. Its setup/dispatch failure cannot
 turn the producer run red or disrupt the existing C# consumer's wait for that run.
-The existing `artifacts.yml`, C# handoff and Unity handoff are unchanged.
+The immutable producer tuple and C# dispatch contract are preserved. The macOS BLE extension adds native aggregation and macOS gates; see `MACOS_BLE_ROLLOUT.md` for receiver prerequisites.
 
 Before requesting a write token, preparation checks the Python default branches
 contain all dispatch/preflight definitions and rejects ambiguous or failed prior
