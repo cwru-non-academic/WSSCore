@@ -25,6 +25,7 @@ internal sealed class MacBleNusBackend : IBleNusBackend, IBleNativeStackProbe
     private readonly Dictionary<ulong, TaskCompletionSource<MacEvent>> _pending = new();
     private readonly Dictionary<string, BleCandidate> _discovered = new();
     private readonly Queue<(ulong Session, byte[] Data)> _notifications = new();
+    private readonly Queue<byte[]> _connectingNotifications = new();
     private readonly SemaphoreSlim _notificationSignal = new(0);
     private IMacNative? _native;
     private ulong _operation, _nextSession, _session, _connecting, _scan;
@@ -62,8 +63,8 @@ internal sealed class MacBleNusBackend : IBleNusBackend, IBleNativeStackProbe
             else if (e.Kind == 4 && e.Session == _scan && _scan != 0) _scanError = e.Status;
             else if (e.Kind == 3 && e.Session == _connecting && _connecting != 0)
             {
-                if (_notifications.Count >= 256) { _connecting = 0; return; }
-                _notifications.Enqueue((e.Session, e.Data));
+                if (_connectingNotifications.Count >= 256) { _connecting = 0; return; }
+                _connectingNotifications.Enqueue(e.Data);
             }
             else if (e.Kind == 2 && e.Session == _scan && _scan != 0)
             {
@@ -208,6 +209,7 @@ internal sealed class MacBleNusBackend : IBleNusBackend, IBleNativeStackProbe
                     if (_connecting != session) throw new InvalidOperationException("BLE notification queue overflowed during connection.");
                     if (result.Budget == 0) throw new InvalidOperationException("CoreBluetooth returned no write-with-response budget.");
                     _session = session; _connecting = 0; _budget = result.Budget; _sessionStop = new CancellationTokenSource();
+                    while (_connectingNotifications.Count != 0) _notifications.Enqueue((session, _connectingNotifications.Dequeue()));
                     if (_notifications.Count != 0) _notificationSignal.Release(_notifications.Count);
                 }
             }
@@ -248,7 +250,7 @@ internal sealed class MacBleNusBackend : IBleNusBackend, IBleNativeStackProbe
     }
     private void InvalidateSession()
     {
-        lock (_gate) { _session = 0; _connecting = 0; _budget = 0; _sessionStop?.Cancel(); _notifications.Clear(); }
+        lock (_gate) { _session = 0; _connecting = 0; _budget = 0; _sessionStop?.Cancel(); _notifications.Clear(); _connectingNotifications.Clear(); }
     }
     private async Task CleanupSessionAsync(ulong session)
     {

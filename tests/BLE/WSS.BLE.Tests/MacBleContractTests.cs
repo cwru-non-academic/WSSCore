@@ -19,10 +19,15 @@ public class MacBleContractTests
         internal ulong Session, PendingWrite;
         internal uint Budget = 3;
         internal bool LoseAdapterDuringScan;
+        internal byte[]? InitialNotification;
         public int Submit(uint command, ulong operation, ulong session, string? device, string? service, string? rx, string? tx, byte[] data, uint timeout)
         {
             if (Disposed) throw new ObjectDisposedException(nameof(Fake));
-            if (command == 4) Session = session;
+            if (command == 4)
+            {
+                Session = session;
+                if (InitialNotification != null) Emit(new MacEvent { Kind = 3, Session = session, Data = InitialNotification });
+            }
             if (command == 5)
             {
                 Writes.Enqueue((byte[])data.Clone()); PendingWrite = operation; WriteStarted.TrySetResult(operation);
@@ -45,6 +50,16 @@ public class MacBleContractTests
     private static MacBleNusBackend Backend(Fake fake) => new(new BleNusTransportOptions { DeviceId = Device }, fake);
     private static async Task Connect(MacBleNusBackend backend) => await backend.ConnectAsync(new BleCandidate(Device, "fake"), CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(3));
 
+    [Test]
+    public async Task NotificationArrivingBeforeConnectContinuationIsRetained()
+    {
+        var fake = new Fake { InitialNotification = new byte[] { 4, 2 } };
+        using var backend = Backend(fake);
+        var received = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.BytesReceived += bytes => received.TrySetResult(bytes);
+        await Connect(backend);
+        Assert.That(await received.Task.WaitAsync(TimeSpan.FromSeconds(3)), Is.EqualTo(new byte[] { 4, 2 }));
+    }
     [Test]
     public void PermissionLossDuringDiscoveryFailsRatherThanReturningNoDevices()
     {
