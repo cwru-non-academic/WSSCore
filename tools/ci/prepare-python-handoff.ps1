@@ -25,7 +25,7 @@ if ($comparison.status -cnotin @('ahead','identical')) { throw 'Producer commit 
 $pages=& gh api --paginate --slurp "repos/$repository/actions/runs/$id/jobs?per_page=100&filter=latest"
 if ($LASTEXITCODE -ne 0) { throw 'Producer jobs could not be read.' }
 $jobs=@(($pages | ConvertFrom-Json) | ForEach-Object { $_.jobs })
-foreach ($name in @('Build and validate artifacts','Core conformance','Serial consumer (Windows)','Serial consumer (macOS)','Serial consumer (Linux)','BLE consumer (Windows)','BLE consumer (Linux)','Core consumer (Windows)','Core consumer (macOS)','Core consumer (Linux)','Start routine downstream validation')) {
+foreach ($name in @('Build and validate artifacts','Core conformance','Serial consumer (Windows)','Serial consumer (macOS)','Serial consumer (Linux)','BLE consumer (Windows)','BLE consumer (Linux)','Build macOS universal BLE bridge','BLE consumer (macOS arm64)','BLE consumer (macOS x86_64)','Core consumer (Windows)','Core consumer (macOS)','Core consumer (Linux)','Start routine downstream validation')) {
     $matchingJobs=@($jobs | Where-Object { $_.name -ceq $name })
     if ($matchingJobs.Count -ne 1 -or $matchingJobs[0].conclusion -cne 'success') { throw "Required producer job missing/skipped/failed: $name" }
 }
