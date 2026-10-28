@@ -47,10 +47,11 @@
     if (_command == 1 && _operation && central.state != CBManagerStateUnknown && central.state != CBManagerStateResetting)
         [self complete:central.state == CBManagerStatePoweredOn ? 0 : central.state == CBManagerStateUnauthorized ? 8 : 6];
     else if (central.state != CBManagerStatePoweredOn && central.state != CBManagerStateUnknown && central.state != CBManagerStateResetting) {
-        uint64_t session = _session; BOOL active = _ready;
+        uint64_t session = _session, scan = _scan; BOOL active = _ready;
         [_central stopScan]; _scan = 0;
         [self fail:central.state == CBManagerStateUnauthorized ? 8 : 6];
         if (active) [self emit:4 operation:0 session:session status:6 data:nil];
+        if (scan) [self emit:4 operation:0 session:scan status:central.state == CBManagerStateUnauthorized ? 8 : 6 data:nil];
     }
 }
 - (void)centralManager:(CBCentralManager*)central didDiscoverPeripheral:(CBPeripheral*)peer advertisementData:(NSDictionary<NSString*,id>*)advertisement RSSI:(NSNumber*)rssi {
@@ -164,12 +165,12 @@ int32_t wss_mac_submit(void* handle, uint32_t command, uint64_t operation, uint6
                     } else if (command == 6) {
                         [c resetLink]; [c complete:0];
                         c.central.delegate = nil; c.central = nil;
+                    } else if (command == 3) {
+                        [c.central stopScan]; c.scan = 0; [c complete:0];
                     } else if (!c.central || c.central.state != CBManagerStatePoweredOn) [c complete:6];
                     else if (command == 2) {
                         if (c.scan || c.peer) { [c complete:2]; return; }
                         c.scan = session; [c.central scanForPeripheralsWithServices:@[serviceId] options:nil]; [c complete:0];
-                    } else if (command == 3) {
-                        [c.central stopScan]; c.scan = 0; [c complete:0];
                     } else if (command == 4) {
                         if (c.peer || c.scan) { [c complete:2]; return; }
                         NSArray<CBPeripheral*>* peers = [c.central retrievePeripheralsWithIdentifiers:@[uuid]];

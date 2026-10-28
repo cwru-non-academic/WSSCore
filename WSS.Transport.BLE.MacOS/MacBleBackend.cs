@@ -29,6 +29,7 @@ internal sealed class MacBleNusBackend : IBleNusBackend, IBleNativeStackProbe
     private IMacNative? _native;
     private ulong _operation, _nextSession, _session, _connecting, _scan;
     private uint _budget;
+    private int _scanError;
     private bool _disposed;
     private CancellationTokenSource? _sessionStop;
     internal Task NotificationPump { get; }
@@ -58,6 +59,7 @@ internal sealed class MacBleNusBackend : IBleNusBackend, IBleNativeStackProbe
         {
             if (_disposed) return;
             if (e.Kind == 1 && _pending.TryGetValue(e.Operation, out var pending)) pending.TrySetResult(e);
+            else if (e.Kind == 4 && e.Session == _scan && _scan != 0) _scanError = e.Status;
             else if (e.Kind == 3 && e.Session == _connecting && _connecting != 0)
             {
                 if (_notifications.Count >= 256) { _connecting = 0; return; }
@@ -154,7 +156,7 @@ internal sealed class MacBleNusBackend : IBleNusBackend, IBleNativeStackProbe
                 return new[] { new BleCandidate(request.DeviceId!, null) };
             }
             ulong scan;
-            lock (_gate) { scan = _scan = ++_nextSession; _discovered.Clear(); }
+            lock (_gate) { scan = _scan = ++_nextSession; _scanError = 0; _discovered.Clear(); }
             try
             {
                 await CommandAsync(2, scan, linked.Token).ConfigureAwait(false);
@@ -166,7 +168,7 @@ internal sealed class MacBleNusBackend : IBleNusBackend, IBleNativeStackProbe
                 finally { lock (_gate) _scan = 0; }
             }
             BleCandidate[] devices;
-            lock (_gate) devices = _discovered.Values.ToArray();
+            lock (_gate) { if (_scanError != 0) throw Error(_scanError); devices = _discovered.Values.ToArray(); }
             if (!request.AutoSelectDevice) return devices.Where(d => string.Equals(d.Name, request.DeviceName, StringComparison.OrdinalIgnoreCase)).Take(1).ToArray();
             var compatible = new List<BleCandidate>();
             foreach (var device in devices)

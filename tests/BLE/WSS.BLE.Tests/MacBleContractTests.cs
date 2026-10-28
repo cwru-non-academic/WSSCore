@@ -15,9 +15,10 @@ public class MacBleContractTests
         public event Action<MacEvent>? Event;
         internal readonly ConcurrentQueue<byte[]> Writes = new();
         internal readonly TaskCompletionSource<ulong> WriteStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal bool HoldWrite, Disposed;
+        internal bool HoldWrite, Disposed, CrossThreadCallbacks;
         internal ulong Session, PendingWrite;
         internal uint Budget = 3;
+        internal bool LoseAdapterDuringScan;
         public int Submit(uint command, ulong operation, ulong session, string? device, string? service, string? rx, string? tx, byte[] data, uint timeout)
         {
             if (Disposed) throw new ObjectDisposedException(nameof(Fake));
@@ -28,7 +29,13 @@ public class MacBleContractTests
                 if (HoldWrite) return 0;
             }
             if (command == 6) Session = 0;
-            Emit(new MacEvent { Kind = 1, Operation = operation, Session = session, Budget = Budget });
+            var completion = new MacEvent { Kind = 1, Operation = operation, Session = session, Budget = Budget };
+            if (CrossThreadCallbacks)
+            {
+                if (!Task.Run(() => Emit(completion)).Wait(TimeSpan.FromSeconds(2))) throw new TimeoutException("Native callback blocked by submission's state lock");
+            }
+            else Emit(completion);
+            if (command == 2 && LoseAdapterDuringScan) Emit(new MacEvent { Kind = 4, Session = session, Status = 8 });
             return 0;
         }
         public void Cancel(ulong operation) => Emit(new MacEvent { Kind = 1, Operation = operation, Status = 4 });
@@ -38,6 +45,26 @@ public class MacBleContractTests
     private static MacBleNusBackend Backend(Fake fake) => new(new BleNusTransportOptions { DeviceId = Device }, fake);
     private static async Task Connect(MacBleNusBackend backend) => await backend.ConnectAsync(new BleCandidate(Device, "fake"), CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(3));
 
+    [Test]
+    public void PermissionLossDuringDiscoveryFailsRatherThanReturningNoDevices()
+    {
+        var fake = new Fake { LoseAdapterDuringScan = true };
+        using var backend = Backend(fake);
+        var request = new BleDiscoveryRequest(null, "fake", BleNusTransport.DefaultServiceUuid,
+            BleNusTransport.DefaultWriteCharacteristicUuid, BleNusTransport.DefaultNotifyCharacteristicUuid,
+            TimeSpan.Zero, false);
+        var error = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await backend.DiscoverAsync(request, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(3)));
+        Assert.That(error!.Message, Does.Contain("access denied"));
+    }
+    [Test]
+    public async Task NativeCallbackCanCompleteWhileSubmissionIsInProgress()
+    {
+        var fake = new Fake { CrossThreadCallbacks = true };
+        using var backend = Backend(fake);
+        await Connect(backend);
+        Assert.That(backend.IsConnected, Is.True);
+    }
     [Test]
     public async Task SendsSnapshotInBudgetChunksWithoutInterleaving()
     {
