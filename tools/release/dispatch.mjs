@@ -56,6 +56,7 @@ export function prepare(g,p,run,attempt) {
     const prs=g.pages(`repos/${t.repository}/commits/${head}/pulls`).filter(pr=>pr.merged_at && pr.merge_commit_sha===head && pr.base?.ref==='dev' && pr.base?.repo?.full_name===t.repository && pr.head?.repo?.full_name===t.repository);
     requireThat(prs.length===1 && prs[0].user?.type==='Bot',`Current ${t.id} is not a unique bot dependency merge`);
     const normals=g.pages(`repos/${t.repository}/actions/workflows/${basename(t.workflow)}/runs?branch=dev&event=workflow_dispatch&head_sha=${head}`,'workflow_runs').sort((a,b)=>b.id-a.id);
+    requireThat(normals.length<=1,`Ambiguous postmerge normal CI for ${t.id}; inspect recovery`);
     if(normals.length===0) {request(t,t.workflow,head,{});continue;}
     requireThat(normals[0].status!=='completed' || normals[0].conclusion==='success',`Postmerge CI failed for ${t.id}; inspect recovery`);
     if(normals[0].status!=='completed') continue;
@@ -80,11 +81,12 @@ export function execute(g,reader,p,j) {
     const runs=reader.pages(`repos/${a.repository}/actions/workflows/${basename(a.workflow)}/runs?branch=dev&event=workflow_dispatch&head_sha=${a.head_sha}`,'workflow_runs');
     const existing=isReceipt?runs.filter(r=>r.display_title===`WSS acceptance ${a.target_id} ${p.plan_id}`):runs;
     if(existing.length) {
-      requireThat(!isReceipt || existing.length===1,'Ambiguous concurrent receipt dispatch');
+      requireThat(existing.length===1,'Ambiguous concurrent proof dispatch');
       const latest=[...existing].sort((a,b)=>b.id-a.id)[0];
       requireThat(latest.status!=='completed' || latest.conclusion==='success','Concurrent proof failed; inspect before recovery');
       continue;
     }
+    requireThat(reader.head(CORE)===p.candidate.commit && reader.head(a.repository)===a.head_sha,'Branch moved before proof dispatch');
     const args=['api','--method','POST',`repos/${a.repository}/actions/workflows/${basename(a.workflow)}/dispatches`,'-f','ref=dev'];
     for(const [key,value] of Object.entries(a.inputs)) args.push('-f',`inputs[${key}]=${value}`);
     g.command(args);

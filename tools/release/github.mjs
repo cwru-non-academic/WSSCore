@@ -102,7 +102,7 @@ export function collect(g,p) {
     const pr=g.get(`repos/${t.repository}/pulls/${r.merge?.pr_number}`);
     const normal=g.run(t.repository,r.normal_ci?.run_id);
     const normals=g.pages(`repos/${t.repository}/actions/workflows/${basename(t.workflow)}/runs?head_sha=${normal.head_sha}&event=${normal.event}`,'workflow_runs').sort((a,b)=>b.id-a.id);
-    requireThat(normals.length>0,'Normal CI run missing');
+    requireThat(normals.length===1,'Normal CI run missing or ambiguous');
     const parent_gitlinks=Object.fromEntries(Object.entries(t.parents).map(([parent,path])=>{
       const link=g.object(t.repository,r.merge.sha,path);
       requireThat(link.type==='commit' && link.mode==='160000','Expected a Git submodule pin');

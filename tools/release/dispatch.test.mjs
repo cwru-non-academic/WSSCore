@@ -44,6 +44,7 @@ test('existing pending receipt is reused',()=>{
 });
 for(const [name,options] of [
   ['failed postmerge CI',{normal:[{id:10,status:'completed',conclusion:'failure'}]}],
+  ['ambiguous postmerge normal CI',{normal:[{id:10,status:'completed',conclusion:'failure'},{id:11,status:'completed',conclusion:'success'}]}],
   ['failed receipt',{normal:[{id:10,status:'completed',conclusion:'success'}],receipts:[{status:'completed',conclusion:'failure'}]}],
   ['ambiguous receipt',{normal:[{id:10,status:'completed',conclusion:'success'}],receipts:[{},{}]}]
 ]) test(`${name} cannot trigger automatic recovery dispatch`,()=>{
@@ -76,6 +77,17 @@ test('execution rechecks downstream after journaling and reuses a concurrent pen
   const f=fixture(),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
   const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[{id:200,status:'queued'}]};
   execute(f.g,reader,f.p,j);assert.equal(f.requests.length,0);
+});
+test('execution rejects multiple normal runs instead of superseding a failed run',()=>{
+  const f=fixture(),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
+  const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[{id:201,status:'queued'},{id:200,status:'completed',conclusion:'failure'}]};
+  assert.throws(()=>execute(f.g,reader,f.p,j),/Ambiguous/);assert.equal(f.requests.length,0);
+});
+test('execution checks branch again immediately before its POST',()=>{
+  const f=fixture(),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
+  let targetReads=0;
+  const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:repo=>repo===CORE?sha(1):++targetReads===1?sha(10):sha(99),pages:()=>[]};
+  assert.throws(()=>execute(f.g,reader,f.p,j),/moved/);assert.equal(f.requests.length,0);
 });
 for(const [name,mutate]of [
   ['MATLAB target',j=>j.actions[0].target_id='matlab-cli'],
