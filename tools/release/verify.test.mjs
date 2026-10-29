@@ -4,14 +4,17 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {allClear,bytesDigest,canonical,CORE,CORE_JOBS,digest,plan,TARGETS} from './verify.mjs';
 import {collect,freeze,GitHub,publish} from './github.mjs';
+import {tagPolicy} from './policy.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
 const successful=names=>names.map(name=>({name,status:'completed',conclusion:'success'}));
+function tagRule() {return{id:123,target:'tag',enforcement:'active',source_type:'Repository',source:CORE,conditions:{ref_name:{include:['refs/tags/v*'],exclude:[]}},bypass_actors:[],rules:[{type:'creation'},{type:'update'},{type:'deletion'}]};}
 function run(repo,workflow,n,head,event='workflow_dispatch') {
   return {id:n,repository:{full_name:repo},head_repository:{full_name:repo},path:workflow,head_sha:head,head_branch:'dev',event,status:'completed',conclusion:'success',run_attempt:1};
 }
 function fixture() {
   const manifest=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
+  manifest.legacy_tag_guard={ruleset_id:'123',policy_sha256:digest(tagPolicy(tagRule()))};
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(Buffer.from('zip'))};
   const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:sha(2),trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,sha(3)]))}]))};
   const p={...body,plan_id:digest(body)};
@@ -23,7 +26,7 @@ function fixture() {
       merge:{pr_number:String(i+1),sha:merge,head_sha:head},normal_ci:{run_id:String(normal),attempt:1},
       preflights:[{repository:t.repository,run_id:String(300+i),source_sha:sha(2),workflow:'.github/workflows/wss-preflight.yml'}],
       parents,emitter:{run_id:String(emitter),attempt:1,source_sha:merge,workflow:'.github/workflows/release-receipt.yml'},coverage:t.coverage};
-    e.targets[t.id]={receipt:r,receipt_bytes:Buffer.from(JSON.stringify(r)),pr:{number:i+1,merged:true,merged_by:{type:'User'},state:'closed',merge_commit_sha:merge,head:{sha:head,ref:'automation/candidate',repo:{full_name:t.repository}},base:{ref:'dev',repo:{full_name:t.repository}}},
+    e.targets[t.id]={receipt:r,receipt_bytes:Buffer.from(JSON.stringify(r)),pr:{number:i+1,merged:true,user:{type:'Bot'},merged_by:{type:'User'},state:'closed',merge_commit_sha:merge,head:{sha:head,ref:'automation/candidate',repo:{full_name:t.repository}},base:{ref:'dev',repo:{full_name:t.repository}}},
       current_head:merge,merge_tree:sha(4),tested_tree:sha(4),trusted:p.target_snapshots[t.id].trusted,parent_gitlinks:parents,
       normal_run:{...run(t.repository,t.workflow,normal,merge),pull_requests:[]},normal_latest_run_id:String(normal),normal_jobs:successful(t.jobs),
       emitter_run:run(t.repository,r.emitter.workflow,emitter,merge),artifact:{id:500+i,name:`wss-acceptance-${t.id}-${p.plan_id}-a1`,expired:false,workflow_run:{id:emitter,head_sha:merge}},
@@ -58,6 +61,7 @@ const cases={
   'wrong artifact owner run':({e})=>e.producer.artifact.workflow_run.id=999,
   'unmerged PR':({e})=>e.targets['csharp-wrapper'].pr.merged=false,
   'automatically merged dependency':({e})=>e.targets['csharp-wrapper'].pr.merged_by.type='Bot',
+  'human migration masquerading as dependency promotion':({e})=>e.targets['unity-wrapper'].pr.user.type='User',
   'wrong actual merge':({e})=>e.targets['csharp-wrapper'].pr.merge_commit_sha=sha(99),
   'wrong destination':({e})=>e.targets['csharp-cli'].pr.base.ref='main',
   'fork PR':({e})=>e.targets['csharp-cli'].pr.head.repo.full_name='fork/test',
@@ -89,7 +93,7 @@ for(const [name,mutate] of Object.entries(cases)) test(`reject ${name}`,()=>{
 });
 test('freeze refuses unregistered receiver rather than dropping target',()=>{
   const {p}=fixture();let seen=0;
-  const g={head:()=>sha(1),object:()=>({sha:sha(2)}),get:()=>{seen++;return{path:'.github/workflows/release-receipt.yml',state:'disabled_manually'};}};
+  const g={head:()=>sha(1),object:()=>({sha:sha(2)}),get:path=>{if(path.includes('/rulesets/'))return tagRule();seen++;return{path:'.github/workflows/release-receipt.yml',state:'disabled_manually'};}};
   assert.throws(()=>freeze(g,p.manifest,p.candidate),/unavailable/);assert.equal(seen,1);
 });
 test('pagination never silently truncates a target proof list',()=>{
@@ -97,7 +101,7 @@ test('pagination never silently truncates a target proof list',()=>{
 });
 test('publication never overwrites a tag without a matching complete release',()=>{
   const {p,e}=fixture();let mutations=0;
-  const g={pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/dev-beta-1-${p.plan_id.slice(0,12)}`,object:{type:'commit',sha:p.candidate.commit}}]:[],command:()=>mutations++};
+  const g={get:()=>tagRule(),pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/dev-beta-1-${p.plan_id.slice(0,12)}`,object:{type:'commit',sha:p.candidate.commit}}]:[],command:()=>mutations++};
   assert.throws(()=>publish(g,p,{record:allClear(p,e),files:{}},'.'),/incomplete/);assert.equal(mutations,0);
 });
 
@@ -135,9 +139,9 @@ test('collector rejects PR-head evidence even when caller supplies a matching fi
 for(const corrupt of [false,true]) test(`existing release ${corrupt?'rejects altered ZIP without a mutation':'replays as verified no-op without creating another release'}`,()=>{
   const {p,e}=fixture(),tag=`dev-beta-${p.candidate.run_id}-${p.plan_id.slice(0,12)}`,record=allClear(p,e);
   const files={[p.candidate.archive]:Buffer.from('zip'),'SHA256SUMS.txt':Buffer.from(`${p.candidate.sha256}  ${p.candidate.archive}\n`)};
-  const expected={...files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical({...record,tag})+'\n')};
+  const expected={...files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical({...record,tag,legacy_tag_guard:p.manifest.legacy_tag_guard})+'\n')};
   let mutations=0;
-  const g={pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/${tag}`,object:{type:'commit',sha:p.candidate.commit}}]:[{tag_name:tag,prerelease:true,draft:false,assets:Object.keys(expected).map(name=>({name}))}],command:args=>{
+  const g={get:()=>tagRule(),pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/${tag}`,object:{type:'commit',sha:p.candidate.commit}}]:[{tag_name:tag,prerelease:true,draft:false,assets:Object.keys(expected).map(name=>({name}))}],command:args=>{
     if(args[0]==='release'&&args[1]==='download'){
       const directory=args[args.indexOf('--dir')+1];
       for(const [name,bytes]of Object.entries(expected))writeFileSync(join(directory,name),corrupt&&name===p.candidate.archive?Buffer.from('corrupt'):bytes);

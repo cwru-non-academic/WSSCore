@@ -3,6 +3,7 @@ import {mkdtempSync,readdirSync,readFileSync,writeFileSync,rmSync} from 'node:fs
 import {join,basename} from 'node:path';
 import {tmpdir} from 'node:os';
 import {allClear,bytesDigest,candidate,canonical,CORE,digest,manifest,plan,producer,requireThat} from './verify.mjs';
+import {checkTagGuard} from './policy.mjs';
 
 // No shell expansion, caller-provided commands, implicit pagination or token output.
 export class GitHub {
@@ -50,6 +51,7 @@ export class GitHub {
 
 export function freeze(g,m,c) {
   manifest(m); candidate(c);
+  checkTagGuard(g,m);
   const target_snapshots={};
   for(const t of m.targets) {
     const head_sha=g.head(t.repository);
@@ -119,8 +121,9 @@ export function collect(g,p) {
 }
 
 export function publish(g,p,accepted,directory) {
+  const legacy_tag_guard=checkTagGuard(g,p.manifest);
   const tag=`dev-beta-${p.candidate.run_id}-${p.plan_id.slice(0,12)}`;
-  const record={...accepted.record,tag};
+  const record={...accepted.record,tag,legacy_tag_guard};
   const expected={...accepted.files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical(record)+'\n')};
   // Existing tag/release state is read first. An API error is not interpreted as absence.
   const tags=g.pages(`repos/${CORE}/git/matching-refs/tags/${tag}`);
@@ -140,6 +143,7 @@ export function publish(g,p,accepted,directory) {
   // Re-collect live proof immediately before the only publication mutation.
   const fresh=collect(g,p);
   requireThat(canonical(fresh.record)===canonical(accepted.record),'Acceptance evidence changed during publication');
+  checkTagGuard(g,p.manifest);
   const paths=Object.entries(expected).map(([name,bytes])=>{const path=join(directory,name);writeFileSync(path,bytes);return path;});
   g.command(['release','create',tag,'--repo',CORE,'--target',p.candidate.commit,'--prerelease','--title',tag,
     '--notes',`Dev beta accepted by all seven frozen targets. Candidate ${p.candidate.commit}; plan ${p.plan_id}. See acceptance.json for proof, exclusions and coverage limits.`,...paths]);

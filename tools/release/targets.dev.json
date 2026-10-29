@@ -197,5 +197,9 @@
       "dispatch": false,
       "reason": "Prepared but excluded by user instruction; configuration and activation require a later reviewed policy."
     }
-  ]
+  ],
+  "legacy_tag_guard": {
+    "ruleset_id": null,
+    "policy_sha256": null
+  }
 }

@@ -108,3 +108,8 @@ The old `v*` publisher must be disabled/rejected. Release code will publish the
 accepted ZIP bytes (possibly under a release asset alias) and record the original
 candidate identity, actual acceptance merges, proof digests and plan/manifest IDs.
 No rebuild at release. Main/stable and enabling MATLAB are separate later stages.
+
+Activation additionally requires the live pinned legacy-tag guard described in
+`HISTORICAL_TAG_GUARD.md`. Its reviewed configuration remains unset by default.
+The proposed separate no-op v2 migration is specified in `NOOP_V2.md`; it does not
+change v1 receipt eligibility or permit a no-op to count as a merged promotion.

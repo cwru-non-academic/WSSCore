@@ -20,6 +20,8 @@ changes are reviewed separately. No main/stable channel is enabled.
    candidates. Current code deliberately rejects no-op acceptance rather than
    relabeling an old approval. Human migration PRs cannot count as bot dependency
    acceptance. A candidate with no payload change therefore cannot currently release.
+   `NOOP_V2.md` defines the migration interface; `equivalence.mjs` tests its byte and
+   source foundations without enabling v2 acceptance in the v1 publisher.
 4. Close the historical tag publisher route through repository policy **before**
    enabling publication. Removing `v*` and `publish-universal` from current YAML
    prevents that route for new commits only. A newly pushed tag on an old commit
@@ -27,6 +29,9 @@ changes are reviewed separately. No main/stable channel is enabled.
    legacy `v*` tag creation (and review any other release writers). This PR does not
    change rulesets, secrets or permissions. Existing manual administrator powers
    are outside an Actions evidence barrier.
+   `HISTORICAL_TAG_GUARD.md` specifies the exact owner policy and API visibility
+   requirement. The executable guard rechecks the pinned policy before freezing
+   and publication; unconfigured guard fields deliberately block activation.
 5. Validate the exact policy and emitter interface with all receiver owners,
    including canonical paired preflights, source-scope/projection validators and
    current gitlinks. Unity coverage remains the hosted .NET compatibility harness;
