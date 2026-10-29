@@ -79,6 +79,7 @@ export function receipt(p, t, r, e) {
   const pr = e.pr;
   requireThat(String(pr.number) === r.merge.pr_number && pr.merged === true && pr.state === 'closed' && pr.merge_commit_sha === r.merge.sha && pr.head?.sha === r.merge.head_sha, 'PR was not merged at declared commit');
   requireThat(pr.merged_by?.type === 'User', 'Required dependency merge must be performed by a human');
+  requireThat(pr.user?.type === 'Bot', 'V1 acceptance requires an actual automated dependency PR, never a human migration');
   requireThat(pr.base?.ref === 'dev' && pr.base?.repo?.full_name === t.repository && pr.head?.repo?.full_name === t.repository, 'Wrong branch or fork PR');
   requireThat(e.current_head === r.merge.sha, 'Accepted target branch has moved');
   requireThat(e.merge_tree === e.tested_tree, 'Normal CI tested a different merged tree');

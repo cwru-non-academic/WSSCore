@@ -26,7 +26,7 @@ function fixture() {
       merge:{pr_number:String(i+1),sha:merge,head_sha:head},normal_ci:{run_id:String(normal),attempt:1},
       preflights:[{repository:t.repository,run_id:String(300+i),source_sha:sha(2),workflow:'.github/workflows/wss-preflight.yml'}],
       parents,emitter:{run_id:String(emitter),attempt:1,source_sha:merge,workflow:'.github/workflows/release-receipt.yml'},coverage:t.coverage};
-    e.targets[t.id]={receipt:r,receipt_bytes:Buffer.from(JSON.stringify(r)),pr:{number:i+1,merged:true,merged_by:{type:'User'},state:'closed',merge_commit_sha:merge,head:{sha:head,ref:'automation/candidate',repo:{full_name:t.repository}},base:{ref:'dev',repo:{full_name:t.repository}}},
+    e.targets[t.id]={receipt:r,receipt_bytes:Buffer.from(JSON.stringify(r)),pr:{number:i+1,merged:true,user:{type:'Bot'},merged_by:{type:'User'},state:'closed',merge_commit_sha:merge,head:{sha:head,ref:'automation/candidate',repo:{full_name:t.repository}},base:{ref:'dev',repo:{full_name:t.repository}}},
       current_head:merge,merge_tree:sha(4),tested_tree:sha(4),trusted:p.target_snapshots[t.id].trusted,parent_gitlinks:parents,
       normal_run:{...run(t.repository,t.workflow,normal,merge),pull_requests:[]},normal_latest_run_id:String(normal),normal_jobs:successful(t.jobs),
       emitter_run:run(t.repository,r.emitter.workflow,emitter,merge),artifact:{id:500+i,name:`wss-acceptance-${t.id}-${p.plan_id}-a1`,expired:false,workflow_run:{id:emitter,head_sha:merge}},
@@ -61,6 +61,7 @@ const cases={
   'wrong artifact owner run':({e})=>e.producer.artifact.workflow_run.id=999,
   'unmerged PR':({e})=>e.targets['csharp-wrapper'].pr.merged=false,
   'automatically merged dependency':({e})=>e.targets['csharp-wrapper'].pr.merged_by.type='Bot',
+  'human migration masquerading as dependency promotion':({e})=>e.targets['unity-wrapper'].pr.user.type='User',
   'wrong actual merge':({e})=>e.targets['csharp-wrapper'].pr.merge_commit_sha=sha(99),
   'wrong destination':({e})=>e.targets['csharp-cli'].pr.base.ref='main',
   'fork PR':({e})=>e.targets['csharp-cli'].pr.head.repo.full_name='fork/test',
