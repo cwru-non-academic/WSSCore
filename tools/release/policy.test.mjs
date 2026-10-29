@@ -14,6 +14,8 @@ for(const[name,mutate]of[
   ['partial v scope',r=>r.conditions.ref_name.include=['refs/tags/v0.*']],['excluded tag',r=>r.conditions.ref_name.exclude=['refs/tags/v1.*']],
   ['bypass app',r=>r.bypass_actors=[{actor_id:1,actor_type:'Integration',bypass_mode:'always'}]],['hidden bypass metadata',r=>delete r.bypass_actors],
   ['missing creation prohibition',r=>r.rules=r.rules.filter(x=>x.type!=='creation')],['different repository',r=>r.source='other/repository'],
+  ['creation-only guard',r=>r.rules=[{type:'creation'}]],['missing update prohibition',r=>r.rules=r.rules.filter(x=>x.type!=='update')],
+  ['missing deletion prohibition',r=>r.rules=r.rules.filter(x=>x.type!=='deletion')],
   ['unreviewed organization policy',r=>r.source_type='Organization'],['unknown policy parameters',r=>r.rules[0].parameters={bypass:true}]
 ])test(`legacy guard rejects ${name}`,()=>{const r=rule();mutate(r);assert.throws(()=>tagPolicy(r));});
 test('missing configuration cannot fall back to a self-attested flag',()=>{
@@ -22,5 +24,5 @@ test('missing configuration cannot fall back to a self-attested flag',()=>{
 test('API failure and changed live protection block without any write',()=>{
   const r=rule(),m={legacy_tag_guard:{ruleset_id:'123',policy_sha256:digest(tagPolicy(r))}};
   assert.throws(()=>checkTagGuard({get:()=>{throw new Error('permission denied');}},m),/permission denied/);
-  r.rules.pop();assert.throws(()=>checkTagGuard({get:()=>r},m),/changed/);
+  const originalId=r.id;r.id=124;assert.throws(()=>checkTagGuard({get:()=>r},m),/changed/);r.id=originalId;
 });

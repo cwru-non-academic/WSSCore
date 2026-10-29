@@ -8,8 +8,7 @@ export function tagPolicy(r) {
   requireThat(r.source_type==='Repository' && r.source===CORE,'Legacy guard must be this repository policy');
   requireThat(canonical(r.conditions)===canonical({ref_name:{include:['refs/tags/v*'],exclude:[]}}),'Legacy tag guard must cover every v* tag without exclusions');
   requireThat(Array.isArray(r.bypass_actors) && r.bypass_actors.length===0,'Legacy tag guard cannot have bypass actors or hidden bypass metadata');
-  requireThat(Array.isArray(r.rules) && r.rules.some(x=>canonical(x)===canonical({type:'creation'})),'Legacy tag creation must be prohibited');
-  requireThat(r.rules.every(x=>['creation','update','deletion'].includes(x.type) && Object.keys(x).length===1),'Unknown tag rule requires a reviewed guard update');
+  requireThat(Array.isArray(r.rules) && canonical([...r.rules].sort((a,b)=>a.type.localeCompare(b.type)))===canonical([{type:'creation'},{type:'deletion'},{type:'update'}]),'Legacy tag creation, update and deletion must all be prohibited without extra parameters');
   return {id:String(r.id),target:r.target,enforcement:r.enforcement,source_type:r.source_type,source:r.source,
     conditions:r.conditions,bypass_actors:r.bypass_actors,rules:[...r.rules].sort((a,b)=>a.type.localeCompare(b.type))};
 }

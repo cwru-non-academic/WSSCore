@@ -3,7 +3,8 @@
 Removing the current tag trigger cannot change historical workflow definitions.
 A newly created `v*` tag at an old commit could still invoke its old publisher.
 The dev beta namespace is `dev-beta-*`, so legacy `v*` tag creation can be prohibited
-while dev is validated. Main/stable tag policy is a separate later reviewed stage.
+while dev is validated. Existing tags must also be protected from being moved to
+historical publishing commits. Main/stable tag policy is a separate later stage.
 
 The read-only audit on 2026-10-29 found only active branch rulesets `22505518`
 (dev) and `22505396` (main), with no tag rule. No settings were changed.
@@ -14,8 +15,9 @@ The owner must deploy and review a repository ruleset with:
 
 * `target: tag`, `enforcement: active`, this exact repository as source.
 * `conditions.ref_name.include: ["refs/tags/v*"]`, `exclude: []`.
-* A `creation` prohibition and no bypass actors. Optional update/deletion
-  prohibitions are allowed; unknown parameters require another reviewed guard.
+* Exact `creation`, `update` and `deletion` prohibitions and no bypass actors.
+  Creation-only policy does not protect existing tags from being repointed.
+  Unknown rules/parameters require another reviewed guard.
 
 `targets.dev.json` deliberately contains unconfigured `legacy_tag_guard` fields.
 Do not substitute a Boolean acknowledgement. Once the owner policy exists, inspect

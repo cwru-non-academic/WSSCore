@@ -8,7 +8,7 @@ import {tagPolicy} from './policy.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
 const successful=names=>names.map(name=>({name,status:'completed',conclusion:'success'}));
-function tagRule() {return{id:123,target:'tag',enforcement:'active',source_type:'Repository',source:CORE,conditions:{ref_name:{include:['refs/tags/v*'],exclude:[]}},bypass_actors:[],rules:[{type:'creation'}]};}
+function tagRule() {return{id:123,target:'tag',enforcement:'active',source_type:'Repository',source:CORE,conditions:{ref_name:{include:['refs/tags/v*'],exclude:[]}},bypass_actors:[],rules:[{type:'creation'},{type:'update'},{type:'deletion'}]};}
 function run(repo,workflow,n,head,event='workflow_dispatch') {
   return {id:n,repository:{full_name:repo},head_repository:{full_name:repo},path:workflow,head_sha:head,head_branch:'dev',event,status:'completed',conclusion:'success',run_attempt:1};
 }
