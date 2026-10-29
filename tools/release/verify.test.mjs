@@ -1,7 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {allClear,bytesDigest,CORE,CORE_JOBS,digest,plan,TARGETS} from './verify.mjs';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {allClear,bytesDigest,canonical,CORE,CORE_JOBS,digest,plan,TARGETS} from './verify.mjs';
 import {collect,freeze,GitHub,publish} from './github.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
@@ -22,7 +23,7 @@ function fixture() {
       merge:{pr_number:String(i+1),sha:merge,head_sha:head},normal_ci:{run_id:String(normal),attempt:1},
       preflights:[{repository:t.repository,run_id:String(300+i),source_sha:sha(2),workflow:'.github/workflows/wss-preflight.yml'}],
       parents,emitter:{run_id:String(emitter),attempt:1,source_sha:merge,workflow:'.github/workflows/release-receipt.yml'},coverage:t.coverage};
-    e.targets[t.id]={receipt:r,receipt_bytes:Buffer.from(JSON.stringify(r)),pr:{number:i+1,merged:true,state:'closed',merge_commit_sha:merge,head:{sha:head,ref:'automation/candidate',repo:{full_name:t.repository}},base:{ref:'dev',repo:{full_name:t.repository}}},
+    e.targets[t.id]={receipt:r,receipt_bytes:Buffer.from(JSON.stringify(r)),pr:{number:i+1,merged:true,merged_by:{type:'User'},state:'closed',merge_commit_sha:merge,head:{sha:head,ref:'automation/candidate',repo:{full_name:t.repository}},base:{ref:'dev',repo:{full_name:t.repository}}},
       current_head:merge,merge_tree:sha(4),tested_tree:sha(4),trusted:p.target_snapshots[t.id].trusted,parent_gitlinks:parents,
       normal_run:{...run(t.repository,t.workflow,normal,merge),pull_requests:[]},normal_latest_run_id:String(normal),normal_jobs:successful(t.jobs),
       emitter_run:run(t.repository,r.emitter.workflow,emitter,merge),artifact:{id:500+i,name:`wss-acceptance-${t.id}-${p.plan_id}-a1`,expired:false,workflow_run:{id:emitter,head_sha:merge}},
@@ -56,6 +57,7 @@ const cases={
   'different ZIP bytes':({e})=>e.producer.archive_sha256='b'.repeat(64),
   'wrong artifact owner run':({e})=>e.producer.artifact.workflow_run.id=999,
   'unmerged PR':({e})=>e.targets['csharp-wrapper'].pr.merged=false,
+  'automatically merged dependency':({e})=>e.targets['csharp-wrapper'].pr.merged_by.type='Bot',
   'wrong actual merge':({e})=>e.targets['csharp-wrapper'].pr.merge_commit_sha=sha(99),
   'wrong destination':({e})=>e.targets['csharp-cli'].pr.base.ref='main',
   'fork PR':({e})=>e.targets['csharp-cli'].pr.head.repo.full_name='fork/test',
@@ -129,4 +131,19 @@ test('collector resolves full GitHub-shaped evidence for seven actual postmerge 
 test('collector rejects PR-head evidence even when caller supplies a matching final merge tree',()=>{
   const f=fixture(),t=f.e.targets['csharp-cli'];t.normal_run.event='pull_request';t.normal_run.head_sha=t.receipt.merge.head_sha;
   assert.throws(()=>collect(collectorFixture(f),f.p),/post-merge/);
+});
+for(const corrupt of [false,true]) test(`existing release ${corrupt?'rejects altered ZIP without a mutation':'replays as verified no-op without creating another release'}`,()=>{
+  const {p,e}=fixture(),tag=`dev-beta-${p.candidate.run_id}-${p.plan_id.slice(0,12)}`,record=allClear(p,e);
+  const files={[p.candidate.archive]:Buffer.from('zip'),'SHA256SUMS.txt':Buffer.from(`${p.candidate.sha256}  ${p.candidate.archive}\n`)};
+  const expected={...files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical({...record,tag})+'\n')};
+  let mutations=0;
+  const g={pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/${tag}`,object:{type:'commit',sha:p.candidate.commit}}]:[{tag_name:tag,prerelease:true,draft:false,assets:Object.keys(expected).map(name=>({name}))}],command:args=>{
+    if(args[0]==='release'&&args[1]==='download'){
+      const directory=args[args.indexOf('--dir')+1];
+      for(const [name,bytes]of Object.entries(expected))writeFileSync(join(directory,name),corrupt&&name===p.candidate.archive?Buffer.from('corrupt'):bytes);
+    } else mutations++;
+  }};
+  if(corrupt)assert.throws(()=>publish(g,p,{record,files},'.'),/bytes mismatch/);
+  else assert.deepEqual(publish(g,p,{record,files},'.'),{tag,state:'verified-existing'});
+  assert.equal(mutations,0);
 });
