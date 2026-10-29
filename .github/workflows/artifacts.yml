@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node --test tools/release/verify.test.mjs
+      - run: node --test tools/release/*.test.mjs
 
   macos-native:
     name: Build macOS universal BLE bridge
