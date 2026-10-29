@@ -51,6 +51,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_RUN: ${{ inputs.producer_run_id || github.event.workflow_run.id }}
         run: node tools/release/select-producer.mjs
+      - name: Create receipt reconciliation Actions token
+        id: receipt-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: |
+            CSharp_WSS_Integration_Lib
+            CLI_CSharp_WSS_Application
+            Unity_WSS_Integration_Lib
+            GUI_Unity_WSS_Application
+            Python_WSS_Integration_Lib
+            CLI_Python_WSS_Application
+            ROS_Python_WSS_Application
+          permission-actions: write
+      - name: Reconcile existing merges with fresh normal CI and read-only receipts
+        env:
+          GH_TOKEN: ${{ steps.receipt-token.outputs.token }}
+          WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
+        run: node tools/release/cli.mjs reconcile '${{ steps.producer.outputs.run_id }}'
       - name: Collect actual merge receipts and verify every required target
         env:
           GH_TOKEN: ${{ github.token }}

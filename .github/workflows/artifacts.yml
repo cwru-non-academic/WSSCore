@@ -542,4 +542,3 @@ jobs:
           $body | gh api --method POST repos/cwru-non-academic/CSharp_WSS_Integration_Lib/actions/workflows/promote-wss.yml/dispatches --input -
           if ($LASTEXITCODE -ne 0) { throw 'Routine handoff failed: verify App installation, Integration Actions-write permission, and the deployed dev workflow.' }
           "Automatic candidate: commit $env:PRODUCER_SHA; run $env:PRODUCER_RUN; artifact $env:ARTIFACT_ID; WSS-Universal-ci.zip; SHA-256 $env:SHA256. Integration waits for this producer run to complete successfully." >> $env:GITHUB_STEP_SUMMARY
-

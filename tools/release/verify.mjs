@@ -32,7 +32,7 @@ export function manifest(m) {
     requireThat(/^cwru-non-academic\/[A-Za-z0-9_]+$/.test(t.repository) && !/matlab/i.test(t.repository) && t.branch === 'dev', `Invalid target ${t.id}`);
     requireThat(t.workflow.startsWith('.github/workflows/') && t.workflow.endsWith('.yml'), 'Invalid normal CI workflow');
     requireThat(t.jobs.length > 0 && new Set(t.jobs).size === t.jobs.length && t.jobs.every(x => typeof x === 'string' && x.length > 0), 'Missing or duplicate required jobs');
-    requireThat(t.trusted_paths.includes('.github/workflows/release-receipt.yml') && t.trusted_paths.includes('.github/scripts'), 'Receipt workflow and validator scripts must be frozen');
+    requireThat(t.trusted_paths.includes('.github/workflows/release-receipt.yml') && t.trusted_paths.includes('.github/scripts') && t.trusted_paths.includes(t.workflow), 'Receipt workflow, normal CI and validator scripts must be frozen');
     requireThat(t.trusted_paths.every(x => !x.includes('..') && !x.startsWith('/')), 'Invalid trusted path');
     requireThat(Object.keys(t.parents).every(p => TARGETS.includes(p) && p !== t.id), 'Unknown parent');
   }
@@ -59,7 +59,7 @@ export function jobs(actual, required) {
 }
 function run(r, repository, workflow, attempt) {
   requireThat(r.repository?.full_name === repository && r.path === workflow && r.status === 'completed' && r.conclusion === 'success', 'Run repository/workflow/status mismatch');
-  requireThat(Number.isSafeInteger(r.run_attempt) && r.run_attempt === attempt, 'Run attempt mismatch');
+  requireThat(Number.isSafeInteger(r.run_attempt) && r.run_attempt >= 1 && r.run_attempt === attempt, 'Run attempt mismatch');
   requireThat(r.head_repository?.full_name === repository, 'Fork run is ineligible');
 }
 export function producer(p, evidence) {
@@ -86,10 +86,8 @@ export function receipt(p, t, r, e) {
   const n = e.normal_run;
   requireThat(e.normal_latest_run_id === String(n.id), 'A newer normal CI run supersedes receipt');
   run(n,t.repository,t.workflow,r.normal_ci.attempt);
-  requireThat(String(n.id) === r.normal_ci.run_id && ['pull_request','push','workflow_dispatch'].includes(n.event), 'Normal CI identity/event mismatch');
-  if (n.event === 'pull_request') {
-    requireThat(n.head_sha === r.merge.head_sha && n.pull_requests?.length === 1 && String(n.pull_requests[0].number) === r.merge.pr_number && n.pull_requests[0].base?.ref === 'dev' && n.pull_requests[0].head?.sha === r.merge.head_sha, 'Normal CI is not uniquely associated with merged PR');
-  } else requireThat(n.head_sha === r.merge.sha && n.head_branch === 'dev', 'Normal CI did not test actual merged dev');
+  requireThat(String(n.id) === r.normal_ci.run_id && ['push','workflow_dispatch'].includes(n.event), 'Release requires post-merge normal CI, never synthetic PR checkout');
+  requireThat(n.head_sha === r.merge.sha && n.head_branch === 'dev', 'Normal CI did not test actual merged dev');
   jobs(e.normal_jobs,t.jobs);
   requireThat(same(Object.keys(r.parents || {}).sort(),Object.keys(t.parents).sort()) && same(r.parents,e.parent_gitlinks), 'Dependency pins do not match receipt');
   requireThat(same([...(r.coverage || [])].sort(),[...t.coverage].sort()), 'Coverage declaration mismatch');
@@ -97,10 +95,9 @@ export function receipt(p, t, r, e) {
   const emitter = e.emitter_run;
   run(emitter,t.repository,r.emitter.workflow,r.emitter.attempt);
   requireThat(String(emitter.id) === r.emitter.run_id && emitter.head_branch === 'dev', 'Emitter identity/branch mismatch');
-  if (emitter.event === 'workflow_dispatch') requireThat(emitter.head_sha === r.merge.sha, 'Manual emitter must run actual accepted merge');
-  else requireThat(emitter.event === 'pull_request_target' && [r.merge.sha,r.merge.head_sha].includes(emitter.head_sha) && emitter.pull_requests?.length === 1 && String(emitter.pull_requests[0].number) === r.merge.pr_number, 'Untrusted receipt event/source');
+  requireThat(emitter.event === 'workflow_dispatch' && emitter.head_sha === r.merge.sha, 'Receipt emitter must dispatch at actual accepted merge');
   const artifact = e.artifact;
-  requireThat(artifact.name === `wss-acceptance-${t.id}-${p.plan_id}-a${r.emitter.attempt}` && artifact.expired === false && String(artifact.workflow_run?.id) === r.emitter.run_id && artifact.workflow_run?.head_sha === emitter.head_sha, 'Receipt artifact not bound to successful emitter');
+  requireThat(id(String(artifact.id)) && artifact.name === `wss-acceptance-${t.id}-${p.plan_id}-a${r.emitter.attempt}` && artifact.expired === false && String(artifact.workflow_run?.id) === r.emitter.run_id && artifact.workflow_run?.head_sha === emitter.head_sha, 'Receipt artifact not bound to successful emitter');
   requireThat(e.receipt_sha256 === bytesDigest(e.receipt_bytes) && same(JSON.parse(e.receipt_bytes.toString('utf8')),r), 'Receipt downloaded bytes mismatch');
   requireThat(Array.isArray(r.preflights) && r.preflights.length > 0 && e.preflights.length === r.preflights.length, 'Missing preflight evidence');
   for (let i=0;i<r.preflights.length;i++) {
@@ -120,6 +117,8 @@ export function allClear(p, evidence) {
   return {schema:'wss-release-acceptance/v1',channel:'dev',kind:'beta',plan_id:p.plan_id,
     manifest_sha256:p.manifest_sha256,candidate:p.candidate,targets:Object.fromEntries(p.manifest.targets.map(t => [t.id,{
       repository:t.repository,merge:evidence.targets[t.id].receipt.merge,normal_ci:evidence.targets[t.id].receipt.normal_ci,
-      emitter:evidence.targets[t.id].receipt.emitter,receipt_sha256:evidence.targets[t.id].receipt_sha256,coverage:t.coverage
+      preflights:evidence.targets[t.id].receipt.preflights,parents:evidence.targets[t.id].receipt.parents,
+      emitter:evidence.targets[t.id].receipt.emitter,receipt_artifact_id:String(evidence.targets[t.id].artifact.id),
+      receipt_sha256:evidence.targets[t.id].receipt_sha256,coverage:t.coverage
     }])),excluded:p.manifest.excluded};
 }

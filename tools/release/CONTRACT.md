@@ -30,8 +30,15 @@ single JSON file `receipt.json` in an artifact named
 `wss-acceptance-<target_id>-<plan_id>-a<run_attempt>` after actual human merge and
 successful normal committed-state CI. An explicit reconciliation dispatch may
 recheck an existing merge/no-op; it must not create a dependency PR or merge one.
-The workflow needs read access only. Deploy receipt tooling through reviewed PRs
+The receipt writer needs read access only. Deploy receipt tooling through reviewed PRs
 to default/main and dev before Core enables plan production.
+
+The shared reconciliation entry point is `workflow_dispatch` with required string
+inputs `producer_run_id` and `plan_id`. Its exact run-name is
+`WSS acceptance <target_id> <plan_id>`. The writer downloads the producer's frozen
+plan and rejects an input plan ID mismatch. Core may request this read-only receipt
+once per target/plan. Existing pending/successful attempts are reused; a failed
+attempt requires explicit inspected recovery, never a duplicate automatic retry.
 
 Receipt envelope:
 
@@ -57,9 +64,12 @@ candidate checksum, paired preflight, actual merge, normal CI, source-scope and
 payload/gitlink validators. JSON claims alone are not authority. Core independently
 checks GitHub PR/run/artifact identity, exact current branch state, required jobs,
 parent gitlinks, and the frozen receipt tooling Git IDs at the actual merge.
-The receipt emitter must be a successful same-repository `pull_request_target` or
-`workflow_dispatch` run at the expected workflow, with exact attempt and a unique
-unexpired artifact. Fork/caller-nominated code is never an eligible emitter.
+The receipt emitter must be a successful same-repository `workflow_dispatch` run
+at the actual accepted dev merge, with exact attempt and a unique unexpired
+artifact. Fork/caller-nominated code is never an eligible emitter. Normal CI must
+also be a fresh `workflow_dispatch` (or `push`) run at the actual accepted merge;
+PR-head API identities cannot establish what synthetic merge checkout was tested.
+Core reconciliation may request existing normal workflows before the receipt.
 
 Preserve existing no-op provenance. A no-op must be explicitly identified and
 anchored to a real prior reviewed merge plus fresh full candidate-byte/projection

@@ -1,6 +1,6 @@
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
-import {GitHub,archive,collect,freeze,loadPlan,publish} from './github.mjs';
+import {GitHub,archive,collect,freeze,loadPlan,publish,reconcile} from './github.mjs';
 import {CORE,requireThat} from './verify.mjs';
 
 const [command,...args]=process.argv.slice(2);
@@ -14,6 +14,10 @@ try {
     const p=freeze(g,m,c);
     mkdirSync(destination,{recursive:true});writeFileSync(join(destination,'plan.json'),JSON.stringify(p,null,2)+'\n');
     console.log(`Frozen plan ${p.plan_id}`);
+  } else if(command==='reconcile') {
+    requireThat(args.length===1,'reconcile requires producer run ID');
+    requireThat(process.env.WSS_DEV_RELEASE_ENABLED==='true','Reconciliation is not enabled');
+    reconcile(g,loadPlan(g,args[0]));
   } else if(command==='verify' || command==='publish') {
     const [run,destination]=args;
     requireThat(args.length===2,'verify/publish requires producer run ID and output directory');
@@ -25,5 +29,5 @@ try {
       requireThat(process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main','Publisher runs only trusted default-branch workflow');
       console.log(JSON.stringify(publish(g,p,accepted,resolve(destination))));
     } else console.log(`All seven targets accepted plan ${p.plan_id}; no publication requested`);
-  } else throw new Error('Expected freeze, verify or publish');
+  } else throw new Error('Expected freeze, reconcile, verify or publish');
 } catch(error) { console.error(error.message); process.exitCode=1; }
