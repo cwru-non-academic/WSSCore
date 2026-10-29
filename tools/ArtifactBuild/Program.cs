@@ -178,6 +178,7 @@ internal static partial class Program
         }
 
         if (declaredNativePaths.Any(path => !path.EndsWith(".so", StringComparison.OrdinalIgnoreCase) &&
+            !path.Equals("backends/macos/libwss_macos_ble.dylib", StringComparison.OrdinalIgnoreCase) &&
             !path.Equals("backends/windows/WssBleWindows.dll", StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidDataException("Unrecognized native payload.");

@@ -10,5 +10,6 @@
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <ProjectReference Include="../../../WSS.Transport.BLE/WSS.Transport.BLE.csproj" />
     <ProjectReference Include="../../../WSS.Transport.BLE.Linux/WSS.Transport.BLE.Linux.csproj" />
+    <ProjectReference Include="../../../WSS.Transport.BLE.MacOS/WSS.Transport.BLE.MacOS.csproj" />
   </ItemGroup>
 </Project>

@@ -12,6 +12,19 @@ permissions:
   contents: read
 
 jobs:
+  macos-native:
+    name: Build macOS universal BLE bridge
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and verify production x86_64 and arm64 bridge
+        run: bash tools/MacBleBridge/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-native-input
+          path: tools/MacBleBridge/out/libwss_macos_ble.dylib
+          if-no-files-found: error
+
   core-tests:
     name: Core conformance
     runs-on: ubuntu-latest
@@ -168,7 +181,9 @@ jobs:
         run: dotnet build WSS.Transport.BLE.Linux/WSS.Transport.BLE.Linux.csproj -c Release --no-dependencies -p:RestoreLockedMode=true --nologo
       - name: Run Windows portable BLE facade and Linux compatibility tests
         id: portable_ble_tests
-        run: dotnet test tests/BLE/WSS.BLE.Tests/WSS.BLE.Tests.csproj -c Release -p:RestoreLockedMode=true -p:BuildProjectReferences=false --nologo --logger "trx;LogFileName=portable-ble.trx" --results-directory "${{ runner.temp }}/test-results"
+        run: |
+          dotnet build WSS.Transport.BLE.MacOS/WSS.Transport.BLE.MacOS.csproj -c Release --no-dependencies -p:RestoreLockedMode=true --nologo
+          dotnet test tests/BLE/WSS.BLE.Tests/WSS.BLE.Tests.csproj -c Release -p:RestoreLockedMode=true -p:BuildProjectReferences=false --nologo --logger "trx;LogFileName=portable-ble.trx" --results-directory "${{ runner.temp }}/test-results"
       - name: Download the authoritative universal ZIP
         id: download_universal_zip
         uses: actions/download-artifact@v4
@@ -210,6 +225,7 @@ jobs:
 
   package-universal:
     name: Build and validate artifacts
+    needs: macos-native
     runs-on: windows-2022
     outputs:
       artifact-id: ${{ steps.upload_universal_assets.outputs.artifact-id }}
@@ -226,9 +242,15 @@ jobs:
           dotnet-version: |
             8.0.x
             9.0.x
+      - name: Download this run's verified universal macOS native input
+        id: download_macos_native
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-native-input
+          path: tools/MacBleBridge/out
       - name: Build own managed and production-native inputs, validate closure, and create the one ZIP and checksum
         id: build_and_package_universal
-        # build-all invokes the production-only bridge build (no test shim or functional suites).
+        # Windows builds here; the current-run macOS build is aggregated unchanged.
         run: dotnet run --project tools/ArtifactBuild/ArtifactBuild.csproj -- build-all --destination "${{ runner.temp }}/release-assets/WSS-Universal" --tag "${{ env.RELEASE_TAG }}"
       - name: Verify checksum and archive extraction before upload
         id: verify_and_extract_zip
@@ -257,6 +279,71 @@ jobs:
           REPORT_PURPOSE: Build and validate one authoritative universal ZIP/checksum from this runner's own managed, Linux backend, and production-native inputs; no functional suites.
           REPORT_STEPS: ${{ toJSON(steps) }}
         run: python tools/ci/summarize.py
+
+  ble-macos-tests:
+    name: BLE consumer (macOS ${{ matrix.arch }})
+    needs: package-universal
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            os: macos-14
+          - arch: x86_64
+            os: macos-15-intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out source
+        id: checkout
+        uses: actions/checkout@v4
+      - name: Install .NET SDKs
+        id: setup_dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+      - name: Run portable BLE and simulated macOS lifecycle contracts
+        id: portable_ble_tests
+        run: dotnet test tests/BLE/WSS.BLE.Tests/WSS.BLE.Tests.csproj -c Release -p:RestoreLockedMode=true --nologo --logger "trx;LogFileName=macos.trx" --results-directory "${{ runner.temp }}/test-results"
+      - name: Download the authoritative universal ZIP
+        id: download_universal_zip
+        uses: actions/download-artifact@v4
+        with:
+          name: universal-release-assets
+          path: ${{ runner.temp }}/release-input
+      - name: Verify checksum and extract the identical universal payload
+        id: verify_and_extract_zip
+        shell: pwsh
+        run: ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-input" -Destination "$env:RUNNER_TEMP/universal"
+      - name: Verify actual packaged universal architectures, exports and native load
+        id: native_abi_load
+        run: python3 tools/MacBleBridge/verify_native.py "${{ runner.temp }}/universal/WSS-Universal/backends/macos/libwss_macos_ble.dylib"
+      - name: Packaged automatic macOS backend on .NET 9
+        id: ble_consumer_net9_automatic
+        run: dotnet run --project tests/Packaging/Consumers/BleConsumer/BleConsumer.csproj -c Release -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal"
+      - name: Packaged explicit macOS registration on .NET 9
+        id: ble_consumer_net9_explicit
+        run: dotnet run --project tests/Packaging/Consumers/BleConsumer/BleConsumer.csproj -c Release --no-build --no-restore -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal" -- --register
+      - name: Packaged automatic macOS backend on .NET 8
+        id: ble_consumer_net8_automatic
+        run: dotnet run --project tests/Packaging/Consumers/BleConsumer/BleConsumer.csproj -c Release -p:ConsumerTargetFramework=net8.0 -p:WSS_ARTIFACT_DIR="${{ runner.temp }}/universal/WSS-Universal"
+      - name: Retain detailed test results
+        id: upload_test_results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ble-macos-${{ matrix.arch }}-results
+          path: ${{ runner.temp }}/test-results/**/*.trx
+          if-no-files-found: ignore
+      - name: Summarize actual execution
+        if: always()
+        shell: pwsh
+        env:
+          REPORT_TITLE: BLE consumer (macOS ${{ matrix.arch }})
+          REPORT_PURPOSE: Mandatory packaged managed/native ABI loading and simulated lifecycle contracts. Bluetooth authorization, adapter, physical peripheral connection and writes NOT EXECUTED.
+          REPORT_STEPS: ${{ toJSON(steps) }}
+        run: python3 tools/ci/summarize.py
 
   serial-tests:
     name: Serial consumer (${{ matrix.platform }})
@@ -362,7 +449,7 @@ jobs:
 
   propagate-universal:
     name: Start routine downstream validation
-    needs: [core-tests, ble-linux-tests, ble-windows-tests, package-universal, serial-tests, core-consumers]
+    needs: [core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, package-universal, serial-tests, core-consumers]
     if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/dev' && github.repository == 'cwru-non-academic/WSSCore' }}
     runs-on: ubuntu-latest
     steps:
@@ -420,7 +507,7 @@ jobs:
 
   publish-universal:
     name: Publish — Universal ZIP
-    needs: [core-tests, ble-linux-tests, ble-windows-tests, package-universal, serial-tests, core-consumers]
+    needs: [core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, package-universal, serial-tests, core-consumers]
     if: ${{ success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:

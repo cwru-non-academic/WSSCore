@@ -1,0 +1,69 @@
+name: Dispatch Unity WSS promotion
+on:
+  workflow_run:
+    workflows: [Build universal WSS release]
+    types: [completed]
+    branches: [dev]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: unity-producer-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    name: Dispatch Unity Integration promotion
+    if: >-
+      github.repository == 'cwru-non-academic/WSSCore' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'dev' &&
+      github.event.workflow_run.head_repository.full_name == 'cwru-non-academic/WSSCore'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate completed producer, exact artifact and destination readiness
+        id: prepare
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./tools/ci/prepare-unity-handoff.ps1 -EventPath $env:GITHUB_EVENT_PATH -WorkRoot "$env:RUNNER_TEMP/unity-handoff"
+      - name: Require existing App configuration only when dispatch is needed
+        if: steps.prepare.outputs.dispatch_needed == 'true'
+        shell: pwsh
+        env:
+          APP_ID: ${{ vars.WSS_GITHUB_APP_ID }}
+          APP_KEY: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+        run: |
+          if (!$env:APP_ID -or !$env:APP_KEY) { throw 'WSSCore cannot access its existing WSS_GITHUB_APP_ID / WSS_GITHUB_APP_PRIVATE_KEY configuration. No credentials were created.' }
+      - name: Mint existing App token for Unity wrapper dispatch only
+        if: steps.prepare.outputs.dispatch_needed == 'true'
+        uses: actions/create-github-app-token@v2
+        id: dispatch
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: Unity_WSS_Integration_Lib
+          permission-actions: write
+      - name: Dispatch once; inspect uncertain outcomes before retry
+        if: steps.prepare.outputs.dispatch_needed == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ steps.dispatch.outputs.token }}
+        run: |
+          gh api --method POST repos/cwru-non-academic/Unity_WSS_Integration_Lib/actions/workflows/promote-wss.yml/dispatches --input "$env:RUNNER_TEMP/unity-handoff/dispatch.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Unity handoff failed or is uncertain. Inspect the correlated run before retrying; verify the existing App installation has Unity wrapper Actions-write access.' }
+          'Unity wrapper dispatch accepted. Candidate validation and dependency PR publication run separately; human merges remain required.' >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unity-handoff-record
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/unity-handoff/candidate.json
+            ${{ runner.temp }}/unity-handoff/dispatch.json

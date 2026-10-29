@@ -22,7 +22,7 @@ public sealed class FacadeTests
     public void ConstructorsAndEquivalentRegistrationKeepPublicApi()
     {
         string platform = BleBackendLoader.GetCurrentPlatform();
-        Assert.That(platform, Is.EqualTo(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "windows" : "linux"));
+        Assert.That(platform, Is.EqualTo(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "windows" : RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "macos" : "linux"));
         BleBackendLoader.RegisterFactory(platform, new Factory());
         using var byName = new BleNusTransport("device");
         using var byOptions = new BleNusTransport(BleNusTransport.CreateDefaultOptions("device"));

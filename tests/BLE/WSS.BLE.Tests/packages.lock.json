@@ -200,6 +200,12 @@
           "WSS_Core_Interface": "[1.0.0, )"
         }
       },
+      "wss.transport.ble.macos": {
+        "type": "Project",
+        "dependencies": {
+          "WSS.Transport.BLE": "[1.0.0, )"
+        }
+      },
       "wss.transport.serial": {
         "type": "Project",
         "dependencies": {

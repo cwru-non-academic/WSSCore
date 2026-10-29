@@ -22,6 +22,7 @@
     <Compile Remove="WSS.Transport.BLE/**/*.cs" />
     <Compile Remove="WSS.Transport.BLE.Linux/**/*.cs" />
     <Compile Remove="WSS.Transport.BLE.Windows/**/*.cs" />
+    <Compile Remove="WSS.Transport.BLE.MacOS/**/*.cs" />
     <Compile Remove="tests/**/*.cs" />
     <Compile Remove="tools/**/*.cs" />
   </ItemGroup>

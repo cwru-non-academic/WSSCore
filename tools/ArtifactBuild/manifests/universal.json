@@ -8,16 +8,18 @@
     "System.Security.Permissions.dll", "System.Security.AccessControl.dll", "System.Security.Principal.Windows.dll",
     "backends/windows/WSS.Transport.BLE.Windows.dll",
     "backends/windows/WSS.Transport.BLE.Windows.Native.dll", "backends/windows/WssBleWindows.dll",
+    "backends/macos/WSS.Transport.BLE.MacOS.dll", "backends/macos/libwss_macos_ble.dylib",
     "backends/linux/WSS.Transport.BLE.Linux.dll", "backends/linux/Linux.Bluetooth.dll", "backends/linux/Tmds.DBus.dll",
     "backends/linux/Microsoft.Bcl.AsyncInterfaces.dll", "backends/linux/System.Reflection.Emit.dll",
     "backends/linux/System.Reflection.Emit.ILGeneration.dll", "backends/linux/System.Threading.Tasks.Extensions.dll",
     "runtimes/win/lib/net8.0/System.IO.Ports.dll", "runtimes/unix/lib/net8.0/System.IO.Ports.dll",
     "runtimes/linux-x64/native/libSystem.IO.Ports.Native.so"
   ],
-  "requiredAssemblies": ["WSS_Core_Interface.dll", "WSS.Transport.Serial.dll", "WSS.Transport.BLE.dll", "WSS.Transport.BLE.Windows.dll", "WSS.Transport.BLE.Windows.Native.dll", "WSS.Transport.BLE.Linux.dll", "Linux.Bluetooth.dll", "Tmds.DBus.dll", "System.IO.Ports.dll"],
+  "requiredAssemblies": ["WSS_Core_Interface.dll", "WSS.Transport.Serial.dll", "WSS.Transport.BLE.dll", "WSS.Transport.BLE.Windows.dll", "WSS.Transport.BLE.Windows.Native.dll", "WSS.Transport.BLE.MacOS.dll", "WSS.Transport.BLE.Linux.dll", "Linux.Bluetooth.dll", "Tmds.DBus.dll", "System.IO.Ports.dll"],
   "forbiddenAssemblies": ["WSS.Transport.BLE.Windows.NativeBackend.dll", "WinRT.Runtime.dll", "Microsoft.Windows.SDK.NET.dll", "InTheHand.BluetoothLE.dll", "System.Drawing.Common.dll", "System.Windows.Extensions.dll", "Microsoft.Win32.SystemEvents.dll"],
   "forbiddenDirectories": ["bin", "obj", "tests"],
   "managedAssemblies": {
+    "backends/macos/WSS.Transport.BLE.MacOS.dll": {"identity":"WSS.Transport.BLE.MacOS","version":"1.0.0.0","targetFramework":".NETStandard,Version=v2.0"},
     "WSS_Core_Interface.dll": {"identity":"WSS_Core_Interface","version":"1.0.0.0","targetFramework":".NETStandard,Version=v2.0"},
     "WSS.Transport.Serial.dll": {"identity":"WSS.Transport.Serial","version":"1.0.0.0","targetFramework":".NETStandard,Version=v2.0"},
     "WSS.Transport.BLE.dll": {"identity":"WSS.Transport.BLE","version":"1.0.0.0","targetFramework":".NETStandard,Version=v2.0"},
@@ -42,8 +44,10 @@
     "runtimes/win/lib/net8.0/System.IO.Ports.dll": {"identity":"System.IO.Ports","version":"8.0.0.0","publicKeyToken":"cc7b13ffcd2ddd51","targetFramework":".NETCoreApp,Version=v8.0"},
     "runtimes/unix/lib/net8.0/System.IO.Ports.dll": {"identity":"System.IO.Ports","version":"8.0.0.0","publicKeyToken":"cc7b13ffcd2ddd51","targetFramework":".NETCoreApp,Version=v8.0"}
   },
-  "nativeFiles": ["backends/windows/WssBleWindows.dll", "runtimes/linux-x64/native/libSystem.IO.Ports.Native.so"],
+  "nativeFiles": ["backends/windows/WssBleWindows.dll", "backends/macos/libwss_macos_ble.dylib", "runtimes/linux-x64/native/libSystem.IO.Ports.Native.so"],
   "sourceFiles": {
+    "backends/macos/WSS.Transport.BLE.MacOS.dll": "../../../WSS.Transport.BLE.MacOS/bin/Release/netstandard2.0/WSS.Transport.BLE.MacOS.dll",
+    "backends/macos/libwss_macos_ble.dylib": "../../../tools/MacBleBridge/out/libwss_macos_ble.dylib",
     "backends/windows/WSS.Transport.BLE.Windows.dll": "../../../WSS.Transport.BLE.Windows/bin/Release/netstandard2.0/WSS.Transport.BLE.Windows.dll",
     "backends/windows/WSS.Transport.BLE.Windows.Native.dll": "../../../tools/WindowsBleBridge/managed/bin/Release/netstandard2.0/WSS.Transport.BLE.Windows.Native.dll",
     "backends/windows/WssBleWindows.dll": "../../../tools/WindowsBleBridge/out/x64/Release/WssBleWindows.dll",

@@ -126,3 +126,8 @@ jobs pass. The release job downloads the already-tested
 ZIP/checksum and verifies them without rebuilding or repackaging. Hyphenated tags
 are prereleases. PRs, ordinary branch pushes, and manual validation do not publish.
 Hardware diagnostics are opt-in and are not release-gate substitutes for automated tests.
+# macOS BLE
+
+The separate CoreBluetooth backend and universal native bridge are described in
+[MacBleBridge](tools/MacBleBridge/README.md). The reviewed receiver migration and
+Python-first candidate sequence are in [macOS BLE rollout](tools/ci/MACOS_BLE_ROLLOUT.md).
