@@ -1,6 +1,7 @@
-import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import {appendFileSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
-import {GitHub,archive,collect,freeze,loadPlan,publish,reconcile} from './github.mjs';
+import {GitHub,archive,collect,freeze,loadPlan,publish} from './github.mjs';
+import {execute,journalName,prepare} from './dispatch.mjs';
 import {CORE,digest,requireThat} from './verify.mjs';
 import {tagPolicy} from './policy.mjs';
 
@@ -19,10 +20,19 @@ try {
     const p=freeze(g,m,c);
     mkdirSync(destination,{recursive:true});writeFileSync(join(destination,'plan.json'),JSON.stringify(p,null,2)+'\n');
     console.log(`Frozen plan ${p.plan_id}`);
-  } else if(command==='reconcile') {
-    requireThat(args.length===1,'reconcile requires producer run ID');
+  } else if(command==='prepare-dispatches') {
+    requireThat(args.length===2,'prepare-dispatches requires producer run ID and output directory');
     requireThat(process.env.WSS_DEV_RELEASE_ENABLED==='true','Reconciliation is not enabled');
-    reconcile(g,loadPlan(g,args[0]));
+    const p=loadPlan(g,args[0]),j=prepare(g,p,process.env.GITHUB_RUN_ID,Number(process.env.GITHUB_RUN_ATTEMPT));
+    mkdirSync(args[1],{recursive:true});writeFileSync(join(args[1],'intent.json'),JSON.stringify(j,null,2)+'\n');
+    appendFileSync(process.env.GITHUB_OUTPUT,`artifact_name=${journalName(p,j.run_id,j.attempt)}\n`);
+  } else if(command==='dispatch') {
+    requireThat(args.length===2,'dispatch requires producer run ID and saved intent.json');
+    requireThat(process.env.WSS_DEV_RELEASE_ENABLED==='true' && process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main','Dispatch runs only enabled trusted default-branch workflow');
+    requireThat(process.env.WSS_JOURNAL_READ_TOKEN,'Missing read-only journal token');
+    const reader=new GitHub(process.env.WSS_JOURNAL_READ_TOKEN),p=loadPlan(reader,args[0]),j=JSON.parse(readFileSync(args[1]));
+    requireThat(j.run_id===process.env.GITHUB_RUN_ID && j.attempt===Number(process.env.GITHUB_RUN_ATTEMPT),'Intent is not from this workflow attempt');
+    execute(g,reader,p,j);
   } else if(command==='verify' || command==='publish') {
     const [run,destination]=args;
     requireThat(args.length===2,'verify/publish requires producer run ID and output directory');
@@ -34,5 +44,5 @@ try {
       requireThat(process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main','Publisher runs only trusted default-branch workflow');
       console.log(JSON.stringify(publish(g,p,accepted,resolve(destination))));
     } else console.log(`All seven targets accepted plan ${p.plan_id}; no publication requested`);
-  } else throw new Error('Expected inspect-tag-guard, freeze, reconcile, verify or publish');
+  } else throw new Error('Expected inspect-tag-guard, freeze, prepare-dispatches, dispatch, verify or publish');
 } catch(error) { console.error(error.message); process.exitCode=1; }

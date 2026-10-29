@@ -37,7 +37,7 @@ changes are reviewed separately. No main/stable channel is enabled.
    current gitlinks. Unity coverage remains the hosted .NET compatibility harness;
    it does not establish macOS Unity Editor or Player BLE runtime support.
 6. Validate a complete dry-run plan, failed/missing/ambiguous/stale proof rejection,
-   release replay and inspected uncertain-dispatch recovery. Then explicitly enable
+   release replay and hosted crash/uncertain-dispatch journal recovery. Then explicitly enable
    `WSS_DEV_RELEASE_ENABLED=true` using the owner's existing configuration process.
    This preparation never sets that variable.
 
@@ -52,10 +52,12 @@ original `WSS-Universal-ci.zip`, checksum, frozen plan and acceptance record.
 Reconciliation requests only existing normal CI and receipt workflows. It waits
 when a receiver has not moved from its frozen starting head, reuses pending/success
 runs and stops on failed or ambiguous proof. It does not create dependency PRs,
-merge, rollback or rewrite branches. An uncertain dispatch must be inspected before
-retry; a successful HTTP dispatch is not a receipt. API dispatch has no atomic
-cross-repository idempotency key, so uncertain-outcome journaling/recovery remains
-an activation prerequisite. Do not silently retry a failed or unconfirmed dispatch.
+merge, rollback or rewrite branches. An intent artifact is uploaded in Core before
+any downstream dispatch. A missing run with an existing intent blocks automatic
+retries; pending/successful exact runs are reused, and failed runs stop for inspected
+recovery. API dispatch has no atomic cross-repository idempotency key. A successful
+HTTP dispatch is not a receipt. Test this journal on the deployed workflow before
+activation; do not silently retry a failed or unconfirmed dispatch.
 
 An existing release is reused only when its tag commit, prerelease state, exact
 asset inventory and every downloaded asset digest match. A partial or different
