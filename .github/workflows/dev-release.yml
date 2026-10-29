@@ -51,6 +51,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_RUN: ${{ inputs.producer_run_id || github.event.workflow_run.id }}
         run: node tools/release/select-producer.mjs
+      - name: Prepare read-only reconciliation intents
+        id: reconciliation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
+        run: node tools/release/cli.mjs prepare-dispatches '${{ steps.producer.outputs.run_id }}' '${{ runner.temp }}/dispatch-intent'
+      - name: Retain dispatch intent before any cross-repository request
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.reconciliation.outputs.artifact_name }}
+          path: ${{ runner.temp }}/dispatch-intent/intent.json
+          if-no-files-found: error
       - name: Create receipt reconciliation Actions token
         id: receipt-token
         uses: actions/create-github-app-token@v2
@@ -70,8 +82,9 @@ jobs:
       - name: Reconcile existing merges with fresh normal CI and read-only receipts
         env:
           GH_TOKEN: ${{ steps.receipt-token.outputs.token }}
+          WSS_JOURNAL_READ_TOKEN: ${{ github.token }}
           WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
-        run: node tools/release/cli.mjs reconcile '${{ steps.producer.outputs.run_id }}'
+        run: node tools/release/cli.mjs dispatch '${{ steps.producer.outputs.run_id }}' '${{ runner.temp }}/dispatch-intent/intent.json'
       - name: Collect actual merge receipts and verify every required target
         env:
           GH_TOKEN: ${{ github.token }}

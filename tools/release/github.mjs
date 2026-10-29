@@ -6,7 +6,8 @@ import {allClear,bytesDigest,candidate,canonical,CORE,digest,manifest,plan,produ
 
 // No shell expansion, caller-provided commands, implicit pagination or token output.
 export class GitHub {
-  command(args) { return execFileSync('gh',args,{encoding:'utf8',maxBuffer:32*1024*1024}); }
+  constructor(token=process.env.GH_TOKEN) {this.environment={...process.env,GH_TOKEN:token};}
+  command(args) { return execFileSync('gh',args,{encoding:'utf8',maxBuffer:32*1024*1024,env:this.environment}); }
   get(path) { return JSON.parse(this.command(['api',path])); }
   pages(path,key) {
     const results=[];
@@ -115,36 +116,6 @@ export function collect(g,p) {
       emitter_run:g.run(t.repository,String(emitter.id)),artifact:g.artifact(t.repository,String(emitter.id),name),preflights};
   }
   return {record:allClear(p,evidence),files:zip.files};
-}
-
-export function reconcile(g,p) {
-  plan(p);
-  const c=p.candidate,r=g.run(CORE,c.run_id),zip=archive(g,c);
-  producer(p,{run:r,current_head:g.head(CORE),jobs:g.jobs(CORE,r),artifact:zip.artifact,archive_sha256:bytesDigest(zip.files[c.archive])});
-  for(const t of p.manifest.targets) {
-    const head=g.head(t.repository);
-    // Receiver preparation predates the frozen plan. Wait for a dependency merge.
-    if(head===p.target_snapshots[t.id].head_sha) continue;
-    const prs=g.pages(`repos/${t.repository}/commits/${head}/pulls`).filter(pr=>pr.merged_at && pr.merge_commit_sha===head && pr.base?.ref==='dev' && pr.base?.repo?.full_name===t.repository && pr.head?.repo?.full_name===t.repository);
-    requireThat(prs.length===1 && prs[0].user?.type==='Bot',`Current ${t.id} is not a unique bot dependency merge; inspect before requesting proof`);
-    const normals=g.pages(`repos/${t.repository}/actions/workflows/${basename(t.workflow)}/runs?branch=dev&event=workflow_dispatch&head_sha=${head}`,'workflow_runs').sort((a,b)=>b.id-a.id);
-    if(normals.length===0) {
-      g.command(['api','--method','POST',`repos/${t.repository}/actions/workflows/${basename(t.workflow)}/dispatches`,'-f','ref=dev']);
-      continue;
-    }
-    requireThat(normals[0].status!=='completed' || normals[0].conclusion==='success',`Postmerge normal CI failed for ${t.id}; inspect explicit recovery`);
-    if(normals[0].status!=='completed') continue;
-    const title=`WSS acceptance ${t.id} ${p.plan_id}`;
-    const matches=g.pages(`repos/${t.repository}/actions/workflows/release-receipt.yml/runs?branch=dev&event=workflow_dispatch`,'workflow_runs').filter(x=>x.display_title===title);
-    requireThat(matches.length<=1,`Ambiguous reconciliation attempts for ${t.id}`);
-    if(matches.length) {
-      requireThat(matches[0].status!=='completed' || matches[0].conclusion==='success',`Receipt attempt failed for ${t.id}; inspect explicit recovery`);
-      continue;
-    }
-    // Only requests evidence. This endpoint cannot open a dependency PR or merge it.
-    g.command(['api','--method','POST',`repos/${t.repository}/actions/workflows/release-receipt.yml/dispatches`,
-      '-f','ref=dev','-f',`inputs[producer_run_id]=${c.run_id}`,'-f',`inputs[plan_id]=${p.plan_id}`]);
-  }
 }
 
 export function publish(g,p,accepted,directory) {
