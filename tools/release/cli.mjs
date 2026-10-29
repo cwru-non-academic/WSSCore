@@ -1,12 +1,17 @@
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {GitHub,archive,collect,freeze,loadPlan,publish,reconcile} from './github.mjs';
-import {CORE,requireThat} from './verify.mjs';
+import {CORE,digest,requireThat} from './verify.mjs';
+import {tagPolicy} from './policy.mjs';
 
 const [command,...args]=process.argv.slice(2);
 const g=new GitHub();
 try {
-  if(command==='freeze') {
+  if(command==='inspect-tag-guard') {
+    requireThat(args.length===1 && /^[1-9][0-9]*$/.test(args[0]),'inspect-tag-guard requires a ruleset ID');
+    const policy=tagPolicy(g.get(`repos/${CORE}/rulesets/${args[0]}`));
+    console.log(JSON.stringify({ruleset_id:args[0],policy_sha256:digest(policy),policy},null,2));
+  } else if(command==='freeze') {
     const [candidateFile,manifestFile,destination]=args;
     requireThat(args.length===3,'freeze requires candidate.json manifest.json output directory');
     const c=JSON.parse(readFileSync(candidateFile)),m=JSON.parse(readFileSync(manifestFile));
@@ -29,5 +34,5 @@ try {
       requireThat(process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main','Publisher runs only trusted default-branch workflow');
       console.log(JSON.stringify(publish(g,p,accepted,resolve(destination))));
     } else console.log(`All seven targets accepted plan ${p.plan_id}; no publication requested`);
-  } else throw new Error('Expected freeze, reconcile, verify or publish');
+  } else throw new Error('Expected inspect-tag-guard, freeze, reconcile, verify or publish');
 } catch(error) { console.error(error.message); process.exitCode=1; }

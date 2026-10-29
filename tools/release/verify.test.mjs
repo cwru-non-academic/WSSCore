@@ -4,14 +4,17 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {allClear,bytesDigest,canonical,CORE,CORE_JOBS,digest,plan,TARGETS} from './verify.mjs';
 import {collect,freeze,GitHub,publish} from './github.mjs';
+import {tagPolicy} from './policy.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
 const successful=names=>names.map(name=>({name,status:'completed',conclusion:'success'}));
+function tagRule() {return{id:123,target:'tag',enforcement:'active',source_type:'Repository',source:CORE,conditions:{ref_name:{include:['refs/tags/v*'],exclude:[]}},bypass_actors:[],rules:[{type:'creation'}]};}
 function run(repo,workflow,n,head,event='workflow_dispatch') {
   return {id:n,repository:{full_name:repo},head_repository:{full_name:repo},path:workflow,head_sha:head,head_branch:'dev',event,status:'completed',conclusion:'success',run_attempt:1};
 }
 function fixture() {
   const manifest=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
+  manifest.legacy_tag_guard={ruleset_id:'123',policy_sha256:digest(tagPolicy(tagRule()))};
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(Buffer.from('zip'))};
   const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:sha(2),trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,sha(3)]))}]))};
   const p={...body,plan_id:digest(body)};
@@ -89,7 +92,7 @@ for(const [name,mutate] of Object.entries(cases)) test(`reject ${name}`,()=>{
 });
 test('freeze refuses unregistered receiver rather than dropping target',()=>{
   const {p}=fixture();let seen=0;
-  const g={head:()=>sha(1),object:()=>({sha:sha(2)}),get:()=>{seen++;return{path:'.github/workflows/release-receipt.yml',state:'disabled_manually'};}};
+  const g={head:()=>sha(1),object:()=>({sha:sha(2)}),get:path=>{if(path.includes('/rulesets/'))return tagRule();seen++;return{path:'.github/workflows/release-receipt.yml',state:'disabled_manually'};}};
   assert.throws(()=>freeze(g,p.manifest,p.candidate),/unavailable/);assert.equal(seen,1);
 });
 test('pagination never silently truncates a target proof list',()=>{
@@ -97,7 +100,7 @@ test('pagination never silently truncates a target proof list',()=>{
 });
 test('publication never overwrites a tag without a matching complete release',()=>{
   const {p,e}=fixture();let mutations=0;
-  const g={pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/dev-beta-1-${p.plan_id.slice(0,12)}`,object:{type:'commit',sha:p.candidate.commit}}]:[],command:()=>mutations++};
+  const g={get:()=>tagRule(),pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/dev-beta-1-${p.plan_id.slice(0,12)}`,object:{type:'commit',sha:p.candidate.commit}}]:[],command:()=>mutations++};
   assert.throws(()=>publish(g,p,{record:allClear(p,e),files:{}},'.'),/incomplete/);assert.equal(mutations,0);
 });
 
@@ -135,9 +138,9 @@ test('collector rejects PR-head evidence even when caller supplies a matching fi
 for(const corrupt of [false,true]) test(`existing release ${corrupt?'rejects altered ZIP without a mutation':'replays as verified no-op without creating another release'}`,()=>{
   const {p,e}=fixture(),tag=`dev-beta-${p.candidate.run_id}-${p.plan_id.slice(0,12)}`,record=allClear(p,e);
   const files={[p.candidate.archive]:Buffer.from('zip'),'SHA256SUMS.txt':Buffer.from(`${p.candidate.sha256}  ${p.candidate.archive}\n`)};
-  const expected={...files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical({...record,tag})+'\n')};
+  const expected={...files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical({...record,tag,legacy_tag_guard:p.manifest.legacy_tag_guard})+'\n')};
   let mutations=0;
-  const g={pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/${tag}`,object:{type:'commit',sha:p.candidate.commit}}]:[{tag_name:tag,prerelease:true,draft:false,assets:Object.keys(expected).map(name=>({name}))}],command:args=>{
+  const g={get:()=>tagRule(),pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/${tag}`,object:{type:'commit',sha:p.candidate.commit}}]:[{tag_name:tag,prerelease:true,draft:false,assets:Object.keys(expected).map(name=>({name}))}],command:args=>{
     if(args[0]==='release'&&args[1]==='download'){
       const directory=args[args.indexOf('--dir')+1];
       for(const [name,bytes]of Object.entries(expected))writeFileSync(join(directory,name),corrupt&&name===p.candidate.archive?Buffer.from('corrupt'):bytes);
