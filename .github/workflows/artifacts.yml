@@ -5,13 +5,24 @@ on:
     branches: [dev, main, net2_BLE]
   push:
     branches: [dev]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  release-contract-tests:
+    name: Dev release acceptance contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test tools/release/verify.test.mjs
+
   macos-native:
     name: Build macOS universal BLE bridge
     runs-on: macos-14
@@ -452,6 +463,9 @@ jobs:
     needs: [core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, package-universal, serial-tests, core-consumers]
     if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/dev' && github.repository == 'cwru-non-academic/WSSCore' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -474,6 +488,30 @@ jobs:
           ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-input" -Destination "$env:RUNNER_TEMP/handoff-verification"
           $hash = (Get-FileHash "$env:RUNNER_TEMP/release-input/WSS-Universal-ci.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           "sha256=$hash" >> $env:GITHUB_OUTPUT
+      - uses: actions/setup-node@v4
+        if: vars.WSS_DEV_RELEASE_ENABLED == 'true'
+        with:
+          node-version: '24'
+      - name: Freeze the reviewed all-target dev release plan
+        if: vars.WSS_DEV_RELEASE_ENABLED == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCER_SHA: ${{ github.sha }}
+          PRODUCER_RUN: ${{ github.run_id }}
+          ARTIFACT_ID: ${{ needs.package-universal.outputs.artifact-id }}
+          SHA256: ${{ steps.candidate.outputs.sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @{ repository='cwru-non-academic/WSSCore'; commit=$env:PRODUCER_SHA; run_id=$env:PRODUCER_RUN; artifact_id=$env:ARTIFACT_ID; archive='WSS-Universal-ci.zip'; sha256=$env:SHA256 } | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP/candidate.json"
+          node tools/release/cli.mjs freeze "$env:RUNNER_TEMP/candidate.json" tools/release/targets.dev.json "$env:RUNNER_TEMP/release-plan"
+          if ($LASTEXITCODE -ne 0) { throw 'Required receiver receipt tooling is unavailable; no all-clear plan or handoff.' }
+      - uses: actions/upload-artifact@v4
+        if: vars.WSS_DEV_RELEASE_ENABLED == 'true'
+        with:
+          name: wss-propagation-plan
+          path: ${{ runner.temp }}/release-plan/plan.json
+          if-no-files-found: error
       - name: Create Integration dispatch-only App token
         id: integration-token
         uses: actions/create-github-app-token@v2
@@ -505,45 +543,3 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Routine handoff failed: verify App installation, Integration Actions-write permission, and the deployed dev workflow.' }
           "Automatic candidate: commit $env:PRODUCER_SHA; run $env:PRODUCER_RUN; artifact $env:ARTIFACT_ID; WSS-Universal-ci.zip; SHA-256 $env:SHA256. Integration waits for this producer run to complete successfully." >> $env:GITHUB_STEP_SUMMARY
 
-  publish-universal:
-    name: Publish — Universal ZIP
-    needs: [core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, package-universal, serial-tests, core-consumers]
-    if: ${{ success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    env:
-      TAG: ${{ github.ref_name }}
-    steps:
-      - name: Check out reporting tools
-        id: checkout
-        uses: actions/checkout@v4
-      - name: Download the tested universal release assets
-        id: download_universal_zip
-        uses: actions/download-artifact@v4
-        with:
-          name: universal-release-assets
-          path: ${{ runner.temp }}/release-assets
-      - name: Verify and publish only the gated universal archive and checksum
-        id: verify_and_publish_tested_zip
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/release-assets"
-          test -f "WSS-Universal-${TAG}.zip"
-          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 2
-          sha256sum --check SHA256SUMS.txt
-          prerelease_args=()
-          if [[ "$TAG" == *-* ]]; then prerelease_args+=(--prerelease); fi
-          gh release create "$TAG" "WSS-Universal-${TAG}.zip" SHA256SUMS.txt --verify-tag --generate-notes "${prerelease_args[@]}"
-      - name: Summarize actual execution
-        if: always()
-        shell: pwsh
-        env:
-          REPORT_TITLE: Publish — Universal ZIP
-          REPORT_PURPOSE: Publish only the gated, checksum-verified universal ZIP and checksum from a v-tag push; no rebuild or repackaging.
-          REPORT_STEPS: ${{ toJSON(steps) }}
-        run: python tools/ci/summarize.py
