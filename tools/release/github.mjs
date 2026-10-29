@@ -1,0 +1,176 @@
+import {execFileSync} from 'node:child_process';
+import {mkdtempSync,readdirSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
+import {join,basename} from 'node:path';
+import {tmpdir} from 'node:os';
+import {allClear,bytesDigest,candidate,canonical,CORE,digest,manifest,plan,producer,requireThat} from './verify.mjs';
+
+// No shell expansion, caller-provided commands, implicit pagination or token output.
+export class GitHub {
+  command(args) { return execFileSync('gh',args,{encoding:'utf8',maxBuffer:32*1024*1024}); }
+  get(path) { return JSON.parse(this.command(['api',path])); }
+  pages(path,key) {
+    const results=[];
+    for(let page=1;page<=100;page++) {
+      const response=this.get(`${path}${path.includes('?')?'&':'?'}per_page=100&page=${page}`);
+      const items=key ? response[key] : response;
+      requireThat(Array.isArray(items),'Malformed GitHub pagination response');
+      results.push(...items);
+      if(items.length<100) { if(key && 'total_count' in response) requireThat(response.total_count===results.length,'Incomplete GitHub pagination'); return results; }
+    }
+    throw new Error('GitHub evidence pagination limit reached');
+  }
+  head(repo,branch='dev') { return this.get(`repos/${repo}/git/ref/heads/${branch}`).object.sha; }
+  object(repo,ref,path) {
+    const tree=this.get(`repos/${repo}/git/trees/${ref}?recursive=1`);
+    requireThat(tree.truncated===false,'Truncated Git tree is ineligible');
+    const matches=tree.tree.filter(o=>o.path===path);
+    requireThat(matches.length===1 && /^[a-f0-9]{40}$/.test(matches[0].sha),'Expected unique Git object');
+    return matches[0];
+  }
+  tree(repo,ref) { return this.get(`repos/${repo}/git/commits/${ref}`).tree.sha; }
+  run(repo,id) { return this.get(`repos/${repo}/actions/runs/${id}`); }
+  jobs(repo,r) { return this.pages(`repos/${repo}/actions/runs/${r.id}/attempts/${r.run_attempt}/jobs`,'jobs'); }
+  artifact(repo,run,name) {
+    const all=this.pages(`repos/${repo}/actions/runs/${run}/artifacts`,'artifacts').filter(a=>a.name===name);
+    requireThat(all.length===1 && all[0].expired===false,`Missing/duplicate/expired ${name}`);
+    return this.get(`repos/${repo}/actions/artifacts/${all[0].id}`);
+  }
+  download(repo,run,name,files) {
+    this.artifact(repo,run,name); // Reject ambiguous same-name artifacts before gh extraction.
+    const dir=mkdtempSync(join(tmpdir(),'wss-proof-'));
+    try {
+      this.command(['run','download',String(run),'--repo',repo,'--name',name,'--dir',dir]);
+      const entries=readdirSync(dir,{withFileTypes:true});
+      requireThat(entries.every(x=>x.isFile()) && canonical(entries.map(x=>x.name).sort())===canonical([...files].sort()),'Artifact has unexpected files/directories');
+      return Object.fromEntries(files.map(f=>[f,readFileSync(join(dir,f))]));
+    } finally {rmSync(dir,{recursive:true,force:true});}
+  }
+}
+
+export function freeze(g,m,c) {
+  manifest(m); candidate(c);
+  const target_snapshots={};
+  for(const t of m.targets) {
+    const head_sha=g.head(t.repository);
+    const trusted=Object.fromEntries(t.trusted_paths.map(path=>[path,g.object(t.repository,head_sha,path).sha]));
+    // The receipt workflow must also be registered on the default branch.
+    const w=g.get(`repos/${t.repository}/actions/workflows/release-receipt.yml`);
+    requireThat(w.path==='.github/workflows/release-receipt.yml' && w.state==='active',`Receipt workflow unavailable: ${t.id}`);
+    target_snapshots[t.id]={head_sha,trusted};
+  }
+  const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate:c,manifest:m,manifest_sha256:digest(m),target_snapshots};
+  return plan({...body,plan_id:digest(body)});
+}
+export function loadPlan(g,runId) {
+  requireThat(/^[1-9][0-9]*$/.test(runId),'Invalid producer run');
+  const data=g.download(CORE,runId,'wss-propagation-plan',['plan.json']);
+  const p=plan(JSON.parse(data['plan.json']));
+  requireThat(p.candidate.run_id===runId,'Plan came from another producer run');
+  const r=g.run(CORE,runId);
+  requireThat(r.repository?.full_name===CORE && r.path==='.github/workflows/artifacts.yml' && r.event==='push' && r.head_branch==='dev' && r.head_sha===p.candidate.commit,'Plan artifact producer is not canonical');
+  const policy=g.get(`repos/${CORE}/contents/tools/release/targets.dev.json?ref=${p.candidate.commit}`);
+  requireThat(policy.encoding==='base64' && canonical(JSON.parse(Buffer.from(policy.content,'base64')))===canonical(p.manifest),'Frozen policy is not the reviewed producer policy');
+  return p;
+}
+export function archive(g,c) {
+  const a=g.artifact(CORE,c.run_id,'universal-release-assets');
+  requireThat(String(a.id)===c.artifact_id,'Wrong universal artifact');
+  const files=g.download(CORE,c.run_id,a.name,[c.archive,'SHA256SUMS.txt']);
+  const lines=files['SHA256SUMS.txt'].toString('utf8').trim().split(/\r?\n/);
+  requireThat(lines.length===1 && lines[0]===`${c.sha256}  ${c.archive}`,'Checksum metadata differs from exact accepted ZIP');
+  requireThat(bytesDigest(files[c.archive])===c.sha256,'Downloaded ZIP checksum mismatch');
+  return {artifact:a,files};
+}
+export function collect(g,p) {
+  plan(p);
+  const c=p.candidate, source=g.run(CORE,c.run_id), zip=archive(g,c);
+  const evidence={producer:{run:source,current_head:g.head(CORE),jobs:g.jobs(CORE,source),artifact:zip.artifact,archive_sha256:bytesDigest(zip.files[c.archive])},targets:{}};
+  for(const t of p.manifest.targets) {
+    const runs=g.pages(`repos/${t.repository}/actions/workflows/release-receipt.yml/runs?branch=dev`,'workflow_runs');
+    const matches=[];
+    for(const emitter of runs) {
+      const name=`wss-acceptance-${t.id}-${p.plan_id}-a${emitter.run_attempt}`;
+      const artifacts=g.pages(`repos/${t.repository}/actions/runs/${emitter.id}/artifacts`,'artifacts').filter(a=>a.name===name);
+      if(artifacts.length) matches.push({emitter,name});
+    }
+    requireThat(matches.length===1,`Missing or ambiguous actual acceptance receipt for ${t.id}`);
+    const {emitter,name}=matches[0];
+    const receipt_bytes=g.download(t.repository,String(emitter.id),name,['receipt.json'])['receipt.json'];
+    const r=JSON.parse(receipt_bytes.toString('utf8'));
+    requireThat(r.emitter?.run_id===String(emitter.id),'Receipt emitter identifier mismatch');
+    const pr=g.get(`repos/${t.repository}/pulls/${r.merge?.pr_number}`);
+    const normal=g.run(t.repository,r.normal_ci?.run_id);
+    const normals=g.pages(`repos/${t.repository}/actions/workflows/${basename(t.workflow)}/runs?head_sha=${normal.head_sha}&event=${normal.event}`,'workflow_runs').sort((a,b)=>b.id-a.id);
+    requireThat(normals.length>0,'Normal CI run missing');
+    const parent_gitlinks=Object.fromEntries(Object.entries(t.parents).map(([parent,path])=>{
+      const link=g.object(t.repository,r.merge.sha,path);
+      requireThat(link.type==='commit' && link.mode==='160000','Expected a Git submodule pin');
+      return [parent,link.sha];
+    }));
+    const preflights=(r.preflights || []).map(d=>({run:g.run(d.repository,d.run_id),candidate:JSON.parse(g.download(d.repository,d.run_id,'wss-candidate-provenance',['candidate.json'])['candidate.json'])}));
+    evidence.targets[t.id]={receipt:r,receipt_bytes,receipt_sha256:bytesDigest(receipt_bytes),pr,current_head:g.head(t.repository),
+      merge_tree:g.tree(t.repository,r.merge.sha),tested_tree:g.tree(t.repository,normal.head_sha),
+      trusted:Object.fromEntries(t.trusted_paths.map(path=>[path,g.object(t.repository,r.merge.sha,path).sha])),
+      parent_gitlinks,normal_run:normal,normal_latest_run_id:String(normals[0].id),normal_jobs:g.jobs(t.repository,normal),
+      emitter_run:g.run(t.repository,String(emitter.id)),artifact:g.artifact(t.repository,String(emitter.id),name),preflights};
+  }
+  return {record:allClear(p,evidence),files:zip.files};
+}
+
+export function reconcile(g,p) {
+  plan(p);
+  const c=p.candidate,r=g.run(CORE,c.run_id),zip=archive(g,c);
+  producer(p,{run:r,current_head:g.head(CORE),jobs:g.jobs(CORE,r),artifact:zip.artifact,archive_sha256:bytesDigest(zip.files[c.archive])});
+  for(const t of p.manifest.targets) {
+    const head=g.head(t.repository);
+    // Receiver preparation predates the frozen plan. Wait for a dependency merge.
+    if(head===p.target_snapshots[t.id].head_sha) continue;
+    const prs=g.pages(`repos/${t.repository}/commits/${head}/pulls`).filter(pr=>pr.merged_at && pr.merge_commit_sha===head && pr.base?.ref==='dev' && pr.base?.repo?.full_name===t.repository && pr.head?.repo?.full_name===t.repository);
+    requireThat(prs.length===1 && prs[0].user?.type==='Bot',`Current ${t.id} is not a unique bot dependency merge; inspect before requesting proof`);
+    const normals=g.pages(`repos/${t.repository}/actions/workflows/${basename(t.workflow)}/runs?branch=dev&event=workflow_dispatch&head_sha=${head}`,'workflow_runs').sort((a,b)=>b.id-a.id);
+    if(normals.length===0) {
+      g.command(['api','--method','POST',`repos/${t.repository}/actions/workflows/${basename(t.workflow)}/dispatches`,'-f','ref=dev']);
+      continue;
+    }
+    requireThat(normals[0].status!=='completed' || normals[0].conclusion==='success',`Postmerge normal CI failed for ${t.id}; inspect explicit recovery`);
+    if(normals[0].status!=='completed') continue;
+    const title=`WSS acceptance ${t.id} ${p.plan_id}`;
+    const matches=g.pages(`repos/${t.repository}/actions/workflows/release-receipt.yml/runs?branch=dev&event=workflow_dispatch`,'workflow_runs').filter(x=>x.display_title===title);
+    requireThat(matches.length<=1,`Ambiguous reconciliation attempts for ${t.id}`);
+    if(matches.length) {
+      requireThat(matches[0].status!=='completed' || matches[0].conclusion==='success',`Receipt attempt failed for ${t.id}; inspect explicit recovery`);
+      continue;
+    }
+    // Only requests evidence. This endpoint cannot open a dependency PR or merge it.
+    g.command(['api','--method','POST',`repos/${t.repository}/actions/workflows/release-receipt.yml/dispatches`,
+      '-f','ref=dev','-f',`inputs[producer_run_id]=${c.run_id}`,'-f',`inputs[plan_id]=${p.plan_id}`]);
+  }
+}
+
+export function publish(g,p,accepted,directory) {
+  const tag=`dev-beta-${p.candidate.run_id}-${p.plan_id.slice(0,12)}`;
+  const record={...accepted.record,tag};
+  const expected={...accepted.files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical(record)+'\n')};
+  // Existing tag/release state is read first. An API error is not interpreted as absence.
+  const tags=g.pages(`repos/${CORE}/git/matching-refs/tags/${tag}`);
+  const exact=tags.filter(t=>t.ref===`refs/tags/${tag}`);
+  const releases=g.pages(`repos/${CORE}/releases`).filter(r=>r.tag_name===tag);
+  requireThat(exact.length<=1 && releases.length<=1,'Ambiguous existing tag/release');
+  if(exact.length || releases.length) {
+    requireThat(exact.length===1 && releases.length===1 && exact[0].object.type==='commit' && exact[0].object.sha===p.candidate.commit && releases[0].prerelease===true && releases[0].draft===false,'Existing tag/release is incomplete or mismatched; inspect before recovery');
+    requireThat(canonical(releases[0].assets.map(a=>a.name).sort())===canonical(Object.keys(expected).sort()),'Existing release asset inventory mismatch');
+    const temp=mkdtempSync(join(tmpdir(),'wss-release-'));
+    try {
+      g.command(['release','download',tag,'--repo',CORE,'--dir',temp]);
+      for(const [name,bytes] of Object.entries(expected)) requireThat(bytesDigest(readFileSync(join(temp,name)))===bytesDigest(bytes),'Existing release bytes mismatch');
+    } finally {rmSync(temp,{recursive:true,force:true});}
+    return {tag,state:'verified-existing'};
+  }
+  // Re-collect live proof immediately before the only publication mutation.
+  const fresh=collect(g,p);
+  requireThat(canonical(fresh.record)===canonical(accepted.record),'Acceptance evidence changed during publication');
+  const paths=Object.entries(expected).map(([name,bytes])=>{const path=join(directory,name);writeFileSync(path,bytes);return path;});
+  g.command(['release','create',tag,'--repo',CORE,'--target',p.candidate.commit,'--prerelease','--title',tag,
+    '--notes',`Dev beta accepted by all seven frozen targets. Candidate ${p.candidate.commit}; plan ${p.plan_id}. See acceptance.json for proof, exclusions and coverage limits.`,...paths]);
+  return {tag,state:'created'};
+}

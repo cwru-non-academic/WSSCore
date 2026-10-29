@@ -1,0 +1,90 @@
+name: Reconcile accepted dev beta release
+run-name: Reconcile dev beta candidate ${{ inputs.producer_run_id || github.event.workflow_run.id || 'current-dev' }}
+
+on:
+  workflow_run:
+    workflows: [Build universal WSS release]
+    types: [completed]
+    branches: [dev]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      producer_run_id:
+        description: Exact canonical dev push run; empty selects the unique current-dev run
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: wss-dev-beta-reconciliation
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Verify seven merged targets and publish exact accepted beta bytes
+    if: >-
+      github.repository == 'cwru-non-academic/WSSCore' &&
+      vars.WSS_DEV_RELEASE_ENABLED == 'true' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'dev' && github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      # workflow_run is privileged: executable code always comes from main, never the candidate.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Select exact canonical dev producer
+        id: producer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_RUN: ${{ inputs.producer_run_id || github.event.workflow_run.id }}
+        run: node tools/release/select-producer.mjs
+      - name: Create receipt reconciliation Actions token
+        id: receipt-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: |
+            CSharp_WSS_Integration_Lib
+            CLI_CSharp_WSS_Application
+            Unity_WSS_Integration_Lib
+            GUI_Unity_WSS_Application
+            Python_WSS_Integration_Lib
+            CLI_Python_WSS_Application
+            ROS_Python_WSS_Application
+          permission-actions: write
+      - name: Reconcile existing merges with fresh normal CI and read-only receipts
+        env:
+          GH_TOKEN: ${{ steps.receipt-token.outputs.token }}
+          WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
+        run: node tools/release/cli.mjs reconcile '${{ steps.producer.outputs.run_id }}'
+      - name: Collect actual merge receipts and verify every required target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/release/cli.mjs verify '${{ steps.producer.outputs.run_id }}' '${{ runner.temp }}/accepted'
+      - name: Publish accepted ZIP without rebuilding
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
+          # workflow_run GITHUB_REF is the default branch; require main for every invocation.
+        run: node tools/release/cli.mjs publish '${{ steps.producer.outputs.run_id }}' '${{ runner.temp }}/accepted'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev-release-acceptance-${{ steps.producer.outputs.run_id || github.run_id }}
+          path: ${{ runner.temp }}/accepted/acceptance.json
+          if-no-files-found: ignore
