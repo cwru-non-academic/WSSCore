@@ -64,6 +64,12 @@ candidate checksum, paired preflight, actual merge, normal CI, source-scope and
 payload/gitlink validators. JSON claims alone are not authority. Core independently
 checks GitHub PR/run/artifact identity, exact current branch state, required jobs,
 parent gitlinks, and the frozen receipt tooling Git IDs at the actual merge.
+Each preflight listed in the receipt must additionally retain the normalized
+`wss-candidate-provenance` artifact with exactly one `candidate.json` file containing
+the six-field candidate tuple. C# already has this contract. Python/ROS and Unity
+must preserve all existing richer/native/projection evidence and its validators;
+the normalized artifact is an additional cross-language binding, not replacement
+evidence. Do not activate until each registered preflight emits it after success.
 The receipt emitter must be a successful same-repository `workflow_dispatch` run
 at the actual accepted dev merge, with exact attempt and a unique unexpired
 artifact. Fork/caller-nominated code is never an eligible emitter. Normal CI must
