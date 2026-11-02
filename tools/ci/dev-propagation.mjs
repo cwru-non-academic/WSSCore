@@ -101,7 +101,7 @@ function mergedLibrary(g,p,t) {
 function normalRuns(g,t,accepted) {
   return g.pages(`repos/${t.repository}/actions/workflows/${t.normal}/runs?branch=dev&head_sha=${accepted.head_sha}`,'workflow_runs').filter(r=>['push','workflow_dispatch'].includes(r.event) && Date.parse(r.created_at)>=Date.parse(accepted.merged_at));
 }
-const title=p=>`Resume application promotion / wss-${p.candidate.run_id}-${p.candidate.artifact_id}`;
+const title=p=>`Resume application promotion / wss-${p.candidate.run_id}`;
 const journalName=(p,run,attempt)=>`wss-dev-stage-intents-${p.candidate.run_id}-${run}-a${attempt}`;
 function action(p,t,accepted,phase,inputs) {
   const body={candidate:p.candidate,plan_id:p.plan_id,target:t.id,repository:t.repository,head_sha:accepted.head_sha,merged_at:accepted.merged_at,phase,

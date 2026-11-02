@@ -55,7 +55,7 @@ its normal application fanout until the Core authorization arrives. Preserve the
 existing behavior for older candidates. The fanout workflow must support
 `workflow_dispatch` on main with `producer_run_id`, `barrier_run_id` and
 `barrier_attempt`; its run name must be
-`Resume application promotion / wss-<producer-run>-<artifact-id>`.
+`Resume application promotion / wss-<producer-run>`.
 Before creating an application write token, run the reviewed Core entry point
 `node tools/ci/dev-propagation.mjs verify-barrier <producer-run> <barrier-run> <attempt>`
 using read-only access. Then invoke the existing approval, source, candidate and
