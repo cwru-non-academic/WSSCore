@@ -22,6 +22,7 @@ jobs:
         with:
           node-version: '24'
       - run: node --test tools/release/*.test.mjs
+      - run: node --check tools/ci/dev-propagation.mjs
 
   macos-native:
     name: Build macOS universal BLE bridge
@@ -489,9 +490,24 @@ jobs:
           $hash = (Get-FileHash "$env:RUNNER_TEMP/release-input/WSS-Universal-ci.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           "sha256=$hash" >> $env:GITHUB_OUTPUT
       - uses: actions/setup-node@v4
-        if: vars.WSS_DEV_RELEASE_ENABLED == 'true'
         with:
           node-version: '24'
+      - name: Freeze integration-first dev propagation and require deployed receiver hooks
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.package-universal.outputs.artifact-id }}
+          SHA256: ${{ steps.candidate.outputs.sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @{ repository='cwru-non-academic/WSSCore'; commit=$env:GITHUB_SHA; run_id=$env:GITHUB_RUN_ID; artifact_id=$env:ARTIFACT_ID; archive='WSS-Universal-ci.zip'; sha256=$env:SHA256 } | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP/dev-candidate.json"
+          node tools/ci/dev-propagation.mjs freeze "$env:RUNNER_TEMP/dev-candidate.json" "$env:RUNNER_TEMP/dev-propagation-plan"
+          if ($LASTEXITCODE -ne 0) { throw 'Deploy staged receiver hooks, Core main workflows and reviewed MATLAB activation before the canonical dev handoff.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wss-dev-propagation-plan
+          path: ${{ runner.temp }}/dev-propagation-plan/plan.json
+          if-no-files-found: error
       - name: Freeze the reviewed all-target dev release plan
         if: vars.WSS_DEV_RELEASE_ENABLED == 'true'
         shell: pwsh

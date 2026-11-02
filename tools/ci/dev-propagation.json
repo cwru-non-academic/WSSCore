@@ -1,0 +1,10 @@
+{
+  "schema": "wss-dev-stage/v1",
+  "channel": "dev",
+  "libraries": [
+    {"id":"csharp","repository":"cwru-non-academic/CSharp_WSS_Integration_Lib","record":"lib/wss-candidate.json","normal":"wss-compatibility.yml","fanout":"dispatch-cli-promotion.yml","jobs":["Integration behavioral tests","Integration compatibility (Windows)","Integration compatibility (Ubuntu)","Integration compatibility (macOS)"],"applications":["cwru-non-academic/CLI_CSharp_WSS_Application"]},
+    {"id":"unity","repository":"cwru-non-academic/Unity_WSS_Integration_Lib","record":".github/unity-candidate.json","normal":"unity-compatibility.yml","fanout":"dispatch-unity-promotion.yml","jobs":["Integration behavioral tests","Integration compatibility (Windows)","Integration compatibility (Ubuntu)","Integration compatibility (macOS)"],"applications":["cwru-non-academic/GUI_Unity_WSS_Application"]},
+    {"id":"python","repository":"cwru-non-academic/Python_WSS_Integration_Lib","record":".github/python-candidate.json","normal":"wss-compatibility.yml","fanout":"dispatch-cli-promotion.yml","jobs":["Resolve committed sources","Integration behavioral tests","Integration compatibility (Windows)","Integration compatibility (Ubuntu)","Integration compatibility (macOS)","Promotion safety contracts"],"applications":["cwru-non-academic/CLI_Python_WSS_Application","cwru-non-academic/ROS_Python_WSS_Application"]},
+    {"id":"matlab","repository":"cwru-non-academic/Matlab_WSS_Integration_Lib","record":".github/matlab-candidate.json","normal":"wss-compatibility.yml","fanout":"dispatch-cli-promotion.yml","jobs":["Integration behavioral tests","Integration compatibility (Windows)","Integration compatibility (Ubuntu)","Integration compatibility (macOS)"],"applications":["cwru-non-academic/CLI_Matlab_WSS_Application"]}
+  ]
+}
