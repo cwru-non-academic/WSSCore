@@ -309,6 +309,46 @@ namespace WSS.Core.Tests
             });
         }
 
+        [Test]
+        public async Task LaterPartialStreamCannotHideIncorrectFullStimulationUpdate()
+        {
+            using var transport = new EmulatedWssTransport();
+            using var client = new WssClient(
+                transport,
+                new WssFrameCodec(),
+                new WSSVersionHandler("J03"),
+                new WssClientOptions { OwnsTransport = false });
+            await transport.ConnectAsync();
+            var baseline = transport.Conformance.CaptureStimulationBaseline();
+            await client.StreamChange(new StreamChangeRequest
+            {
+                PulseAmplitudes = new[] { 1, 1, 1 },
+                PulseWidths = new[] { 221, 0, 0 },
+                InterPulseIntervals = new[] { 13, 10, 10 }
+            }, WssTarget.Wss1);
+            await client.StreamChange(new StreamChangeRequest
+            {
+                PulseAmplitudes = new[] { 4, 1, 1 },
+                PulseWidths = new[] { 221, 0, 0 }
+            }, WssTarget.Wss1);
+
+            var full = transport.Conformance.ValidateStimulation(
+                new WssStimulationExpectation(0x81, 1, 4, 221, 13,
+                    (byte)WSSMessageIDs.StreamChangeAll, false), baseline);
+            var partial = transport.Conformance.ValidateStimulation(
+                new WssStimulationExpectation(0x81, 1, 4, 221, 13,
+                    (byte)WSSMessageIDs.StreamChangeNoIPI, false), baseline);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(full.Passed, Is.False, "The full update never transmitted the requested amplitude.");
+                Assert.That(full.Observed.MessageId, Is.EqualTo((byte)WSSMessageIDs.StreamChangeAll));
+                Assert.That(full.FieldChecks.Single(check => check.Name == "PulseAmplitude").Passed, Is.False);
+                Assert.That(partial.Passed, Is.True, string.Join(Environment.NewLine, partial.Failures));
+                Assert.That(partial.Observed.SequenceNumber, Is.GreaterThan(full.Observed.SequenceNumber));
+            });
+        }
+
         private static async Task<byte[]> QueryModuleAsync()
         {
             using var transport = new EmulatedWssTransport();
