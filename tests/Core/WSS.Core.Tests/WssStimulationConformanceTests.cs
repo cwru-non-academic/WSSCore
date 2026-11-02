@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Wss.CalibrationModule;
@@ -14,6 +15,52 @@ namespace WSS.Core.Tests
     [TestFixture]
     public sealed class WssStimulationConformanceTests
     {
+        [Test]
+        public void UpdateDuringAmplitudeConversionCannotMixRequestedStimulationTuples()
+        {
+            string fixtureDirectory = CreateFixtureDirectory(out string coreConfigPath, out _);
+            using var transport = new EmulatedWssTransport();
+            using var core = CreateCore(transport, coreConfigPath);
+            try
+            {
+                core.Initialize();
+                core.StimulateAnalog(1, 71, 2.0f, 11);
+                var capture = typeof(WssStimulationCore).GetMethod(
+                    "CaptureStreamChange", BindingFlags.Instance | BindingFlags.NonPublic);
+                Assert.That(capture, Is.Not.Null);
+                bool updated = false;
+                Func<float, int> convert = amplitude =>
+                {
+                    if (!updated)
+                    {
+                        updated = true;
+                        core.StimulateAnalog(1, 221, 4.0f, 13);
+                    }
+                    return (int)amplitude;
+                };
+
+                var snapshot = (StreamChangeRequest)capture.Invoke(core, new object[] { 0, convert });
+                var next = (StreamChangeRequest)capture.Invoke(core,
+                    new object[] { 0, new Func<float, int>(amplitude => (int)amplitude) });
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(updated, Is.True, "The update must occur during conversion, before width and IPI encoding.");
+                    Assert.That(snapshot.PulseAmplitudes, Is.EqualTo(new[] { 2, 1, 1 }));
+                    Assert.That(snapshot.PulseWidths, Is.EqualTo(new[] { 71, 0, 0 }));
+                    Assert.That(snapshot.InterPulseIntervals, Is.EqualTo(new[] { 11, 10, 10 }));
+                    Assert.That(next.PulseAmplitudes, Is.EqualTo(new[] { 4, 1, 1 }));
+                    Assert.That(next.PulseWidths, Is.EqualTo(new[] { 221, 0, 0 }));
+                    Assert.That(next.InterPulseIntervals, Is.EqualTo(new[] { 13, 10, 10 }));
+                });
+            }
+            finally
+            {
+                core.Shutdown();
+                DeleteFixtureDirectory(fixtureDirectory);
+            }
+        }
+
         [Test]
         public async Task DirectAnalogStimulationPassesWireLevelConformance()
         {

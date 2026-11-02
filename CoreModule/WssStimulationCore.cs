@@ -45,9 +45,7 @@ namespace Wss.CoreModule
         private Task _setupRunner;
 
         // ---- channels & controller state ----
-        private float[] _chAmps;  // mA (mapped to 0..255 for device)
-        private int[] _chPWs;   // us
-        private int[] _chIPIs;   // ms period
+        private ChannelStimulation[] _channelStimulation;
         private int[] _lastIpiSentPerCh; //used to check changes since frequency reset schedule only send if there is a change
         private int _maxWSSChannels = 0;
 
@@ -60,6 +58,22 @@ namespace Wss.CoreModule
         
 
         private enum CoreState { Disconnected, Connecting, SettingUp, Ready, Started, Streaming, Error }
+
+        // Publish the complete requested tuple together; a stream must never combine
+        // amplitude from one call with width or IPI from another call.
+        private sealed class ChannelStimulation
+        {
+            public ChannelStimulation(float amplitude, int pulseWidth, int interPulseInterval)
+            {
+                Amplitude = amplitude;
+                PulseWidth = pulseWidth;
+                InterPulseInterval = interPulseInterval;
+            }
+
+            public float Amplitude { get; }
+            public int PulseWidth { get; }
+            public int InterPulseInterval { get; }
+        }
         #endregion
 
         #region ========== Construction ==========
@@ -271,9 +285,7 @@ namespace Wss.CoreModule
         {
             if (channel <= 0 || channel > _maxWSS * 3) return;
 
-            _chAmps[channel - 1] = amp;
-            _chPWs[channel - 1] = PW;
-            _chIPIs[channel - 1] = IPI;
+            Volatile.Write(ref _channelStimulation[channel - 1], new ChannelStimulation(amp, PW, IPI));
         }
 
         /// <inheritdoc/>
@@ -799,23 +811,8 @@ namespace Wss.CoreModule
                     int baseIdx = wIdx * 3;
 
                     var target = IntToWssTarget(w);
-                    var amps = new[] {
-                        AmpTo255Convention(_chAmps[baseIdx + 0], target),
-                        AmpTo255Convention(_chAmps[baseIdx + 1], target),
-                        AmpTo255Convention(_chAmps[baseIdx + 2], target)
-                    };
-                    var pws = new[] {
-                        _chPWs[baseIdx + 0],
-                        _chPWs[baseIdx + 1],
-                        _chPWs[baseIdx + 2]
-                    };
-
-                    // Desired per-channel IPIs for this WSS (source of truth)
-                    var desiredIpis = new[] {
-                        _chIPIs[baseIdx + 0],
-                        _chIPIs[baseIdx + 1],
-                        _chIPIs[baseIdx + 2]
-                    };
+                    var request = CaptureStreamChange(baseIdx, amp => AmpTo255Convention(amp, target));
+                    var desiredIpis = request.InterPulseIntervals;
 
                     // Per-channel change memory, gated by per-WSS cooldown
                     bool anyChanged =
@@ -826,12 +823,7 @@ namespace Wss.CoreModule
                     if (anyChanged)
                     {
                         // Send one WSS-level IPI update (array API). This is the only time we send.
-                        _ = _wss.StreamChange(new StreamChangeRequest
-                        {
-                            PulseAmplitudes = amps,
-                            PulseWidths = pws,
-                            InterPulseIntervals = desiredIpis
-                        }, target);
+                        _ = _wss.StreamChange(request, target);
 
                         // Update per-channel last-sent memory and start per-WSS cooldown
                         _lastIpiSentPerCh[baseIdx + 0] = desiredIpis[0];
@@ -841,16 +833,32 @@ namespace Wss.CoreModule
                     else
                     {
                         // Do not send any IPI during cooldown or if nothing changed
-                        _ = _wss.StreamChange(new StreamChangeRequest
-                        {
-                            PulseAmplitudes = amps,
-                            PulseWidths = pws
-                        }, target);
+                        request.InterPulseIntervals = null;
+                        _ = _wss.StreamChange(request, target);
                     }
 
                     await Task.Delay(_delayMsBetweenPackets, tk);
                 }
             }
+        }
+
+        private StreamChangeRequest CaptureStreamChange(int baseIndex, Func<float, int> convertAmplitude)
+        {
+            var first = Volatile.Read(ref _channelStimulation[baseIndex]);
+            var second = Volatile.Read(ref _channelStimulation[baseIndex + 1]);
+            var third = Volatile.Read(ref _channelStimulation[baseIndex + 2]);
+            return new StreamChangeRequest
+            {
+                PulseAmplitudes = new[] {
+                    convertAmplitude(first.Amplitude),
+                    convertAmplitude(second.Amplitude),
+                    convertAmplitude(third.Amplitude)
+                },
+                PulseWidths = new[] { first.PulseWidth, second.PulseWidth, third.PulseWidth },
+                InterPulseIntervals = new[] {
+                    first.InterPulseInterval, second.InterPulseInterval, third.InterPulseInterval
+                }
+            };
         }
 
         /// <summary>Stop the streaming background task.</summary>
@@ -1054,16 +1062,12 @@ namespace Wss.CoreModule
         private void InitStimArrays()
         {
             _maxWSSChannels = _maxWSS * 3;
-            _chAmps = new float[_maxWSSChannels];
-            _chPWs = new int[_maxWSSChannels];
-            _chIPIs = new int[_maxWSSChannels];
+            _channelStimulation = new ChannelStimulation[_maxWSSChannels];
             _lastIpiSentPerCh = new int[_maxWSSChannels];
             for (int i = 0; i < _maxWSSChannels; i++)
             {
                 // Store amplitude in mA; convert to 0..255 at send time using per-target curve
-                _chAmps[i] = _defaultAmp;
-                _chPWs[i] = 0;
-                _chIPIs[i] = _defaultIPI;
+                _channelStimulation[i] = new ChannelStimulation(_defaultAmp, 0, _defaultIPI);
                 _lastIpiSentPerCh[i] = _defaultIPI;
             }
         }
