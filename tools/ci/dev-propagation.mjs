@@ -39,6 +39,7 @@ function matlabReady(g,repo) {
 // turn the requested integration barrier into independent per-library fanout.
 export function freezeStage(g,m,c) {
   policy(m);candidate(c);
+  requireThat(g.head(CORE)===c.commit,'Core dev moved before integration handoff');
   registered(g,CORE,'dev-propagation.yml');
   registered(g,CORE,'propagate-matlab.yml');
   const receivers={};
@@ -61,6 +62,7 @@ export function freezeStage(g,m,c) {
     receivers[t.id]={heads,trusted};
   }
   const body={schema:'wss-dev-propagation-plan/v1',candidate:c,policy:m,policy_sha256:digest(m),receivers};
+  requireThat(g.head(CORE)===c.commit,'Core dev moved while freezing receiver tooling');
   return {...body,plan_id:digest(body)};
 }
 export function validatePlan(p) {
