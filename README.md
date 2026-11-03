@@ -84,6 +84,8 @@ R2026b update-aware implementation. A receiver validator change requires a fresh
 canonical dev push and frozen plan; do not overwrite an old plan or replay its
 failed promotions with changed validation code. Merge the receiver fix on both
 branches, then the reviewed Core baseline update before using the new candidate.
+The policy also pins the promotion contract test that keeps its legacy bootstrap
+fixture separate from the installed candidate's payload verification.
 
 ## Build
 

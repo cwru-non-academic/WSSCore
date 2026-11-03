@@ -59,6 +59,9 @@ export function freezeStage(g,m,c) {
       const pin=t.native_evidence_guard;
       requireThat(pin?.path==='.github/scripts/Complete-MatlabPreflight.ps1' && /^[0-9a-f]{40}$/.test(pin.sha),'Pin the reviewed MATLAB native evidence validator before handoff');
       for(const branch of ['main','dev']) requireThat(g.object(t.repository,heads[branch],pin.path).sha===pin.sha,`MATLAB native evidence validator is not the reviewed version on ${branch}`);
+      const fixture=t.promotion_contract_test;
+      requireThat(fixture?.path==='.github/scripts/tests/Test-MatlabPromotion.ps1' && /^[0-9a-f]{40}$/.test(fixture.sha),'Pin the candidate-aware MATLAB promotion contract test before handoff');
+      for(const branch of ['main','dev']) requireThat(g.object(t.repository,heads[branch],fixture.path).sha===fixture.sha,`MATLAB promotion contract test is not the reviewed version on ${branch}`);
       matlabReady(g,t.repository);
       for(const app of t.applications) matlabReady(g,app);
     }
