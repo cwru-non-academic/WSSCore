@@ -22,6 +22,7 @@ jobs:
         with:
           node-version: '24'
       - run: node --test tools/release/*.test.mjs
+      - run: node --check tools/ci/dev-propagation.mjs
 
   macos-native:
     name: Build macOS universal BLE bridge
@@ -489,9 +490,24 @@ jobs:
           $hash = (Get-FileHash "$env:RUNNER_TEMP/release-input/WSS-Universal-ci.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           "sha256=$hash" >> $env:GITHUB_OUTPUT
       - uses: actions/setup-node@v4
-        if: vars.WSS_DEV_RELEASE_ENABLED == 'true'
         with:
           node-version: '24'
+      - name: Freeze integration-first dev propagation and require deployed receiver hooks
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.package-universal.outputs.artifact-id }}
+          SHA256: ${{ steps.candidate.outputs.sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @{ repository='cwru-non-academic/WSSCore'; commit=$env:GITHUB_SHA; run_id=$env:GITHUB_RUN_ID; artifact_id=$env:ARTIFACT_ID; archive='WSS-Universal-ci.zip'; sha256=$env:SHA256 } | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP/dev-candidate.json"
+          node tools/ci/dev-propagation.mjs freeze "$env:RUNNER_TEMP/dev-candidate.json" "$env:RUNNER_TEMP/dev-propagation-plan"
+          if ($LASTEXITCODE -ne 0) { throw 'Deploy staged receiver hooks, Core main workflows and reviewed MATLAB activation before the canonical dev handoff.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wss-dev-propagation-plan
+          path: ${{ runner.temp }}/dev-propagation-plan/plan.json
+          if-no-files-found: error
       - name: Freeze the reviewed all-target dev release plan
         if: vars.WSS_DEV_RELEASE_ENABLED == 'true'
         shell: pwsh
@@ -539,6 +555,8 @@ jobs:
               correlation_id = "wss-$env:PRODUCER_RUN-$env:ARTIFACT_ID"
             }
           } | ConvertTo-Json -Depth 4 -Compress
+          $head = gh api repos/cwru-non-academic/WSSCore/branches/dev --jq .commit.sha
+          if ($LASTEXITCODE -ne 0 -or $head.Trim() -cne $env:PRODUCER_SHA) { throw 'Core dev moved before Integration dispatch; no stale candidate handoff.' }
           $body | gh api --method POST repos/cwru-non-academic/CSharp_WSS_Integration_Lib/actions/workflows/promote-wss.yml/dispatches --input -
           if ($LASTEXITCODE -ne 0) { throw 'Routine handoff failed: verify App installation, Integration Actions-write permission, and the deployed dev workflow.' }
           "Automatic candidate: commit $env:PRODUCER_SHA; run $env:PRODUCER_RUN; artifact $env:ARTIFACT_ID; WSS-Universal-ci.zip; SHA-256 $env:SHA256. Integration waits for this producer run to complete successfully." >> $env:GITHUB_STEP_SUMMARY
