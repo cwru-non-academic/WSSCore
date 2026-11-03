@@ -1,0 +1,49 @@
+name: Dispatch MATLAB WSS promotion
+on:
+  workflow_run:
+    workflows: [Build universal WSS release]
+    types: [completed]
+    branches: [dev]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: matlab-producer-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    name: Dispatch MATLAB Integration promotion
+    if: >-
+      github.repository == 'cwru-non-academic/WSSCore' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate canonical candidate, readiness and correlated attempt
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/dev-propagation.mjs matlab "$RUNNER_TEMP/matlab-handoff"
+      - name: Create existing App MATLAB dispatch token
+        if: steps.prepare.outputs.dispatch_needed == 'true'
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: Matlab_WSS_Integration_Lib
+          permission-actions: write
+      - name: Dispatch verified MATLAB candidate once
+        if: steps.prepare.outputs.dispatch_needed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh api --method POST repos/cwru-non-academic/Matlab_WSS_Integration_Lib/actions/workflows/promote-wss.yml/dispatches --input "$RUNNER_TEMP/matlab-handoff/dispatch.json"

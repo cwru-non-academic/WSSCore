@@ -1,0 +1,103 @@
+name: Reconcile staged dev propagation
+run-name: Reconcile dev integrations and applications / ${{ inputs.producer_run_id || github.event.workflow_run.id || 'current-dev' }}
+on:
+  workflow_run:
+    workflows: [Build universal WSS release]
+    types: [completed]
+    branches: [dev]
+  schedule:
+    - cron: '37 * * * *'
+  workflow_dispatch:
+    inputs:
+      producer_run_id:
+        description: Exact canonical dev push run; empty selects current dev
+        type: string
+      mode:
+        description: Verify observes only; reconcile may dispatch committed CI and application fanout
+        type: choice
+        options: [verify, reconcile]
+        default: verify
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: wss-dev-integration-stage
+  cancel-in-progress: false
+jobs:
+  prepare:
+    name: Prepare verified dev propagation stage
+    if: >-
+      github.repository == 'cwru-non-academic/WSSCore' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    outputs:
+      producer_run_id: ${{ steps.stage.outputs.producer_run_id }}
+      artifact_name: ${{ steps.stage.outputs.artifact_name }}
+      actions: ${{ steps.stage.outputs.actions }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify canonical candidate and all integration merges
+        id: stage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCER_RUN: ${{ inputs.producer_run_id }}
+        run: node tools/ci/dev-propagation.mjs prepare "$PRODUCER_RUN" "$RUNNER_TEMP/dev-stage"
+      - name: Retain dispatch intent before any write token or POST
+        if: github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.stage.outputs.artifact_name }}
+          path: ${{ runner.temp }}/dev-stage/intent.json
+          if-no-files-found: error
+      - name: Retain all-integration authorization
+        if: steps.stage.outputs.barrier == 'true' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
+        uses: actions/upload-artifact@v4
+        with:
+          name: wss-integration-barrier-${{ steps.stage.outputs.producer_run_id }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dev-stage/barrier.json
+          if-no-files-found: error
+  dispatch:
+    name: Reconcile committed CI or authorized application promotion
+    needs: prepare
+    if: >-
+      needs.prepare.outputs.actions != '0' &&
+      (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.artifact_name }}
+          path: ${{ runner.temp }}/dev-stage
+      - name: Create existing App Actions token after read-only validation
+        id: dispatch-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: |
+            CSharp_WSS_Integration_Lib
+            Unity_WSS_Integration_Lib
+            Python_WSS_Integration_Lib
+            Matlab_WSS_Integration_Lib
+          permission-actions: write
+      - name: Recheck saved intent and dispatch once
+        env:
+          GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
+          WSS_JOURNAL_READ_TOKEN: ${{ github.token }}
+        run: node tools/ci/dev-propagation.mjs dispatch "$RUNNER_TEMP/dev-stage/intent.json"

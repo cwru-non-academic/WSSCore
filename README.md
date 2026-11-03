@@ -6,7 +6,7 @@ Unity applications. API and application documentation is available on
 
 ## Architecture
 
-All six WSS managed libraries target **.NET Standard 2.0**:
+All seven WSS managed libraries target **.NET Standard 2.0**:
 
 | Project | Responsibility / dependencies |
 | --- | --- |
@@ -16,10 +16,68 @@ All six WSS managed libraries target **.NET Standard 2.0**:
 | `WSS.Transport.BLE.Windows` | Windows adapter implementing the common BLE contract; references facade, Core, and native wrapper |
 | `tools/WindowsBleBridge/managed` | `WSS.Transport.BLE.Windows.Native.dll`: P/Invoke, callbacks, marshaling, resource ownership |
 | `WSS.Transport.BLE.Linux` | BlueZ backend; references facade, Core, Linux.Bluetooth, and Tmds.DBus |
+| `WSS.Transport.BLE.MacOS` | CoreBluetooth backend with the universal arm64/x86_64 native bridge |
 
 The Windows wrapper calls the separate production C++/WinRT **`WssBleWindows.dll`**.
 Windows BLE requires a Windows x64 process. Linux BLE requires BlueZ and system
-D-Bus. There are no macOS/Android BLE backends or Python bindings.
+D-Bus. macOS BLE requires macOS 11 or later, the managed adapter and universal
+`backends/macos/libwss_macos_ble.dylib`, and host-owned Bluetooth permissions.
+There is no Android backend. Hosted native/ABI/loading tests do not prove a
+physical Bluetooth connection or TCC authorization.
+
+## Dev propagation
+
+`tools/ci/dev-propagation.json` requires C#, Unity, Python and MATLAB integrations
+to consume the same canonical dev-push ZIP. Before the first integration handoff,
+Core freezes a separate `wss-dev-propagation-plan` artifact and checks receiver
+workflow registration, staged fanout capabilities and MATLAB readiness. The
+existing two-file universal artifact is unchanged.
+
+Deploy `dev-propagation.yml` and `propagate-matlab.yml` on Core's default main
+branch before producing this candidate. A dev-only workflow file does not register
+a GitHub workflow. Deploy receiver hooks on both main and dev before merging the
+producer change. Every integration must publish `.github/dev-propagation.json`:
+
+```json
+{
+  "schema": "wss-dev-stage-receiver/v1",
+  "core_workflow": ".github/workflows/dev-propagation.yml",
+  "fanout_workflow": "dispatch-cli-promotion.yml",
+  "staged_applications": true,
+  "applications": ["cwru-non-academic/CLI_CSharp_WSS_Application"]
+}
+```
+
+Use each integration's fanout workflow and application list from the Core policy
+(Unity uses `dispatch-unity-promotion.yml`; Python includes CLI and ROS). For a
+candidate whose producer has the staging policy, a merged integration must hold
+its normal application fanout until the Core authorization arrives. Preserve the
+existing behavior for older candidates. The fanout workflow must support
+`workflow_dispatch` on main with `producer_run_id`, `barrier_run_id` and
+`barrier_attempt`; its run name must be
+`Resume application promotion / wss-<producer-run>`.
+Before creating an application write token, run the reviewed Core entry point
+`node tools/ci/dev-propagation.mjs verify-barrier <producer-run> <barrier-run> <attempt>`
+using read-only access. Then invoke the existing approval, source, candidate and
+application validators for the returned actual integration merge; never substitute
+a dispatch or preparation commit for that merge.
+
+The Core coordinator waits for all four human-reviewed dependency merges, requests
+fresh normal CI at their committed dev SHAs, and authorizes all application routes
+only after every required job passes. A durable intent is uploaded before any
+dispatch. Existing pending/successful correlated runs are reused; a failed,
+ambiguous, expired or uncertain attempt requires inspected recovery. No merge,
+rollback, release or tag is performed. Manual `mode: verify` reads evidence only
+and emits no dispatch intent or application authorization; `mode: reconcile` may
+dispatch. Scheduled reconciliation runs at most hourly.
+
+MATLAB additionally requires `baseline_ready` and `candidate_preflight_ready` true
+in both receiver configs and explicitly reviewed repository variables
+`WSS_MATLAB_PROPAGATION_ENABLED=true` for wrapper and CLI. Source preparation does
+not enable these settings. The existing App must already support Actions access
+to the required destinations; this change does not create credentials or alter
+its installation. Finish these external prerequisites before merging Core dev.
+Dev propagation is separate from the disabled beta/stable release policy.
 
 ## Build
 
