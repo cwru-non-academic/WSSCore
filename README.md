@@ -79,6 +79,12 @@ to the required destinations; this change does not create credentials or alter
 its installation. Finish these external prerequisites before merging Core dev.
 Dev propagation is separate from the disabled beta/stable release policy.
 
+The MATLAB native evidence validator is pinned in the dev policy to the reviewed
+R2026b update-aware implementation. A receiver validator change requires a fresh
+canonical dev push and frozen plan; do not overwrite an old plan or replay its
+failed promotions with changed validation code. Merge the receiver fix on both
+branches, then the reviewed Core baseline update before using the new candidate.
+
 ## Build
 
 Install .NET 8 (test runtime) and .NET 9 (ArtifactBuild), with NuGet access.
