@@ -86,6 +86,8 @@ failed promotions with changed validation code. Merge the receiver fix on both
 branches, then the reviewed Core baseline update before using the new candidate.
 The policy also pins the promotion contract test that keeps its legacy bootstrap
 fixture separate from the installed candidate's payload verification.
+The merged-wrapper CI validator is pinned as well, including its handling of
+GitHub's empty PR associations after a reviewed merge.
 
 ## Build
 
