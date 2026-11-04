@@ -24,7 +24,7 @@ export const projectedPath=(id,source)=>id==='unity' && !source.startsWith('runt
 const inventory=(actual,expected)=>Array.isArray(actual) && new Set(actual.map(x=>String(x).toLowerCase())).size===actual.length &&
   same([...actual].sort(),[...expected].sort());
 function gitBlob(g,repository,entry,cache) {
-  requireThat(entry?.type==='blob' && entry.mode==='100644' && /^[a-f0-9]{40}$/.test(entry.sha),'Missing/nonregular immutable Git file');
+  requireThat(entry?.type==='blob' && ['100644','100755'].includes(entry.mode) && /^[a-f0-9]{40}$/.test(entry.sha),'Missing/nonregular immutable Git file');
   if(!cache.has(entry.sha)) {
     const blob=g.get(`repos/${repository}/git/blobs/${entry.sha}`);
     requireThat(blob.sha===entry.sha && blob.encoding==='base64' && Number.isSafeInteger(blob.size) && blob.size>0 && blob.size<=67108864,'Invalid Git blob evidence');
