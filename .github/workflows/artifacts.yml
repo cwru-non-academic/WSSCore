@@ -12,6 +12,16 @@ permissions:
   contents: read
 
 jobs:
+  release-contract-tests:
+    name: Dev release acceptance contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test tools/release/verify.test.mjs
+
   macos-native:
     name: Build macOS universal BLE bridge
     runs-on: macos-14
