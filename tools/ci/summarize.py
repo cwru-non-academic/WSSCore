@@ -52,9 +52,9 @@ def main():
         "",
         "TRX artifacts (when produced) retain individual NUnit cases, including failures. Step failures are not suppressed; skipped/unexecuted steps are not passing checks.",
         "",
-        "Permanent suite descriptions and test-placement policy: [tests/README.md](" +
+        "Permanent suite descriptions and test-placement policy: [README test catalog](" +
         os.environ["GITHUB_SERVER_URL"] + "/" + os.environ["GITHUB_REPOSITORY"] +
-        "/blob/" + os.environ["GITHUB_SHA"] + "/tests/README.md).",
+        "/blob/" + os.environ["GITHUB_SHA"] + "/README.md#tests-and-ci-reference).",
         "",
     ])
     with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
