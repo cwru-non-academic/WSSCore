@@ -1,15 +1,20 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {action,execute,journal,journalName,prepare,validateJournal} from './dispatch.mjs';
+import {action as coreAction,execute,journal,journalName,prepare,validateJournal} from './dispatch.mjs';
+import {findNormalRuns} from './normal-ci.mjs';
 import {bytesDigest,CORE,CORE_JOBS,digest} from './verify.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
-function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false}={}) {
+const MERGED_AT='2026-10-29T00:00:00Z';
+const action=(p,t,workflow,head,inputs)=>coreAction(p,t,workflow,head,inputs,MERGED_AT);
+const normalRun=(t,r)=>({repository:{full_name:t.repository},head_repository:{full_name:t.repository},path:t.workflow,
+  head_sha:sha(10),head_branch:'dev',event:'workflow_dispatch',created_at:'2026-10-29T00:01:00Z',run_attempt:1,...r});
+function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false,targetId='csharp-cli'}={}) {
   const manifest=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(Buffer.from('zip'))};
   const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:sha(2),trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,sha(3)]))}]))};
-  const p={...body,plan_id:digest(body)},t=manifest.targets[0],requests=[];
+  const p={...body,plan_id:digest(body)},t=manifest.targets.find(t=>t.id===targetId),requests=[];
   const old=journal(p,'90',1,prior.length?prior:[action(p,t,t.workflow,sha(10),{})]);
   const g={
     run:()=>({id:1,repository:{full_name:CORE},head_repository:{full_name:CORE},path:'.github/workflows/artifacts.yml',head_sha:sha(1),head_branch:'dev',event:'push',status:'completed',conclusion:'success',run_attempt:1}),
@@ -22,7 +27,7 @@ function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false}={}) 
       if(path.includes(`repos/${CORE}/actions/runs/90/artifacts`))return[{name:journalName(p,'90',1),expired}];
       if(path.includes('/commits/'))return[{merged_at:'2026-10-29T00:00:00Z',merge_commit_sha:sha(10),base:{ref:'dev',repo:{full_name:t.repository}},head:{repo:{full_name:t.repository}},user:{type:'Bot'}}];
       if(path.includes('/release-receipt.yml/'))return receipts.map(r=>({...r,display_title:`WSS acceptance ${t.id} ${p.plan_id}`}));
-      return normal;
+      return normal.map(r=>normalRun(t,r));
     },
     command:args=>requests.push(args)
   };
@@ -75,12 +80,12 @@ test('a saved exact intent dispatches only the registered workflow on dev',()=>{
 });
 test('execution rechecks downstream after journaling and reuses a concurrent pending run',()=>{
   const f=fixture(),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
-  const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[{id:200,status:'queued'}]};
+  const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[normalRun(f.t,{id:200,status:'queued',event:'push'})]};
   execute(f.g,reader,f.p,j);assert.equal(f.requests.length,0);
 });
 test('execution rejects multiple normal runs instead of superseding a failed run',()=>{
   const f=fixture(),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
-  const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[{id:201,status:'queued'},{id:200,status:'completed',conclusion:'failure'}]};
+  const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[normalRun(f.t,{id:201,status:'queued',event:'push'}),normalRun(f.t,{id:200,status:'completed',conclusion:'failure'})]};
   assert.throws(()=>execute(f.g,reader,f.p,j),/Ambiguous/);assert.equal(f.requests.length,0);
 });
 test('execution checks branch again immediately before its POST',()=>{
@@ -90,11 +95,50 @@ test('execution checks branch again immediately before its POST',()=>{
   assert.throws(()=>execute(f.g,reader,f.p,j),/moved/);assert.equal(f.requests.length,0);
 });
 for(const [name,mutate]of [
-  ['MATLAB target',j=>j.actions[0].target_id='matlab-cli'],
+  ['unknown target',j=>j.actions[0].target_id='unknown-target'],
   ['promotion workflow',j=>j.actions[0].workflow='.github/workflows/promote-wss.yml'],
   ['main destination',j=>j.actions[0].ref='main'],
   ['injected input',j=>j.actions[0].inputs={unexpected:'value'}],
+  ['missing merge time',j=>delete j.actions[0].merged_at],
   ['changed key',j=>j.actions[0].key='0'.repeat(64)]
 ])test(`journal rejects ${name}`,()=>{
   const f=fixture(),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);mutate(j);assert.throws(()=>validateJournal(f.p,j));
+});
+
+test('acceptance never requests integration normal CI owned by the stage coordinator',()=>{
+  const f=fixture({targetId:'csharp-wrapper'});
+  assert.deepEqual(prepare(f.g,f.p,'100',1).actions,[]);
+  const forbidden=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
+  assert.throws(()=>validateJournal(f.p,forbidden),/staged coordinator/);
+  assert.equal(f.requests.length,0);
+});
+
+test('acceptance reuses a successful push run and requests only its receipt',()=>{
+  const f=fixture({normal:[{id:10,event:'push',status:'completed',conclusion:'success'}]});
+  const j=prepare(f.g,f.p,'100',1);
+  assert.equal(j.actions.length,1);assert.equal(j.actions[0].workflow,'.github/workflows/release-receipt.yml');
+});
+
+test('a pending push waits without a second normal dispatch',()=>{
+  const f=fixture({normal:[{id:10,event:'push',status:'in_progress'}]});
+  assert.deepEqual(prepare(f.g,f.p,'100',1).actions,[]);assert.equal(f.requests.length,0);
+});
+
+test('a failed push stops acceptance without a replacement manual dispatch',()=>{
+  const f=fixture({normal:[{id:10,event:'push',status:'completed',conclusion:'failure'}]});
+  assert.throws(()=>prepare(f.g,f.p,'100',1),/Postmerge CI failed/);assert.equal(f.requests.length,0);
+});
+
+for(const [name,change] of [
+  ['fork',r=>r.head_repository.full_name='fork/repo'],['wrong source',r=>r.head_sha=sha(99)],
+  ['wrong workflow',r=>r.path='.github/workflows/other.yml'],['wrong branch',r=>r.head_branch='main'],
+  ['invalid time',r=>r.created_at='invalid'],['invalid attempt',r=>r.run_attempt=0]
+])test(`shared normal CI discovery rejects ${name}`,()=>{
+  const f=fixture(),r=normalRun(f.t,{id:10,status:'completed',conclusion:'success'});change(r);
+  assert.throws(()=>findNormalRuns({pages:()=>[r]},f.t,sha(10),MERGED_AT));
+});
+
+test('shared normal CI discovery excludes premerge and synthetic PR evidence',()=>{
+  const f=fixture(),runs=[normalRun(f.t,{id:10,event:'pull_request'}),normalRun(f.t,{id:11,created_at:'2026-10-28T23:59:00Z'})];
+  assert.deepEqual(findNormalRuns({pages:()=>runs},f.t,sha(10),MERGED_AT),[]);
 });

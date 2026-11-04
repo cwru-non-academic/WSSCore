@@ -44,10 +44,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Create read-only cross-repository evidence token
+        id: evidence-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: |
+            WSSCore
+            CSharp_WSS_Integration_Lib
+            CLI_CSharp_WSS_Application
+            Unity_WSS_Integration_Lib
+            GUI_Unity_WSS_Application
+            Python_WSS_Integration_Lib
+            CLI_Python_WSS_Application
+            ROS_Python_WSS_Application
+            Matlab_WSS_Integration_Lib
+            CLI_Matlab_WSS_Application
+          permission-contents: read
+          permission-actions: read
+          permission-pull-requests: read
       - name: Verify canonical candidate and all integration merges
         id: stage
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.evidence-token.outputs.token }}
           PRODUCER_RUN: ${{ inputs.producer_run_id }}
         run: node tools/ci/dev-propagation.mjs prepare "$PRODUCER_RUN" "$RUNNER_TEMP/dev-stage"
       - name: Retain dispatch intent before any write token or POST
@@ -83,6 +104,27 @@ jobs:
         with:
           name: ${{ needs.prepare.outputs.artifact_name }}
           path: ${{ runner.temp }}/dev-stage
+      - name: Create read-only cross-repository evidence token
+        id: evidence-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: |
+            WSSCore
+            CSharp_WSS_Integration_Lib
+            CLI_CSharp_WSS_Application
+            Unity_WSS_Integration_Lib
+            GUI_Unity_WSS_Application
+            Python_WSS_Integration_Lib
+            CLI_Python_WSS_Application
+            ROS_Python_WSS_Application
+            Matlab_WSS_Integration_Lib
+            CLI_Matlab_WSS_Application
+          permission-contents: read
+          permission-actions: read
+          permission-pull-requests: read
       - name: Create existing App Actions token after read-only validation
         id: dispatch-token
         uses: actions/create-github-app-token@v2
@@ -99,5 +141,5 @@ jobs:
       - name: Recheck saved intent and dispatch once
         env:
           GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
-          WSS_JOURNAL_READ_TOKEN: ${{ github.token }}
+          WSS_JOURNAL_READ_TOKEN: ${{ steps.evidence-token.outputs.token }}
         run: node tools/ci/dev-propagation.mjs dispatch "$RUNNER_TEMP/dev-stage/intent.json"

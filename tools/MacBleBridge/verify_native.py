@@ -1,11 +1,18 @@
 """Validate the actual universal production bridge without opening Bluetooth."""
 import ctypes
+import os
+import platform
 import subprocess
 import sys
 import threading
 from pathlib import Path
 
 path = Path(sys.argv[1]).resolve()
+expected_arch = os.environ.get('WSS_EXPECTED_MAC_ARCH')
+if expected_arch is not None:
+    if expected_arch not in ('arm64', 'x86_64') or platform.machine() != expected_arch:
+        raise RuntimeError(f'Native verification architecture mismatch: expected {expected_arch}, Python process {platform.machine()}')
+    print(f'Native load process architecture: {platform.machine()} (expected {expected_arch})')
 assert set(subprocess.check_output(['lipo', '-archs', str(path)], text=True).split()) == {'arm64', 'x86_64'}
 expected = {'_wss_mac_abi', '_wss_mac_create', '_wss_mac_destroy', '_wss_mac_submit', '_wss_mac_cancel'}
 for arch in ('arm64', 'x86_64'):
