@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 
 export const CORE = 'cwru-non-academic/WSSCore';
-export const TARGETS = ['csharp-wrapper','csharp-cli','unity-wrapper','unity-gui','python-wrapper','python-cli','python-ros'];
+export const TARGETS = ['csharp-wrapper','csharp-cli','unity-wrapper','unity-gui','python-wrapper','python-cli','python-ros','matlab-wrapper','matlab-cli'];
 export const CORE_JOBS = ['Build macOS universal BLE bridge','Core conformance','Build and validate artifacts',
   'BLE consumer (Linux)','BLE consumer (Windows)','BLE consumer (macOS arm64)','BLE consumer (macOS x86_64)',
   ...['Serial','Core'].flatMap(x => ['Linux','Windows','macOS'].map(p => `${x} consumer (${p})`)),
@@ -26,10 +26,10 @@ export function candidate(c) {
 export function manifest(m) {
   requireThat(m.schema === 'wss-required-targets/v1' && m.channel === 'dev' && m.release_kind === 'beta' && m.stable_enabled === false, 'Only dev beta policy is enabled');
   requireThat(same(m.targets.map(t => t.id).sort(), [...TARGETS].sort()), 'Required target set must be exact and unique');
-  requireThat(same(m.excluded.map(t => t.id).sort(), ['matlab-cli','matlab-wrapper']) && m.excluded.every(t => t.dispatch === false), 'MATLAB must remain explicitly excluded');
+  requireThat(Array.isArray(m.excluded) && m.excluded.length === 0, 'All nine targets are required; no exclusions are allowed');
   requireThat(new Set(m.targets.map(t => t.repository)).size === TARGETS.length, 'Target repositories must be unique');
   for (const t of m.targets) {
-    requireThat(/^cwru-non-academic\/[A-Za-z0-9_]+$/.test(t.repository) && !/matlab/i.test(t.repository) && t.branch === 'dev', `Invalid target ${t.id}`);
+    requireThat(/^cwru-non-academic\/[A-Za-z0-9_]+$/.test(t.repository) && t.branch === 'dev', `Invalid target ${t.id}`);
     requireThat(t.workflow.startsWith('.github/workflows/') && t.workflow.endsWith('.yml'), 'Invalid normal CI workflow');
     requireThat(t.jobs.length > 0 && new Set(t.jobs).size === t.jobs.length && t.jobs.every(x => typeof x === 'string' && x.length > 0), 'Missing or duplicate required jobs');
     requireThat(t.trusted_paths.includes('.github/workflows/release-receipt.yml') && t.trusted_paths.includes('.github/scripts') && t.trusted_paths.includes(t.workflow), 'Receipt workflow, normal CI and validator scripts must be frozen');
