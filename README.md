@@ -542,7 +542,7 @@ initializing Bluetooth. The header documents borrowed data and callback fencing.
 artifacts` downloads the **same workflow run's** native artifact, builds the managed
 adapter, checks exact closure/identities and Mach-O architecture headers, then
 creates the single universal ZIP/checksum. All consumers download that ZIP; no
-second archive is rebuilt for macOS. Public standard `macos-14` (arm64) and
+second archive is rebuilt for macOS. Public standard `macos-15` (arm64) and
 `macos-15-intel` runners run mandatory packaged ABI/load tests on .NET 8 and 9.
 Publication and routine propagation wait for both `BLE consumer (macOS arm64)`
 and `BLE consumer (macOS x86_64)`. Existing Core conformance remains authoritative.
@@ -734,8 +734,9 @@ boundaries below apply to every row referencing them, including its future place
 | `Serial consumer (macOS)` | macOS / `macos-latest` | SerialConsumer; artifact consumer | Serial consumer sequence |
 | `BLE consumer (Windows)` | Windows / `windows-2022` | `tests/BLE/WSS.BLE.Tests`, `tests/BLE/Windows/WSS.BLE.Windows.Tests`, isolated NativeTestShim, production native DLL, `tests/Packaging/Consumers/BleConsumer`; functional + native + consumer | Windows BLE sequence |
 | `BLE consumer (Linux)` | Linux / `ubuntu-latest` | `tests/BLE/WSS.BLE.Tests` (including Linux backend compatibility), BleConsumer, BlueZ/system D-Bus; functional + consumer | Linux BLE sequence |
-| `BLE consumer (macOS arm64)` / `BLE consumer (macOS x86_64)` | macOS / `macos-14`, `macos-15-intel` | Portable BLE/simulated lifecycle tests plus packaged native ABI/load and automatic/explicit backend loading on .NET 8/9 | No CoreBluetooth initialization, radio or peripheral I/O |
-| `Build macOS universal BLE bridge` | macOS / `macos-14` | `tools/MacBleBridge/build.sh`, universal native input for this run | Build/exports/ABI validation, no Bluetooth initialization |
+| `BLE consumer (macOS arm64)` / `BLE consumer (macOS x86_64)` | macOS / `macos-15`, `macos-15-intel` | Portable BLE/simulated lifecycle tests plus packaged native ABI/load and automatic/explicit backend loading on .NET 8/9 | No CoreBluetooth initialization, radio or peripheral I/O |
+| `BLE Consumer for Windows` / `BLE Consumer for Linux` / `BLE Consumer for Mac` | Linux / `ubuntu-latest` (summary only) | Exact current-attempt worker results; Mac requires both native architecture jobs | No test re-execution; missing, duplicate, skipped or unsuccessful workers fail |
+| `Build macOS universal BLE bridge` | macOS / `macos-15` | `tools/MacBleBridge/build.sh`, universal native input for this run | Build/exports/ABI validation, no Bluetooth initialization |
 | `Dev release acceptance contracts` | Linux / `ubuntu-latest` | Node verifier contract tests | Receipt/policy rejection cases; no receiver dispatch or release |
 
 ##### Core functional sequence
