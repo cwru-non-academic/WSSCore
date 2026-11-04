@@ -8,6 +8,15 @@ using Wss.Transports;
 using Wss.Transports.Backends;
 
 // Never discover/connect a peripheral or write stimulation payloads.
+string? expectedMacArch = Environment.GetEnvironmentVariable("WSS_EXPECTED_MAC_ARCH");
+if (expectedMacArch is not null)
+{
+    string processArch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "arm64" :
+        RuntimeInformation.ProcessArchitecture == Architecture.X64 ? "x86_64" : "unsupported";
+    if (!OperatingSystem.IsMacOS() || (expectedMacArch != "arm64" && expectedMacArch != "x86_64") || processArch != expectedMacArch)
+        throw new InvalidOperationException($"BLE consumer architecture mismatch: expected {expectedMacArch}, process {processArch}");
+    Console.WriteLine($"Packaged BLE consumer process architecture: {processArch} (expected {expectedMacArch})");
+}
 bool linuxLoadOnly = args.Contains("--linux-load-only");
 string platform = linuxLoadOnly ? "linux" : BleBackendLoader.GetCurrentPlatform();
 string backendName = platform == "windows" ? "WSS.Transport.BLE.Windows" : platform == "macos" ? "WSS.Transport.BLE.MacOS" : "WSS.Transport.BLE.Linux";

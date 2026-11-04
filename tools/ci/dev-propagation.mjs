@@ -2,6 +2,7 @@ import {readFileSync,writeFileSync,mkdirSync,appendFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {GitHub,archive} from '../release/github.mjs';
+import {findNormalRuns} from '../release/normal-ci.mjs';
 import {CORE,CORE_JOBS,candidate,canonical,digest,jobs,requireThat} from '../release/verify.mjs';
 
 const POLICY='tools/ci/dev-propagation.json',WORKFLOW='.github/workflows/dev-propagation.yml';
@@ -108,7 +109,7 @@ function mergedLibrary(g,p,t) {
   return {repository:t.repository,head_sha:head,pr_number:String(pr.number),merged_at:pr.merged_at};
 }
 function normalRuns(g,t,accepted) {
-  return g.pages(`repos/${t.repository}/actions/workflows/${t.normal}/runs?branch=dev&head_sha=${accepted.head_sha}`,'workflow_runs').filter(r=>['push','workflow_dispatch'].includes(r.event) && Date.parse(r.created_at)>=Date.parse(accepted.merged_at));
+  return findNormalRuns(g,{repository:t.repository,workflow:`.github/workflows/${t.normal}`},accepted.head_sha,accepted.merged_at);
 }
 const title=p=>`Resume application promotion / wss-${p.candidate.run_id}`;
 const journalName=(p,run,attempt)=>`wss-dev-stage-intents-${p.candidate.run_id}-${run}-a${attempt}`;
@@ -118,6 +119,7 @@ function action(p,t,accepted,phase,inputs) {
   return {...body,key:digest({...body,inputs:phase==='applications'?{producer_run_id:p.candidate.run_id}:inputs})};
 }
 function existing(g,p,a) {
+  if(a.phase==='normal-ci') return findNormalRuns(g,{repository:a.repository,workflow:`.github/workflows/${a.workflow}`},a.source_sha,a.merged_at);
   const runs=g.pages(`repos/${a.repository}/actions/workflows/${a.workflow}/runs?branch=${a.ref}&event=workflow_dispatch&head_sha=${a.source_sha}`,'workflow_runs');
   return a.phase==='applications'?runs.filter(r=>r.display_title===title(p)):runs.filter(r=>Date.parse(r.created_at)>=Date.parse(a.merged_at));
 }

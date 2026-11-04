@@ -1,9 +1,10 @@
 import {createHash} from 'node:crypto';
 
 export const CORE = 'cwru-non-academic/WSSCore';
-export const TARGETS = ['csharp-wrapper','csharp-cli','unity-wrapper','unity-gui','python-wrapper','python-cli','python-ros'];
+export const TARGETS = ['csharp-wrapper','csharp-cli','unity-wrapper','unity-gui','python-wrapper','python-cli','python-ros','matlab-wrapper','matlab-cli'];
 export const CORE_JOBS = ['Build macOS universal BLE bridge','Core conformance','Build and validate artifacts',
   'BLE consumer (Linux)','BLE consumer (Windows)','BLE consumer (macOS arm64)','BLE consumer (macOS x86_64)',
+  'BLE Consumer for Windows','BLE Consumer for Linux','BLE Consumer for Mac',
   ...['Serial','Core'].flatMap(x => ['Linux','Windows','macOS'].map(p => `${x} consumer (${p})`)),
   'Start routine downstream validation'];
 export const canonical = value => JSON.stringify(sort(value));
@@ -26,10 +27,10 @@ export function candidate(c) {
 export function manifest(m) {
   requireThat(m.schema === 'wss-required-targets/v1' && m.channel === 'dev' && m.release_kind === 'beta' && m.stable_enabled === false, 'Only dev beta policy is enabled');
   requireThat(same(m.targets.map(t => t.id).sort(), [...TARGETS].sort()), 'Required target set must be exact and unique');
-  requireThat(same(m.excluded.map(t => t.id).sort(), ['matlab-cli','matlab-wrapper']) && m.excluded.every(t => t.dispatch === false), 'MATLAB must remain explicitly excluded');
+  requireThat(Array.isArray(m.excluded) && m.excluded.length === 0, 'All nine targets are required; no exclusions are allowed');
   requireThat(new Set(m.targets.map(t => t.repository)).size === TARGETS.length, 'Target repositories must be unique');
   for (const t of m.targets) {
-    requireThat(/^cwru-non-academic\/[A-Za-z0-9_]+$/.test(t.repository) && !/matlab/i.test(t.repository) && t.branch === 'dev', `Invalid target ${t.id}`);
+    requireThat(/^cwru-non-academic\/[A-Za-z0-9_]+$/.test(t.repository) && t.branch === 'dev', `Invalid target ${t.id}`);
     requireThat(t.workflow.startsWith('.github/workflows/') && t.workflow.endsWith('.yml'), 'Invalid normal CI workflow');
     requireThat(t.jobs.length > 0 && new Set(t.jobs).size === t.jobs.length && t.jobs.every(x => typeof x === 'string' && x.length > 0), 'Missing or duplicate required jobs');
     requireThat(t.trusted_paths.includes('.github/workflows/release-receipt.yml') && t.trusted_paths.includes('.github/scripts') && t.trusted_paths.includes(t.workflow), 'Receipt workflow, normal CI and validator scripts must be frozen');
@@ -105,6 +106,8 @@ export function receipt(p, t, r, e) {
   for (let i=0;i<r.preflights.length;i++) {
     const declared = r.preflights[i], actual = e.preflights[i];
     requireThat(p.manifest.targets.some(x => x.repository === declared.repository) && id(declared.run_id) && sha(declared.source_sha) && declared.workflow === '.github/workflows/wss-preflight.yml', 'Invalid preflight descriptor');
+    const sourceTarget = p.manifest.targets.find(x => x.repository === declared.repository);
+    requireThat(declared.source_sha === p.target_snapshots[sourceTarget.id].head_sha, 'Preflight source differs from frozen target snapshot');
     run(actual.run,declared.repository,declared.workflow,actual.run.run_attempt);
     requireThat(String(actual.run.id) === declared.run_id && actual.run.head_sha === declared.source_sha && actual.run.event === 'workflow_dispatch' && same(actual.candidate,p.candidate), 'Preflight run/candidate mismatch');
   }

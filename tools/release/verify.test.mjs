@@ -1,7 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync,writeFileSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
+import {tmpdir} from 'node:os';
 import {allClear,bytesDigest,canonical,CORE,CORE_JOBS,digest,plan,TARGETS} from './verify.mjs';
 import {collect,freeze,GitHub,publish} from './github.mjs';
 import {tagPolicy} from './policy.mjs';
@@ -26,9 +27,9 @@ function fixture() {
       merge:{pr_number:String(i+1),sha:merge,head_sha:head},normal_ci:{run_id:String(normal),attempt:1},
       preflights:[{repository:t.repository,run_id:String(300+i),source_sha:sha(2),workflow:'.github/workflows/wss-preflight.yml'}],
       parents,emitter:{run_id:String(emitter),attempt:1,source_sha:merge,workflow:'.github/workflows/release-receipt.yml'},coverage:t.coverage};
-    e.targets[t.id]={receipt:r,receipt_bytes:Buffer.from(JSON.stringify(r)),pr:{number:i+1,merged:true,user:{type:'Bot'},merged_by:{type:'User'},state:'closed',merge_commit_sha:merge,head:{sha:head,ref:'automation/candidate',repo:{full_name:t.repository}},base:{ref:'dev',repo:{full_name:t.repository}}},
+    e.targets[t.id]={receipt:r,receipt_bytes:Buffer.from(JSON.stringify(r)),pr:{number:i+1,merged:true,merged_at:'2026-10-29T00:00:00Z',user:{type:'Bot'},merged_by:{type:'User'},state:'closed',merge_commit_sha:merge,head:{sha:head,ref:'automation/candidate',repo:{full_name:t.repository}},base:{ref:'dev',repo:{full_name:t.repository}}},
       current_head:merge,merge_tree:sha(4),tested_tree:sha(4),trusted:p.target_snapshots[t.id].trusted,parent_gitlinks:parents,
-      normal_run:{...run(t.repository,t.workflow,normal,merge),pull_requests:[]},normal_latest_run_id:String(normal),normal_jobs:successful(t.jobs),
+      normal_run:{...run(t.repository,t.workflow,normal,merge),created_at:'2026-10-29T00:01:00Z',pull_requests:[]},normal_latest_run_id:String(normal),normal_jobs:successful(t.jobs),
       emitter_run:run(t.repository,r.emitter.workflow,emitter,merge),artifact:{id:500+i,name:`wss-acceptance-${t.id}-${p.plan_id}-a1`,expired:false,workflow_run:{id:emitter,head_sha:merge}},
       preflights:[{run:run(t.repository,r.preflights[0].workflow,300+i,sha(2)),candidate}]};
     e.targets[t.id].receipt_sha256=bytesDigest(e.targets[t.id].receipt_bytes);
@@ -36,10 +37,12 @@ function fixture() {
   return {p,e};
 }
 function sync(e) {for(const t of Object.values(e.targets)){t.receipt_bytes=Buffer.from(JSON.stringify(t.receipt));t.receipt_sha256=bytesDigest(t.receipt_bytes);}}
-test('all seven exact merged consumers generate an explicit beta acceptance record',()=>{
+test('all nine exact merged consumers generate an explicit beta acceptance record',()=>{
   const {p,e}=fixture(),r=allClear(p,e);
-  assert.equal(r.kind,'beta');assert.equal(Object.keys(r.targets).length,7);assert.equal(r.excluded.every(x=>x.dispatch===false),true);
+  assert.equal(r.kind,'beta');assert.equal(Object.keys(r.targets).length,9);assert.deepEqual(r.excluded,[]);
   assert.ok(r.targets['unity-gui'].coverage.includes('dotnet-harness-not-unity-editor'));
+  assert.ok(r.targets['matlab-wrapper'].coverage.includes('packaged-macos-ble-load'));
+  assert.equal(r.targets['matlab-cli'].parents['matlab-wrapper'],r.targets['matlab-wrapper'].merge.sha);
 });
 test('successful synthetic PR run cannot substitute for actual postmerge normal CI',()=>{
   const {p,e}=fixture();const n=e.targets['csharp-cli'];n.normal_run.event='pull_request';n.normal_run.head_sha=n.receipt.merge.head_sha;
@@ -47,7 +50,10 @@ test('successful synthetic PR run cannot substitute for actual postmerge normal 
 });
 const cases={
   'missing consumer':({e})=>delete e.targets['python-ros'],
-  'MATLAB silently added':({e})=>e.targets['matlab-cli']=e.targets['csharp-cli'],
+  'missing MATLAB wrapper':({e})=>delete e.targets['matlab-wrapper'],
+  'missing MATLAB CLI':({e})=>delete e.targets['matlab-cli'],
+  'MATLAB forged receipt':({e})=>e.targets['matlab-cli']=e.targets['csharp-cli'],
+  'skipped MATLAB macOS':({e})=>e.targets['matlab-wrapper'].normal_jobs.find(j=>j.name==='Integration compatibility (macOS)').conclusion='skipped',
   'changed policy digest':({p})=>p.manifest.targets.pop(),
   'forged plan id':({p})=>p.plan_id='0'.repeat(64),
   'main channel':({p})=>p.channel='main',
@@ -55,6 +61,9 @@ const cases={
   'Core manual producer':({e})=>e.producer.run.event='workflow_dispatch',
   'Core branch moved':({e})=>e.producer.current_head=sha(99),
   'Core skipped macOS':({e})=>e.producer.jobs.find(j=>j.name==='BLE consumer (macOS arm64)').conclusion='skipped',
+  'Core skipped logical Mac check':({e})=>e.producer.jobs.find(j=>j.name==='BLE Consumer for Mac').conclusion='skipped',
+  'Core missing logical Mac check':({e})=>e.producer.jobs=e.producer.jobs.filter(j=>j.name!=='BLE Consumer for Mac'),
+  'Core duplicate logical Mac check':({e})=>e.producer.jobs.push(e.producer.jobs.find(j=>j.name==='BLE Consumer for Mac')),
   'Core duplicate job':({e})=>e.producer.jobs.push(e.producer.jobs[0]),
   'expired ZIP':({e})=>e.producer.artifact.expired=true,
   'different ZIP bytes':({e})=>e.producer.archive_sha256='b'.repeat(64),
@@ -81,6 +90,7 @@ const cases={
   'Unity claims untested Editor':({e})=>e.targets['unity-gui'].receipt.coverage=['UnityEditor'],
   'missing preflight':({e})=>e.targets['csharp-wrapper'].receipt.preflights=[],
   'unrelated preflight candidate':({e})=>e.targets['csharp-wrapper'].preflights[0].candidate={...e.targets['csharp-wrapper'].receipt.candidate,commit:sha(99)},
+  'green preflight for a different frozen source':({e})=>{e.targets['csharp-wrapper'].receipt.preflights[0].source_sha=sha(99);e.targets['csharp-wrapper'].preflights[0].run.head_sha=sha(99);},
   'emitter PR-head manual dispatch':({e})=>e.targets['csharp-wrapper'].emitter_run.head_sha=sha(30),
   'failed receipt emitter':({e})=>e.targets['csharp-wrapper'].emitter_run.conclusion='failure',
   'untrusted workflow_run emitter':({e})=>e.targets['csharp-wrapper'].emitter_run.event='workflow_run',
@@ -128,13 +138,32 @@ function collectorFixture(f) {
     object:(repo,ref,path)=>{const t=target(repo);if(path in t.trusted)return{sha:t.trusted[path]};const policy=p.manifest.targets.find(x=>x.repository===repo),parent=Object.keys(policy.parents).find(x=>policy.parents[x]===path);return{sha:t.parent_gitlinks[parent],type:'commit',mode:'160000'};}
   };
 }
-test('collector resolves full GitHub-shaped evidence for seven actual postmerge commits',()=>{
+test('collector resolves full GitHub-shaped evidence for nine actual postmerge commits',()=>{
   const f=fixture();const actual=collect(collectorFixture(f),f.p);
-  assert.equal(Object.keys(actual.record.targets).length,7);assert.equal(actual.files[f.p.candidate.archive].toString(),'zip');
+  assert.equal(Object.keys(actual.record.targets).length,9);assert.equal(actual.files[f.p.candidate.archive].toString(),'zip');
 });
 test('collector rejects PR-head evidence even when caller supplies a matching final merge tree',()=>{
   const f=fixture(),t=f.e.targets['csharp-cli'];t.normal_run.event='pull_request';t.normal_run.head_sha=t.receipt.merge.head_sha;
   assert.throws(()=>collect(collectorFixture(f),f.p),/post-merge/);
+});
+test('collector rejects a second normal push/manual run across event types',()=>{
+  const f=fixture(),g=collectorFixture(f),pages=g.pages;
+  g.pages=path=>{
+    const runs=pages(path);
+    if(path.includes('/wss-compatibility.yml/runs?branch=dev&head_sha='))
+      return [...runs,{...runs[0],id:999,event:'push'}];
+    return runs;
+  };
+  assert.throws(()=>collect(g,f.p),/Ambiguous committed-state CI/);
+});
+test('collector rejects a receipt selecting a different exact-head normal run',()=>{
+  const f=fixture(),g=collectorFixture(f),pages=g.pages;
+  g.pages=path=>{
+    const runs=pages(path);
+    return path.includes('/wss-compatibility.yml/runs?branch=dev&head_sha=')?
+      runs.map(r=>({...r,id:999})):runs;
+  };
+  assert.throws(()=>collect(g,f.p),/different from receipt/);
 });
 for(const corrupt of [false,true]) test(`existing release ${corrupt?'rejects altered ZIP without a mutation':'replays as verified no-op without creating another release'}`,()=>{
   const {p,e}=fixture(),tag=`dev-beta-${p.candidate.run_id}-${p.plan_id.slice(0,12)}`,record=allClear(p,e);
@@ -150,4 +179,38 @@ for(const corrupt of [false,true]) test(`existing release ${corrupt?'rejects alt
   if(corrupt)assert.throws(()=>publish(g,p,{record,files},'.'),/bytes mismatch/);
   else assert.deepEqual(publish(g,p,{record,files},'.'),{tag,state:'verified-existing'});
   assert.equal(mutations,0);
+});
+
+test('verification-only freeze accepts an explicitly unconfigured tag guard but cannot publish',()=>{
+  const {p}=fixture();p.manifest.legacy_tag_guard={ruleset_id:null,policy_sha256:null};
+  const g={head:()=>sha(1),object:()=>({sha:sha(2)}),get:path=>{
+    assert.ok(!path.includes('/rulesets/'));
+    return {path:'.github/workflows/release-receipt.yml',state:'active'};
+  },command:()=>assert.fail('Verification must never publish')};
+  const accepted=freeze(g,p.manifest,p.candidate,{verificationOnly:true});
+  assert.equal(Object.keys(accepted.target_snapshots).length,9);
+  assert.throws(()=>publish(g,accepted,{record:{},files:{}},'.'),/unconfigured/);
+  assert.throws(()=>freeze(g,p.manifest,p.candidate),/unconfigured/);
+});
+
+test('verification mode does not ignore malformed tag protection configuration',()=>{
+  const {p}=fixture();p.manifest.legacy_tag_guard={ruleset_id:null,policy_sha256:'a'.repeat(64)};
+  assert.throws(()=>freeze({},p.manifest,p.candidate,{verificationOnly:true}),/unconfigured/);
+});
+
+test('publisher recollects cross-repository proof with its separate reader',()=>{
+  const f=fixture(),reader=collectorFixture(f),get=reader.get;
+  reader.get=path=>path.includes('/rulesets/')?tagRule():get(path);
+  const accepted=collect(reader,f.p),writes=[];
+  const writer={pages:path=>{
+    assert.ok(path.startsWith(`repos/${CORE}/`),'Core publication token must not read downstream evidence');
+    return [];
+  },command:args=>{
+    assert.deepEqual(args.slice(0,2),['release','create']);assert.ok(args.includes(CORE));writes.push(args);
+  }};
+  const directory=mkdtempSync(join(tmpdir(),'wss-publication-boundary-'));
+  try {
+    assert.equal(publish(writer,f.p,accepted,directory,reader).state,'created');
+    assert.equal(writes.length,1);
+  } finally {rmSync(directory,{recursive:true,force:true});}
 });

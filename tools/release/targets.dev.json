@@ -182,22 +182,65 @@
         "packaged-macos-ble-load",
         "ros-native-humble"
       ]
-    }
-  ],
-  "excluded": [
+    },
     {
       "id": "matlab-wrapper",
       "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
-      "dispatch": false,
-      "reason": "Prepared but excluded by user instruction; configuration and activation require a later reviewed policy."
+      "branch": "dev",
+      "kind": "payload",
+      "workflow": ".github/workflows/wss-compatibility.yml",
+      "jobs": [
+        "Integration behavioral tests",
+        "Integration compatibility (Windows)",
+        "Integration compatibility (Ubuntu)",
+        "Integration compatibility (macOS)"
+      ],
+      "parents": {},
+      "trusted_paths": [
+        ".github/workflows/release-receipt.yml",
+        ".github/scripts",
+        ".github/workflows/wss-compatibility.yml",
+        ".github/actions",
+        ".github/matlab-ci.json",
+        "ci",
+        "conformance"
+      ],
+      "coverage": [
+        "canonical-conformance",
+        "packaged-macos-ble-load"
+      ]
     },
     {
       "id": "matlab-cli",
       "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
-      "dispatch": false,
-      "reason": "Prepared but excluded by user instruction; configuration and activation require a later reviewed policy."
+      "branch": "dev",
+      "kind": "gitlink",
+      "workflow": ".github/workflows/cli-ci.yml",
+      "jobs": [
+        "CLI general conformance",
+        "CLI platform compatibility (Windows)",
+        "CLI platform compatibility (Ubuntu)",
+        "CLI platform compatibility (macOS)"
+      ],
+      "parents": {
+        "matlab-wrapper": "external/wss-matlab-wrapper"
+      },
+      "trusted_paths": [
+        ".github/workflows/release-receipt.yml",
+        ".github/scripts",
+        ".github/workflows/cli-ci.yml",
+        ".github/actions",
+        ".github/matlab-ci.json",
+        "ci",
+        "conformance"
+      ],
+      "coverage": [
+        "canonical-conformance",
+        "packaged-macos-ble-load"
+      ]
     }
   ],
+  "excluded": [],
   "legacy_tag_guard": {
     "ruleset_id": null,
     "policy_sha256": null

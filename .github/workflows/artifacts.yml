@@ -21,7 +21,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node --test tools/release/*.test.mjs
+      - name: Run release, BLE summary and pre-write projection contracts
+        run: node --test tools/release/*.test.mjs
       - run: node --check tools/ci/dev-propagation.mjs
 
   macos-native:
@@ -304,10 +305,23 @@ jobs:
           - arch: x86_64
             os: macos-15-intel
     runs-on: ${{ matrix.os }}
+    env:
+      WSS_EXPECTED_MAC_ARCH: ${{ matrix.arch }}
     steps:
       - name: Check out source
         id: checkout
         uses: actions/checkout@v4
+      - name: Require the declared macOS runner architecture
+        shell: bash
+        run: |
+          case "$WSS_EXPECTED_MAC_ARCH" in
+            arm64) expected_runner=ARM64 ;;
+            x86_64) expected_runner=X64 ;;
+            *) echo "Unknown macOS architecture: $WSS_EXPECTED_MAC_ARCH"; exit 1 ;;
+          esac
+          echo "Expected $WSS_EXPECTED_MAC_ARCH; runner $RUNNER_ARCH; host $(uname -m)"
+          test "$RUNNER_ARCH" = "$expected_runner"
+          test "$(uname -m)" = "$WSS_EXPECTED_MAC_ARCH"
       - name: Install .NET SDKs
         id: setup_dotnet
         uses: actions/setup-dotnet@v4
@@ -356,6 +370,34 @@ jobs:
           REPORT_PURPOSE: Mandatory packaged managed/native ABI loading and simulated lifecycle contracts. Bluetooth authorization, adapter, physical peripheral connection and writes NOT EXECUTED.
           REPORT_STEPS: ${{ toJSON(steps) }}
         run: python3 tools/ci/summarize.py
+
+  ble-consumer-summary:
+    name: BLE Consumer for ${{ matrix.platform }}
+    needs: [ble-linux-tests, ble-windows-tests, ble-macos-tests]
+    if: ${{ always() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [Windows, Linux, Mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require unique successful platform jobs in this run attempt
+        uses: actions/github-script@v7
+        env:
+          BLE_SUMMARY_PLATFORM: ${{ matrix.platform }}
+        with:
+          script: |
+            const {pathToFileURL} = await import('node:url');
+            const {summarizeBle} = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/tools/ci/ble-summary.mjs`).href);
+            await summarizeBle({github, context, core,
+              platform: process.env.BLE_SUMMARY_PLATFORM,
+              attempt: Number(process.env.GITHUB_RUN_ATTEMPT)});
 
   serial-tests:
     name: Serial consumer (${{ matrix.platform }})
@@ -461,7 +503,7 @@ jobs:
 
   propagate-universal:
     name: Start routine downstream validation
-    needs: [core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, package-universal, serial-tests, core-consumers]
+    needs: [core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, ble-consumer-summary, package-universal, serial-tests, core-consumers]
     if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/dev' && github.repository == 'cwru-non-academic/WSSCore' }}
     runs-on: ubuntu-latest
     permissions:
@@ -508,11 +550,12 @@ jobs:
           name: wss-dev-propagation-plan
           path: ${{ runner.temp }}/dev-propagation-plan/plan.json
           if-no-files-found: error
-      - name: Freeze the reviewed all-target dev release plan
-        if: vars.WSS_DEV_RELEASE_ENABLED == 'true'
+      - name: Freeze the reviewed all-target dev acceptance plan
+        if: vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
           PRODUCER_SHA: ${{ github.sha }}
           PRODUCER_RUN: ${{ github.run_id }}
           ARTIFACT_ID: ${{ needs.package-universal.outputs.artifact-id }}
@@ -523,10 +566,40 @@ jobs:
           node tools/release/cli.mjs freeze "$env:RUNNER_TEMP/candidate.json" tools/release/targets.dev.json "$env:RUNNER_TEMP/release-plan"
           if ($LASTEXITCODE -ne 0) { throw 'Required receiver receipt tooling is unavailable; no all-clear plan or handoff.' }
       - uses: actions/upload-artifact@v4
-        if: vars.WSS_DEV_RELEASE_ENABLED == 'true'
+        if: vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true'
         with:
           name: wss-propagation-plan
           path: ${{ runner.temp }}/release-plan/plan.json
+          if-no-files-found: error
+      - name: Create read-only projection evidence token
+        id: projection-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: |
+            WSSCore
+            CSharp_WSS_Integration_Lib
+            Unity_WSS_Integration_Lib
+            Python_WSS_Integration_Lib
+            Matlab_WSS_Integration_Lib
+          permission-contents: read
+      - name: Classify all frozen integration projections before downstream writes
+        id: projection-classification
+        env:
+          GH_TOKEN: ${{ steps.projection-token.outputs.token }}
+        run: >-
+          node tools/ci/classify-projections.mjs
+          '${{ runner.temp }}/dev-propagation-plan/plan.json'
+          '${{ runner.temp }}/release-input/WSS-Universal-ci.zip'
+          '${{ runner.temp }}/projection-classification/report.json'
+      - name: Retain projection classification including blocked targets
+        if: always() && steps.projection-classification.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wss-projection-classification
+          path: ${{ runner.temp }}/projection-classification/report.json
           if-no-files-found: error
       - name: Create Integration dispatch-only App token
         id: integration-token

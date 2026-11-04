@@ -1,9 +1,10 @@
 import {execFileSync} from 'node:child_process';
 import {mkdtempSync,readdirSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
-import {join,basename} from 'node:path';
+import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {allClear,bytesDigest,candidate,canonical,CORE,digest,manifest,plan,producer,requireThat} from './verify.mjs';
 import {checkTagGuard} from './policy.mjs';
+import {findNormalRuns} from './normal-ci.mjs';
 
 // No shell expansion, caller-provided commands, implicit pagination or token output.
 export class GitHub {
@@ -49,9 +50,11 @@ export class GitHub {
   }
 }
 
-export function freeze(g,m,c) {
+export function freeze(g,m,c,{verificationOnly=false}={}) {
   manifest(m); candidate(c);
-  checkTagGuard(g,m);
+  const guard=m.legacy_tag_guard;
+  const unconfigured=guard?.ruleset_id===null && guard?.policy_sha256===null;
+  if(!verificationOnly || !unconfigured) checkTagGuard(g,m);
   const target_snapshots={};
   for(const t of m.targets) {
     const head_sha=g.head(t.repository);
@@ -103,8 +106,9 @@ export function collect(g,p) {
     requireThat(r.emitter?.run_id===String(emitter.id),'Receipt emitter identifier mismatch');
     const pr=g.get(`repos/${t.repository}/pulls/${r.merge?.pr_number}`);
     const normal=g.run(t.repository,r.normal_ci?.run_id);
-    const normals=g.pages(`repos/${t.repository}/actions/workflows/${basename(t.workflow)}/runs?head_sha=${normal.head_sha}&event=${normal.event}`,'workflow_runs').sort((a,b)=>b.id-a.id);
-    requireThat(normals.length===1,'Normal CI run missing or ambiguous');
+    const normals=findNormalRuns(g,t,r.merge?.sha,pr.merged_at);
+    requireThat(normals.length===1 && String(normals[0].id)===String(normal.id),
+      'Normal post-merge CI run missing, ambiguous or different from receipt');
     const parent_gitlinks=Object.fromEntries(Object.entries(t.parents).map(([parent,path])=>{
       const link=g.object(t.repository,r.merge.sha,path);
       requireThat(link.type==='commit' && link.mode==='160000','Expected a Git submodule pin');
@@ -120,8 +124,8 @@ export function collect(g,p) {
   return {record:allClear(p,evidence),files:zip.files};
 }
 
-export function publish(g,p,accepted,directory) {
-  const legacy_tag_guard=checkTagGuard(g,p.manifest);
+export function publish(g,p,accepted,directory,reader=g) {
+  const legacy_tag_guard=checkTagGuard(reader,p.manifest);
   const tag=`dev-beta-${p.candidate.run_id}-${p.plan_id.slice(0,12)}`;
   const record={...accepted.record,tag,legacy_tag_guard};
   const expected={...accepted.files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical(record)+'\n')};
@@ -141,11 +145,11 @@ export function publish(g,p,accepted,directory) {
     return {tag,state:'verified-existing'};
   }
   // Re-collect live proof immediately before the only publication mutation.
-  const fresh=collect(g,p);
+  const fresh=collect(reader,p);
   requireThat(canonical(fresh.record)===canonical(accepted.record),'Acceptance evidence changed during publication');
-  checkTagGuard(g,p.manifest);
+  checkTagGuard(reader,p.manifest);
   const paths=Object.entries(expected).map(([name,bytes])=>{const path=join(directory,name);writeFileSync(path,bytes);return path;});
   g.command(['release','create',tag,'--repo',CORE,'--target',p.candidate.commit,'--prerelease','--title',tag,
-    '--notes',`Dev beta accepted by all seven frozen targets. Candidate ${p.candidate.commit}; plan ${p.plan_id}. See acceptance.json for proof, exclusions and coverage limits.`,...paths]);
+    '--notes',`Dev beta accepted by all nine frozen targets. Candidate ${p.candidate.commit}; plan ${p.plan_id}. See acceptance.json for proof, exclusions and coverage limits.`,...paths]);
   return {tag,state:'created'};
 }

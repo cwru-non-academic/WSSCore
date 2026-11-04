@@ -129,16 +129,25 @@ on `windows-2022` and validates one universal ZIP without functional suites.
 `BLE consumer` jobs combine source functional suites and packaged consumers on
 Linux, Windows and both macOS architectures (`windows-2022` for isolated
 shim/production-native testing).
+The logical checks `BLE Consumer for Windows`, `BLE Consumer for Linux`, and
+`BLE Consumer for Mac` require the corresponding legacy jobs to succeed in the
+current run attempt. The Mac check reports arm64 and x86_64 separately and fails
+on missing, duplicate, skipped, cancelled or unsuccessful results. Both Mac legs
+assert their runner and native/.NET process architectures. Existing job names and
+per-architecture logs/results remain available for pinned downstream validators;
+the producer handoff and acceptance verifier additionally require all three
+logical checks. These checks do not validate physical peripherals or host permissions.
 All consumers use the same verified, extracted ZIP. Serial smoke checks do not
 exercise port I/O; classified Linux controller skips do not suppress dependencies.
 See [CI Jobs and Test Responsibilities](#tests-and-ci-reference)
 for the authoritative catalog and placement policy. Named logs, job summaries and
 downloadable NUnit TRX artifacts expose actual execution and failures.
 
-The current dev workflow removes the legacy `v*` publisher. The separate dev beta
-coordinator is gated by `WSS_DEV_RELEASE_ENABLED` and the reviewed historical-tag
-policy. It verifies all required acceptance evidence before publishing the original
-ZIP bytes, without rebuilding or repackaging. Main/stable publication is disabled
+The current dev workflow removes the legacy `v*` publisher. The separate receipt
+coordinator is gated by `WSS_DEV_ACCEPTANCE_ENABLED`. Optional publication additionally
+requires `WSS_DEV_RELEASE_ENABLED` and the reviewed historical-tag policy. It verifies
+all nine required targets before publishing the original ZIP bytes, without rebuilding
+or repackaging. Main/stable publication is disabled
 in this dev policy. See the expandable release reference below for its current
 contract and limitations. Hardware diagnostics remain opt-in.
 
@@ -1054,7 +1063,8 @@ older run. No operational pin is changed by this documentation consolidation.
 
 ### Frozen plan
 
-The successful canonical `artifacts.yml` **dev push** produces a separate
+When `WSS_DEV_ACCEPTANCE_ENABLED=true`, the successful canonical `artifacts.yml`
+**dev push** produces a separate
 `wss-propagation-plan` Actions artifact. Do not add files to
 `universal-release-assets`: its ZIP/checksum two-file contract is unchanged.
 
@@ -1067,9 +1077,10 @@ dev head and Git object IDs for its `trusted_paths`. Missing/unregistered receiv
 tooling blocks plan creation; it is not an implicit exclusion.
 
 The required target IDs are `csharp-wrapper`, `csharp-cli`, `unity-wrapper`,
-`unity-gui`, `python-wrapper`, `python-cli`, `python-ros`. Required targets are
-immutable for that plan. `matlab-wrapper` and `matlab-cli` are explicitly excluded
-with `dispatch: false`; changing this needs a later reviewed policy/version.
+`unity-gui`, `python-wrapper`, `python-cli`, `python-ros`, `matlab-wrapper` and
+`matlab-cli`. All nine are mandatory and immutable for that plan; there are no
+implicit exclusions. MATLAB retains its native conformance and packaged macOS
+loading requirements.
 
 ### Acceptance receipts
 
@@ -1113,6 +1124,8 @@ candidate checksum, paired preflight, actual merge, normal CI, source-scope and
 payload/gitlink validators. JSON claims alone are not authority. Core independently
 checks GitHub PR/run/artifact identity, exact current branch state, required jobs,
 parent gitlinks, and the frozen receipt tooling Git IDs at the actual merge.
+Each preflight source SHA must equal that repository's frozen target snapshot;
+a successful run for another source cannot satisfy acceptance.
 Each preflight listed in the receipt must additionally retain the normalized
 `wss-candidate-provenance` artifact with exactly one `candidate.json` file containing
 the six-field candidate tuple. C# already has this contract. Python/ROS and Unity
@@ -1135,20 +1148,35 @@ closed on no-op receipts until equivalence verification is implemented/tested.
 
 ### Reconciliation and publication
 
-The current dev source contains seven required targets and excludes MATLAB in
-`tools/release/targets.dev.json`. Trusted main has the separately reviewed
-nine-target verifier; its presence does not update this branch's policy or start
-propagation. The executable manifest and verifier in the selected revision define
-the exact target/job set. Never interpret a missing required target as an exclusion.
+The nine required targets are declared in `tools/release/targets.dev.json`.
+The executable manifest and verifier in the selected revision define the exact
+target/job set. Never interpret a missing required target as an exclusion.
 
 `dev-release.yml` and `tools/release/cli.mjs` reconcile a canonical dev producer
-and its frozen plan. The existing workflow gates plan creation, reconciliation
-and optional publication with `WSS_DEV_RELEASE_ENABLED`. An uploaded intent
+and its frozen plan. `WSS_DEV_ACCEPTANCE_ENABLED=true` enables plan creation and
+receipt reconciliation independently of publication. This job has read-only contents
+permission; its scoped Actions token requests only registered normal CI and receipt
+workflows. Publication is a separate job that additionally requires
+`WSS_DEV_RELEASE_ENABLED=true`, successful acceptance and historical-tag protection.
+Neither setting is changed by a source merge. Register matching trusted main tooling
+before producing the candidate. An uploaded intent
 precedes each dispatch. Reconciliation requests only normal committed-state CI and
 receipt workflows; it does not create dependency PRs, merge, rollback or rewrite
 branches. Pending/successful correlated runs are reused. Failed, ambiguous, expired
 or uncertain proof stops for inspection; an existing intent without a confirmed
 run blocks automatic retries. HTTP dispatch success is not acceptance.
+
+The staged coordinator alone requests integration committed-state CI. Acceptance
+reconciliation requests application CI and receipt workflows; it never requests a
+second integration run. Both use the same discovery of exact-head dev push or
+manual runs created after the actual merge. Failed, ambiguous, foreign or uncertain
+evidence blocks a request instead of being hidden by another successful run.
+
+Cross-repository receipt, preflight and journal reads use a short-lived read-only
+token from the existing WSS App. Its installation must already allow contents,
+Actions and pull-request reads for Core and all nine targets. Source changes do not
+grant that access. The optional publisher keeps Core's contents-write token
+separate and recollects evidence through the read-only token.
 
 Receipt failure, missing/expired evidence, stale source, wrong parent gitlinks or
 missing required jobs block publication. Partial human merges remain in place;
@@ -1166,8 +1194,10 @@ requires a live, reviewed repository ruleset: `target: tag`, `enforcement: activ
 source exactly this repository, include exactly `refs/tags/v*`, no exclusions or
 bypass actors, and exactly creation/update/deletion prohibitions. The reviewed
 `legacy_tag_guard` ID and policy SHA-256 in the manifest must match the full live
-policy both when freezing a plan and publishing. Null configuration, changed
-policy, failed API reads or hidden bypass metadata block the operation.
+policy both when freezing a publication-ready plan and publishing. Verification-only
+freezes may use an explicitly null ID and digest; this never authorizes publication.
+Partially configured or changed policy, failed API reads and hidden bypass metadata
+still block verification. Null configuration always blocks publication.
 
 `node tools/release/cli.mjs inspect-tag-guard <ruleset-id>` is a read-only inspection
 entry point. No setting, permission, rule, credential or release is changed by
@@ -1184,6 +1214,55 @@ preflight-only run, skipped check or fabricated merge as dependency acceptance.
 source-equivalence primitives; they do not implement a deployed v2 receipt route,
 GitHub ancestry proof or end-to-end no-op acceptance. Existing installed provenance
 must remain unchanged.
+
+Before the first integration Actions-write token, the producer's read-only
+projection classifier hashes the actual checksum-verified ZIP and compares its
+reviewed projections with all four frozen integration heads. C#, Python and
+MATLAB retain the universal relative layout; Unity uses its 20-file projection,
+flat Windows backend names, preserved runtime paths and macOS subdirectory.
+Committed projection hashes/importer metadata and provenance are checked against
+immutable Git blobs; no receiver code is executed. Frozen main/dev heads are
+rechecked after all reads. `wss-projection-classification/report.json` records
+each result as `payload-change`, `equivalent-but-unsupported`, or `blocked`.
+Only four `payload-change` results allow the existing reviewed promotion route.
+One unsupported equality or missing/invalid/drifting target blocks the whole
+handoff before writes. The report is diagnostic, never acceptance or a new
+provenance record; all existing receiver/preflight/merge gates still apply.
+Individual file hashes are compared here; aggregate projection digests, complete
+approval validation, Unity importer policy, ABI/load checks and source contracts
+remain the responsibility of the existing receiver validators. A `payload-change`
+classification permits that validation route and does not assert it has passed.
+The C# row also applies the receiver's installed-candidate ordering guard: the
+same producer run must retain its exact six-field identity, a same-source new run
+must move forward, and a changed Core source must descend from the installed
+source. Missing, contradictory or divergent ancestry blocks the whole handoff.
+The C# receiver retains its own final checks; this diagnostic cannot authorize a
+stale candidate or replace an installed provenance record.
+
+The bounded recovery design requires a separately versioned equivalence receipt;
+it is not enabled by the current v1 policy. Its proposed evidence must bind:
+
+- The new six-field candidate identity and frozen plan, downloaded ZIP checksum,
+  exact allowed inventory and reviewed projection; projected bytes must match both
+  the installed commit and a prior actual human-reviewed bot dependency merge.
+- That prior merge's PR, candidate and immutable commit, plus verified ancestry to
+  the current receiver head. Preserved provenance must match the anchor unchanged.
+- Complete production/test source equivalence outside narrowly reviewed metadata
+  changes. Changed tooling must independently match the current frozen trust
+  snapshot; ignoring a tooling path is not evidence that its replacement is trusted.
+- Fresh preflights for the new candidate and current frozen sources, successful
+  normal committed-state CI, all platform/architecture proofs, and each actual
+  application parent gitlink. Equal payload bytes cannot substitute one wrapper
+  commit for another parent SHA.
+- Durable correlated intents, the same four-integration barrier, and immediate
+  pre-write checks of current heads/tooling/proofs. Missing, expired, ambiguous,
+  failed or uncertain evidence must stop rather than replay a dispatch.
+
+This requires coordinated Core and receiver/fanout/receipt changes before use;
+the existing primitives alone are insufficient. A byte-identical candidate must
+currently stop for inspected recovery. Do not alter build bytes, overwrite old
+provenance, create an empty dependency PR or reuse a stale frozen plan to advance
+the barrier. This proposed recovery does not authorize release publication.
 
 <details>
 <summary>Historical identifiers retained pending documentation review</summary>
