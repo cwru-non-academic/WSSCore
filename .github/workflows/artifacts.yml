@@ -5,7 +5,6 @@ on:
     branches: [dev, main, net2_BLE]
   push:
     branches: [dev]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -17,10 +16,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node --test tools/release/verify.test.mjs
+      - name: Run release, BLE summary and pre-write projection contracts
+        run: node --test tools/release/*.test.mjs
+      - run: node --check tools/ci/dev-propagation.mjs
 
   macos-native:
     name: Build macOS universal BLE bridge
@@ -302,10 +305,23 @@ jobs:
           - arch: x86_64
             os: macos-15-intel
     runs-on: ${{ matrix.os }}
+    env:
+      WSS_EXPECTED_MAC_ARCH: ${{ matrix.arch }}
     steps:
       - name: Check out source
         id: checkout
         uses: actions/checkout@v4
+      - name: Require the declared macOS runner architecture
+        shell: bash
+        run: |
+          case "$WSS_EXPECTED_MAC_ARCH" in
+            arm64) expected_runner=ARM64 ;;
+            x86_64) expected_runner=X64 ;;
+            *) echo "Unknown macOS architecture: $WSS_EXPECTED_MAC_ARCH"; exit 1 ;;
+          esac
+          echo "Expected $WSS_EXPECTED_MAC_ARCH; runner $RUNNER_ARCH; host $(uname -m)"
+          test "$RUNNER_ARCH" = "$expected_runner"
+          test "$(uname -m)" = "$WSS_EXPECTED_MAC_ARCH"
       - name: Install .NET SDKs
         id: setup_dotnet
         uses: actions/setup-dotnet@v4
@@ -354,6 +370,34 @@ jobs:
           REPORT_PURPOSE: Mandatory packaged managed/native ABI loading and simulated lifecycle contracts. Bluetooth authorization, adapter, physical peripheral connection and writes NOT EXECUTED.
           REPORT_STEPS: ${{ toJSON(steps) }}
         run: python3 tools/ci/summarize.py
+
+  ble-consumer-summary:
+    name: BLE Consumer for ${{ matrix.platform }}
+    needs: [ble-linux-tests, ble-windows-tests, ble-macos-tests]
+    if: ${{ always() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [Windows, Linux, Mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require unique successful platform jobs in this run attempt
+        uses: actions/github-script@v7
+        env:
+          BLE_SUMMARY_PLATFORM: ${{ matrix.platform }}
+        with:
+          script: |
+            const {pathToFileURL} = await import('node:url');
+            const {summarizeBle} = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/tools/ci/ble-summary.mjs`).href);
+            await summarizeBle({github, context, core,
+              platform: process.env.BLE_SUMMARY_PLATFORM,
+              attempt: Number(process.env.GITHUB_RUN_ATTEMPT)});
 
   serial-tests:
     name: Serial consumer (${{ matrix.platform }})
@@ -459,9 +503,12 @@ jobs:
 
   propagate-universal:
     name: Start routine downstream validation
-    needs: [core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, package-universal, serial-tests, core-consumers]
+    needs: [core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, ble-consumer-summary, package-universal, serial-tests, core-consumers]
     if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/dev' && github.repository == 'cwru-non-academic/WSSCore' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -484,6 +531,76 @@ jobs:
           ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-input" -Destination "$env:RUNNER_TEMP/handoff-verification"
           $hash = (Get-FileHash "$env:RUNNER_TEMP/release-input/WSS-Universal-ci.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           "sha256=$hash" >> $env:GITHUB_OUTPUT
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Freeze integration-first dev propagation and require deployed receiver hooks
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.package-universal.outputs.artifact-id }}
+          SHA256: ${{ steps.candidate.outputs.sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @{ repository='cwru-non-academic/WSSCore'; commit=$env:GITHUB_SHA; run_id=$env:GITHUB_RUN_ID; artifact_id=$env:ARTIFACT_ID; archive='WSS-Universal-ci.zip'; sha256=$env:SHA256 } | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP/dev-candidate.json"
+          node tools/ci/dev-propagation.mjs freeze "$env:RUNNER_TEMP/dev-candidate.json" "$env:RUNNER_TEMP/dev-propagation-plan"
+          if ($LASTEXITCODE -ne 0) { throw 'Deploy staged receiver hooks, Core main workflows and reviewed MATLAB activation before the canonical dev handoff.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wss-dev-propagation-plan
+          path: ${{ runner.temp }}/dev-propagation-plan/plan.json
+          if-no-files-found: error
+      - name: Freeze the reviewed all-target dev acceptance plan
+        if: vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
+          PRODUCER_SHA: ${{ github.sha }}
+          PRODUCER_RUN: ${{ github.run_id }}
+          ARTIFACT_ID: ${{ needs.package-universal.outputs.artifact-id }}
+          SHA256: ${{ steps.candidate.outputs.sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @{ repository='cwru-non-academic/WSSCore'; commit=$env:PRODUCER_SHA; run_id=$env:PRODUCER_RUN; artifact_id=$env:ARTIFACT_ID; archive='WSS-Universal-ci.zip'; sha256=$env:SHA256 } | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP/candidate.json"
+          node tools/release/cli.mjs freeze "$env:RUNNER_TEMP/candidate.json" tools/release/targets.dev.json "$env:RUNNER_TEMP/release-plan"
+          if ($LASTEXITCODE -ne 0) { throw 'Required receiver receipt tooling is unavailable; no all-clear plan or handoff.' }
+      - uses: actions/upload-artifact@v4
+        if: vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true'
+        with:
+          name: wss-propagation-plan
+          path: ${{ runner.temp }}/release-plan/plan.json
+          if-no-files-found: error
+      - name: Create read-only projection evidence token
+        id: projection-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: |
+            WSSCore
+            CSharp_WSS_Integration_Lib
+            Unity_WSS_Integration_Lib
+            Python_WSS_Integration_Lib
+            Matlab_WSS_Integration_Lib
+          permission-contents: read
+      - name: Classify all frozen integration projections before downstream writes
+        id: projection-classification
+        env:
+          GH_TOKEN: ${{ steps.projection-token.outputs.token }}
+        run: >-
+          node tools/ci/classify-projections.mjs
+          '${{ runner.temp }}/dev-propagation-plan/plan.json'
+          '${{ runner.temp }}/release-input/WSS-Universal-ci.zip'
+          '${{ runner.temp }}/projection-classification/report.json'
+      - name: Retain projection classification including blocked targets
+        if: always() && steps.projection-classification.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wss-projection-classification
+          path: ${{ runner.temp }}/projection-classification/report.json
+          if-no-files-found: error
       - name: Create Integration dispatch-only App token
         id: integration-token
         uses: actions/create-github-app-token@v2
@@ -511,49 +628,8 @@ jobs:
               correlation_id = "wss-$env:PRODUCER_RUN-$env:ARTIFACT_ID"
             }
           } | ConvertTo-Json -Depth 4 -Compress
+          $head = gh api repos/cwru-non-academic/WSSCore/branches/dev --jq .commit.sha
+          if ($LASTEXITCODE -ne 0 -or $head.Trim() -cne $env:PRODUCER_SHA) { throw 'Core dev moved before Integration dispatch; no stale candidate handoff.' }
           $body | gh api --method POST repos/cwru-non-academic/CSharp_WSS_Integration_Lib/actions/workflows/promote-wss.yml/dispatches --input -
           if ($LASTEXITCODE -ne 0) { throw 'Routine handoff failed: verify App installation, Integration Actions-write permission, and the deployed dev workflow.' }
           "Automatic candidate: commit $env:PRODUCER_SHA; run $env:PRODUCER_RUN; artifact $env:ARTIFACT_ID; WSS-Universal-ci.zip; SHA-256 $env:SHA256. Integration waits for this producer run to complete successfully." >> $env:GITHUB_STEP_SUMMARY
-
-  publish-universal:
-    name: Publish — Universal ZIP
-    needs: [core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, package-universal, serial-tests, core-consumers]
-    if: ${{ success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    env:
-      TAG: ${{ github.ref_name }}
-    steps:
-      - name: Check out reporting tools
-        id: checkout
-        uses: actions/checkout@v4
-      - name: Download the tested universal release assets
-        id: download_universal_zip
-        uses: actions/download-artifact@v4
-        with:
-          name: universal-release-assets
-          path: ${{ runner.temp }}/release-assets
-      - name: Verify and publish only the gated universal archive and checksum
-        id: verify_and_publish_tested_zip
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/release-assets"
-          test -f "WSS-Universal-${TAG}.zip"
-          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 2
-          sha256sum --check SHA256SUMS.txt
-          prerelease_args=()
-          if [[ "$TAG" == *-* ]]; then prerelease_args+=(--prerelease); fi
-          gh release create "$TAG" "WSS-Universal-${TAG}.zip" SHA256SUMS.txt --verify-tag --generate-notes "${prerelease_args[@]}"
-      - name: Summarize actual execution
-        if: always()
-        shell: pwsh
-        env:
-          REPORT_TITLE: Publish — Universal ZIP
-          REPORT_PURPOSE: Publish only the gated, checksum-verified universal ZIP and checksum from a v-tag push; no rebuild or repackaging.
-          REPORT_STEPS: ${{ toJSON(steps) }}
-        run: python tools/ci/summarize.py

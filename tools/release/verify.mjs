@@ -4,6 +4,7 @@ export const CORE = 'cwru-non-academic/WSSCore';
 export const TARGETS = ['csharp-wrapper','csharp-cli','unity-wrapper','unity-gui','python-wrapper','python-cli','python-ros','matlab-wrapper','matlab-cli'];
 export const CORE_JOBS = ['Build macOS universal BLE bridge','Core conformance','Build and validate artifacts',
   'BLE consumer (Linux)','BLE consumer (Windows)','BLE consumer (macOS arm64)','BLE consumer (macOS x86_64)',
+  'BLE Consumer for Windows','BLE Consumer for Linux','BLE Consumer for Mac',
   ...['Serial','Core'].flatMap(x => ['Linux','Windows','macOS'].map(p => `${x} consumer (${p})`)),
   'Start routine downstream validation'];
 export const canonical = value => JSON.stringify(sort(value));
@@ -105,6 +106,8 @@ export function receipt(p, t, r, e) {
   for (let i=0;i<r.preflights.length;i++) {
     const declared = r.preflights[i], actual = e.preflights[i];
     requireThat(p.manifest.targets.some(x => x.repository === declared.repository) && id(declared.run_id) && sha(declared.source_sha) && declared.workflow === '.github/workflows/wss-preflight.yml', 'Invalid preflight descriptor');
+    const sourceTarget = p.manifest.targets.find(x => x.repository === declared.repository);
+    requireThat(declared.source_sha === p.target_snapshots[sourceTarget.id].head_sha, 'Preflight source differs from frozen target snapshot');
     run(actual.run,declared.repository,declared.workflow,actual.run.run_attempt);
     requireThat(String(actual.run.id) === declared.run_id && actual.run.head_sha === declared.source_sha && actual.run.event === 'workflow_dispatch' && same(actual.candidate,p.candidate), 'Preflight run/candidate mismatch');
   }
