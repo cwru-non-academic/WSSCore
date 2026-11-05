@@ -52,3 +52,14 @@ test('Unity reusable workers must match the registered workflow blob as well as 
   assert.equal(verifyWorkflowPins(data,g).references,1);
   assert.throws(()=>verifyWorkflowPins(data,{...g,object:(_r,ref,path)=>({sha:ref===sha(3)&&path.endsWith('.yml')?sha(9):sha(6)})}),/Pinned integration tooling/);
 });
+test('a reviewed Core native fixture stays distinct from the canonical CI tooling revision',()=>{
+  const owner='cwru-non-academic/CSharp_WSS_Integration_Lib';
+  const fixtureText=`steps:\n  - uses: actions/checkout@v4\n    with:\n      repository: ${core}\n      ref: ${sha(7)}\n      path: .macos-ble-fixture-core\n`;
+  const data={repository:owner,profiles:{wrapper:{role:'wrapper',family:'csharp',wrapper:'wrapper',target:{repository:owner}}},lock:{...lock,repository:owner},files:{'wss-compatibility.yml':fixtureText},roles:{runtime_fixtures:[{target:owner,workflow:'wss-compatibility.yml',checkout_path:'.macos-ble-fixture-core',repository:core,commit:sha(7)}]}};
+  assert.equal(verifyWorkflowPins(data,g).references,1);
+  assert.equal(refreshWorkflowPins(data)['wss-compatibility.yml'],fixtureText);
+  const wrong={...data,files:{'wss-compatibility.yml':fixtureText.replace(sha(7),sha(1))}};
+  assert.throws(()=>verifyWorkflowPins(wrong,g),/Reviewed runtime fixture pin changed/);
+  assert.equal(refreshWorkflowPins(wrong)['wss-compatibility.yml'],fixtureText);
+  assert.throws(()=>verifyWorkflowPins({...data,roles:{runtime_fixtures:[...data.roles.runtime_fixtures,...data.roles.runtime_fixtures]}},g),/Ambiguous executable fixture role/);
+});

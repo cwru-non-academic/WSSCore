@@ -10,6 +10,7 @@ import {sourceBytes} from './sync-tooling.mjs';
 const fullSha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
 const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const git=(root,...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8'}).trim();
+const pinRoles=JSON.parse(readFileSync(new URL('./executable-pin-roles.json',import.meta.url),'utf8'));
 
 export function workflowPins(text,repositories){
   const result=[],known=new Set(repositories);let offset=0;
@@ -20,7 +21,14 @@ export function workflowPins(text,repositories){
       const following=lines[i+1]||'',match=/^(\s*ref:\s*)([^\r\n]+?)(\s*)$/.exec(following.trimEnd());
       requireThat(match,'Registered checkout must place its explicit ref immediately after repository');
       const ref=match[2];
-      if(fullSha(ref))result.push({repository:repo,sha:ref,kind:'checkout',start:offset+line.length+match[1].length,end:offset+line.length+match[1].length+ref.length});
+      let checkoutPath;
+      const indentation=line.match(/^\s*/)[0].length;
+      for(let j=i+2;j<lines.length;j++){
+        if(lines[j].trim()&&lines[j].match(/^\s*/)[0].length<indentation)break;
+        const path=/^\s*path:\s*([A-Za-z0-9_./-]+)\s*$/.exec(lines[j].trimEnd());
+        if(path){checkoutPath=path[1];break;}
+      }
+      if(fullSha(ref))result.push({repository:repo,sha:ref,kind:'checkout',checkoutPath,start:offset+line.length+match[1].length,end:offset+line.length+match[1].length+ref.length});
       else requireThat(['dev','main'].includes(ref)||/^\$\{\{[^\r\n]+\}\}$/.test(ref),'Registered checkout requires a full immutable SHA or an explicitly validated branch/source expression');
     }
     for(const repository of known){
@@ -37,10 +45,17 @@ export function workflowPins(text,repositories){
 }
 export function replacePins(text,pins,replacements){
   for(const pin of [...pins].sort((a,b)=>b.start-a.start)){
-    const sha=replacements[pin.repository];requireThat(fullSha(sha),'Replacement requires an immutable source revision');
+    const sha=pin.replacement||replacements[pin.repository];requireThat(fullSha(sha),'Replacement requires an immutable source revision');
     text=text.slice(0,pin.start)+sha+text.slice(pin.end);
   }
   return text;
+}
+function runtimeFixture(repository,file,pin,roles){
+  requireThat(Array.isArray(roles?.runtime_fixtures),'Runtime fixture roles must be explicit');
+  const matches=roles.runtime_fixtures.filter(r=>r.target===repository&&r.workflow===file&&r.checkout_path===pin.checkoutPath&&r.repository===pin.repository);
+  requireThat(matches.length<=1,'Ambiguous executable fixture role');
+  if(matches.length){requireThat(fullSha(matches[0].commit),'Runtime fixture requires an immutable source');return matches[0];}
+  return null;
 }
 function descriptor(repository,profiles,lock){
   const matches=Object.values(profiles).filter(p=>p.target.repository===repository);
@@ -49,7 +64,7 @@ function descriptor(repository,profiles,lock){
   requireThat(wrapper?.role==='wrapper'&&wrapper.family===profile.family,'Invalid integration owner');
   return {profile,parent:profile.role==='wrapper'?null:wrapper.target.repository};
 }
-export function verifyWorkflowPins({repository,profiles,lock,files},g){
+export function verifyWorkflowPins({repository,profiles,lock,files,roles=pinRoles},g){
   const {profile,parent}=descriptor(repository,profiles,lock),registered=[CORE,...(parent?[parent]:[])],all=[];
   for(const [file,text] of Object.entries(files))for(const pin of workflowPins(text,registered))all.push({...pin,file});
   if(parent&&['python','matlab'].includes(profile.family))requireThat(all.some(p=>p.repository===parent&&p.file==='release-receipt.yml'&&p.kind==='checkout'),'Receipt must pin its integration validator explicitly');
@@ -59,6 +74,8 @@ export function verifyWorkflowPins({repository,profiles,lock,files},g){
   };
   let heads;
   for(const pin of all){
+    const fixture=runtimeFixture(repository,pin.file,pin,roles);
+    if(fixture){requireThat(pin.sha===fixture.commit,`Reviewed runtime fixture pin changed: ${pin.file} / ${pin.checkoutPath}`);continue;}
     if(pin.repository===CORE){requireThat(pin.sha===lock.source_commit,`Core workflow pin differs from copied canonical source: ${pin.file}`);continue;}
     heads??=['dev','main'].map(branch=>g.head(parent,branch));
     for(const head of heads){
@@ -69,12 +86,18 @@ export function verifyWorkflowPins({repository,profiles,lock,files},g){
   }
   return {references:all.length,owner:parent};
 }
-export function refreshWorkflowPins({repository,profiles,lock,files,adapter,adapterLock}){
+export function refreshWorkflowPins({repository,profiles,lock,files,adapter,adapterLock,roles=pinRoles}){
   const {parent}=descriptor(repository,profiles,lock),registered=[CORE,...(parent?[parent]:[])];
   const needsAdapter=Object.values(files).some(text=>workflowPins(text,registered).some(p=>p.repository===parent));
   if(needsAdapter)requireThat(fullSha(adapter)&&adapterLock?.repository===parent&&adapterLock.source_commit===lock.source_commit&&canonical(adapterLock.origins)===canonical(lock.origins),'Commit and verify matching integration source/lock before refreshing application pins');
   const replacements={[CORE]:lock.source_commit,...(needsAdapter?{[parent]:adapter}:{})};
-  return Object.fromEntries(Object.entries(files).map(([file,text])=>[file,replacePins(text,workflowPins(text,registered),replacements)]));
+  return Object.fromEntries(Object.entries(files).map(([file,text])=>{
+    const pins=workflowPins(text,registered).map(pin=>{
+      const fixture=runtimeFixture(repository,file,pin,roles);
+      return fixture?{...pin,replacement:fixture.commit}:pin;
+    });
+    return [file,replacePins(text,pins,replacements)];
+  }));
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
