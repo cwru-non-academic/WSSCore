@@ -39,10 +39,15 @@ function safePath(base,path) {
 
 export function expectedLock(repository,commit,workspace=resolve(root,'.ci-origins')) {
   requireThat(manifest.repositories.includes(repository),'Unknown WSS target repository');
+  const entries=Object.entries(manifest.files).filter(([,value])=>{
+    const scope=sourceDescriptor(value).repositories;
+    requireThat(scope===undefined || Array.isArray(scope)&&scope.length>0&&new Set(scope).size===scope.length&&scope.every(repo=>manifest.repositories.includes(repo)),'Invalid shared CI target scope');
+    return scope===undefined||scope.includes(repository);
+  });
   return {schema:manifest.schema,repository:`cwru-non-academic/${repository}`,source_repository:'cwru-non-academic/WSSCore',source_commit:commit,
     source_ref:`refs/heads/ci/tooling/${commit}`,
     origins:structuredClone(origins),
-    files:Object.fromEntries(Object.entries(manifest.files).map(([target,value])=>{const entry=sourceDescriptor(value);return [target,{origin:entry.origin,source:entry.path,sha256:hash(sourceBytes(entry,workspace))}];}))};
+    files:Object.fromEntries(entries.map(([target,value])=>{const entry=sourceDescriptor(value);return [target,{origin:entry.origin,source:entry.path,sha256:hash(sourceBytes(entry,workspace))}];}))};
 }
 
 export function check(repository,targetRoot,workspace=resolve(root,'.ci-origins')) {

@@ -17,6 +17,8 @@ test('synchronized consumer rejects code drift and a forged tooling lock',()=>{
     execFileSync('git',['init',root],{stdio:'ignore'});
     const commit=git('rev-parse','HEAD').toString().trim();
     const lock=expectedLock(repository,commit);
+    assert.ok(lock.files['.github/workflows/notify-core-stage.yml'],'Integration-only notifier must be copied to integrations');
+    assert.equal(expectedLock('CLI_Python_WSS_Application',commit).files['.github/workflows/notify-core-stage.yml'],undefined,'Integration-only notifier must not become an application workflow');
     for(const [path,entry] of Object.entries(lock.files)) {
       mkdirSync(dirname(join(root,path)),{recursive:true});writeFileSync(join(root,path),sourceBytes({origin:entry.origin,path:entry.source}));
     }

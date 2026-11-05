@@ -51,9 +51,10 @@ export function freezeStage(g,m,c) {
     for(const branch of ['main','dev']) {
       const cap=json(g,t.repository,heads[branch],RECEIVER);
       requireThat(cap.schema==='wss-dev-stage-receiver/v1' && cap.core_workflow===WORKFLOW && cap.fanout_workflow===t.fanout && cap.staged_applications===true && same([...cap.applications].sort(),[...t.applications].sort()),`Deploy staged application guard on ${t.repository}/${branch}`);
-      trusted[branch]=Object.fromEntries([RECEIVER,'.github/scripts',`.github/workflows/${t.normal}`,`.github/workflows/${t.fanout}`].map(p=>[p,g.object(t.repository,heads[branch],p).sha]));
+      trusted[branch]=Object.fromEntries([RECEIVER,'.github/scripts',`.github/workflows/${t.normal}`,`.github/workflows/${t.fanout}`,...(m.application_fanout==='per-integration'?['.github/workflows/notify-core-stage.yml']:[])].map(p=>[p,g.object(t.repository,heads[branch],p).sha]));
     }
     for(const f of [t.normal,t.fanout,'promote-wss.yml','wss-preflight.yml']) registered(g,t.repository,f);
+    if(m.application_fanout==='per-integration')registered(g,t.repository,'notify-core-stage.yml');
     for(const app of t.applications) {
       for(const f of ['promote-integration.yml','wss-preflight.yml']) registered(g,app,f);
     }

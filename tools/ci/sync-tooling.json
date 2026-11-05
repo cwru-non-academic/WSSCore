@@ -15,8 +15,8 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "5980c649b3b32fae1d765150f293bcc42b607960",
-      "ref": "refs/heads/ci/tooling/5980c649b3b32fae1d765150f293bcc42b607960"
+      "commit": "a084c4bffa43d5459391f6d4e642ad9c9ad07487",
+      "ref": "refs/heads/ci/tooling/a084c4bffa43d5459391f6d4e642ad9c9ad07487"
     }
   },
   "files": {
@@ -111,6 +111,26 @@
     ".github/workflows/shared-ci.yml": {
       "origin": "core",
       "path": "tools/ci/shared/shared-ci.yml"
+    },
+    ".github/scripts/wss-ci/notify-family.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/notify-family.mjs",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "Unity_WSS_Integration_Lib",
+        "Python_WSS_Integration_Lib",
+        "Matlab_WSS_Integration_Lib"
+      ]
+    },
+    ".github/workflows/notify-core-stage.yml": {
+      "origin": "integration",
+      "path": ".github/workflows/notify-core-stage.yml",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "Unity_WSS_Integration_Lib",
+        "Python_WSS_Integration_Lib",
+        "Matlab_WSS_Integration_Lib"
+      ]
     }
   }
 }
