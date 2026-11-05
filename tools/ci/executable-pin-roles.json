@@ -1,0 +1,11 @@
+{
+  "runtime_fixtures": [
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "wss-compatibility.yml",
+      "checkout_path": ".macos-ble-fixture-core",
+      "repository": "cwru-non-academic/WSSCore",
+      "commit": "0ac18df22a1371e5ff94d5485c6d3fa4b3e6538f"
+    }
+  ]
+}

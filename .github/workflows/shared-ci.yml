@@ -47,7 +47,7 @@ jobs:
             $display=if($value -ceq '') {'<unset>'} else {$value}
             Write-Output "$name=$display"
           }
-      - run: node --test tools/release/*.test.mjs tools/ci/sync-tooling.test.mjs
+      - run: node --test tools/release/*.test.mjs tools/ci/sync-tooling.test.mjs tools/ci/adapter-pins.test.mjs
       - shell: pwsh
         run: |
           Get-ChildItem tools/ci/shared -File -Filter '*.ps1' | ForEach-Object {

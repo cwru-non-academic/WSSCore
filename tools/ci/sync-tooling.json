@@ -15,8 +15,8 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "21ea1f7eaf2b0b812eabf429163eb9234df3f195",
-      "ref": "refs/heads/ci/tooling/21ea1f7eaf2b0b812eabf429163eb9234df3f195"
+      "commit": "82e52b49af0224313231eaea50867bab1cd66e11",
+      "ref": "refs/heads/ci/tooling/82e52b49af0224313231eaea50867bab1cd66e11"
     }
   },
   "files": {
@@ -131,6 +131,14 @@
         "Python_WSS_Integration_Lib",
         "Matlab_WSS_Integration_Lib"
       ]
+    },
+    ".github/scripts/wss-ci/preflight.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/preflight.mjs"
+    },
+    ".github/scripts/wss-ci/Preflight.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/Preflight.ps1"
     }
   }
 }
