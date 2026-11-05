@@ -10,7 +10,9 @@ import {GitHub,loadPlan,archive} from './github.mjs';
 import {selectNormalRun} from './normal-ci.mjs';
 
 const WORKFLOW='.github/workflows/release-receipt.yml';
+export const RECEIPT_WORKFLOW=WORKFLOW;
 const profiles=JSON.parse(readFileSync(new URL('./receipt-targets.json',import.meta.url),'utf8'));
+export const familyTargets=family=>Object.fromEntries(Object.entries(profiles).filter(([,p])=>p.family===family).map(([id,p])=>[id,{...p.target,role:p.role}]));
 export function readOnlyGh(args) {
   v.requireThat((args.length===2 && args[0]==='api' && /^repos\/cwru-non-academic\//.test(args[1])) ||
     (args[0]==='run' && args[1]==='download' && /^[1-9][0-9]*$/.test(args[2]) && args.length===9 && args[3]==='--repo' && args[5]==='--name' && args[7]==='--dir'),
@@ -18,10 +20,26 @@ export function readOnlyGh(args) {
 }
 class ReadOnly extends GitHub {command(args){readOnlyGh(args);return super.command(args);}}
 export function targetPolicy(p,id) {
+  v.requireThat(p.channel==='dev' && p.manifest?.channel==='dev' && !(p.manifest.excluded||[]).some(t=>t.id===id),'Target is excluded or outside dev acceptance');
   const profile=profiles[id],matches=p.manifest.targets.filter(t=>t.id===id);
   v.requireThat(profile && matches.length===1,'Unknown/ambiguous receipt target');
-  v.requireThat(v.canonical(matches[0])===v.canonical(profile.target),'Frozen target differs from receiver-owned required checks/parents/coverage');
+  const {role,...declared}=matches[0];
+  v.requireThat((role===undefined||role===profile.role) && v.canonical(declared)===v.canonical(profile.target),'Frozen target differs from receiver-owned required checks/parents/coverage');
   return {...matches[0],role:profile.role};
+}
+export function changedHead(head,snapshot) {
+  v.requireThat(/^[a-f0-9]{40}$/.test(head) && /^[a-f0-9]{40}$/.test(snapshot.head_sha) && head!==snapshot.head_sha,'No-op/preparation-only receipt requires an actual reviewed dependency merge');
+}
+export const normalRun=(runs,t,pr)=>selectNormalRun(runs,t,pr.merge_commit_sha,pr.merged_at);
+export function mergedPr(pr,t,head,candidate) {
+  const family=profiles[t.id]?.family;
+  v.requireThat(pr.merged===true && pr.state==='closed' && pr.merge_commit_sha===head && pr.merged_by?.type==='User' && !pr.auto_merge && pr.user?.type==='Bot' && pr.base?.ref==='dev' && pr.base?.repo?.full_name===t.repository && pr.head?.repo?.full_name===t.repository,'Receipt requires actual human-reviewed same-repository bot dependency merge');
+  if(family!=='csharp') v.requireThat(pr.head.ref===`automation/${family}-wss-${candidate.run_id}-${candidate.sha256}`,'Dependency branch differs from exact candidate');
+}
+export function emitter(r,env,t,head) {
+  v.requireThat(env.GITHUB_ACTIONS==='true' && env.GITHUB_REPOSITORY===t.repository && env.GITHUB_REF==='refs/heads/dev' && env.GITHUB_SHA===head && env.GITHUB_EVENT_NAME==='workflow_dispatch','Receipt must execute at actual accepted dev source');
+  runIdentity(r,t.repository,WORKFLOW,head,'workflow_dispatch');
+  v.requireThat(String(r.id)===env.GITHUB_RUN_ID && Number.isSafeInteger(r.run_attempt) && r.run_attempt>=1 && r.run_attempt===Number(env.GITHUB_RUN_ATTEMPT),'Emitter run/attempt mismatch');
 }
 export function runIdentity(r,repository,path,head,event) {
   v.requireThat(r.repository?.full_name===repository && r.head_repository?.full_name===repository && r.path===path &&
@@ -38,10 +56,10 @@ export async function runReceipt(config,{g=new ReadOnly(),env=process.env,adapte
   v.requireThat(/^[1-9][0-9]*$/.test(producerId||'') && /^[a-f0-9]{64}$/.test(planId||''),'Invalid reconciliation inputs');
   const p=loadPlan(g,producerId);v.requireThat(p.plan_id===planId,'Input plan differs from frozen producer plan');
   const profile=profiles[id],t=targetPolicy(p,id),snapshot=p.target_snapshots[id],head=g.head(t.repository);
-  v.requireThat(head!==snapshot.head_sha && git(sourceRoot,'rev-parse','HEAD')===head && env.GITHUB_SHA===head && env.GITHUB_REPOSITORY===t.repository,'Actual reviewed dependency merge/source is required');
+  changedHead(head,snapshot);
+  v.requireThat(git(sourceRoot,'rev-parse','HEAD')===head && env.GITHUB_SHA===head && env.GITHUB_REPOSITORY===t.repository,'Actual reviewed dependency merge/source is required');
   for(const root of new Set([sourceRoot,toolsRoot,validatorRoot,integrationRoot])) v.requireThat(git(root,'status','--porcelain','--untracked-files=no')==='','Receipt validator checkouts must be clean');
-  const emitter=g.run(t.repository,env.GITHUB_RUN_ID);runIdentity(emitter,t.repository,WORKFLOW,head,'workflow_dispatch');
-  v.requireThat(String(emitter.id)===env.GITHUB_RUN_ID && emitter.run_attempt===Number(env.GITHUB_RUN_ATTEMPT) && Number.isSafeInteger(emitter.run_attempt) && emitter.run_attempt>=1,'Emitter run/attempt mismatch');
+  emitter(g.run(t.repository,env.GITHUB_RUN_ID),env,t,head);
   for(const path of t.trusted_paths) v.requireThat(g.object(t.repository,head,path).sha===snapshot.trusted[path],`Frozen receipt/CI tooling changed: ${path}`);
   if(profile.family==='csharp') {
     for(const path of [WORKFLOW,'.github/scripts/Write-ReleaseReceipt.ps1','.github/scripts/WssReleaseReceipt.ps1','.github/scripts/wss-ci']) v.requireThat(object(toolsRoot,path)===object(sourceRoot,path),`Trusted main receipt tooling differs: ${path}`);
@@ -61,7 +79,7 @@ export async function runReceipt(config,{g=new ReadOnly(),env=process.env,adapte
   const associations=g.pages(`repos/${t.repository}/commits/${head}/pulls`).filter(pr=>pr.merge_commit_sha===head && pr.merged_at && pr.base?.ref==='dev' && pr.base?.repo?.full_name===t.repository && pr.head?.repo?.full_name===t.repository);
   v.requireThat(associations.length===1,'Current dev is not a unique reviewed dependency merge');
   const pr=g.get(`repos/${t.repository}/pulls/${associations[0].number}`);
-  v.requireThat(pr.merged===true && pr.state==='closed' && pr.merge_commit_sha===head && pr.user?.type==='Bot' && pr.merged_by?.type==='User' && !pr.auto_merge && pr.base?.ref==='dev' && pr.base?.repo?.full_name===t.repository && pr.head?.repo?.full_name===t.repository,'Receipt requires actual human-reviewed same-repository bot dependency merge');
+  mergedPr(pr,t,head,p.candidate);
   const normalProof=()=>selectNormalRun(g.pages(`repos/${t.repository}/actions/workflows/${t.workflow.split('/').at(-1)}/runs?branch=dev&head_sha=${head}`,'workflow_runs'),t,head,pr.merged_at);
   const normal=normalProof();v.jobs(g.jobs(t.repository,normal),t.jobs);
   v.requireThat(g.tree(t.repository,normal.head_sha)===g.tree(t.repository,head),'Normal CI tested another tree');

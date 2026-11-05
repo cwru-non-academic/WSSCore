@@ -19,7 +19,7 @@ function fixture() {
   const zip=Buffer.from('canonical archive'),candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(zip)};
   const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(target=>[target.id,{head_sha:sha(2),trusted:Object.fromEntries(target.trusted_paths.map(path=>[path,target.id===id&&path==='.github/scripts'?scripts:target.id===id&&path==='.github/python-ci.json'?config:sha(3)]))}]))};
   const p={...body,plan_id:digest(body)};
-  const pr={number:10,merged:true,state:'closed',merge_commit_sha:head,merged_at:'2026-11-01T00:00:00Z',user:{type:'Bot'},merged_by:{type:'User'},base:{ref:'dev',repo:{full_name:t.repository}},head:{sha:sha(4),repo:{full_name:t.repository}}};
+  const pr={number:10,merged:true,state:'closed',merge_commit_sha:head,merged_at:'2026-11-01T00:00:00Z',user:{type:'Bot'},merged_by:{type:'User'},base:{ref:'dev',repo:{full_name:t.repository}},head:{sha:sha(4),ref:`automation/python-wss-1-${candidate.sha256}`,repo:{full_name:t.repository}}};
   const identity={repository:{full_name:t.repository},head_repository:{full_name:t.repository},head_sha:head,head_branch:'dev',run_attempt:1};
   const normal={...identity,id:20,path:t.workflow,event:'push',status:'completed',conclusion:'success',created_at:'2026-11-01T00:01:00Z'};
   const proofs=[30,31,32].map(run=>({repository:t.repository,run_id:String(run),source_sha:sha(5),workflow:'.github/workflows/wss-preflight.yml'}));

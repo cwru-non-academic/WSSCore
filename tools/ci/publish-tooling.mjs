@@ -38,7 +38,7 @@ try {
     }
     // Inspectable receiver adapter changes may accompany this coordinated update.
     const dirty=git(root,'status','--porcelain','--untracked-files=all').split(/\r?\n/).filter(Boolean);
-    requireThat(dirty.every(line=>/^.{3}\.github\//.test(line)),`Unrelated changes in ${repository}`);
+    requireThat(dirty.every(line=>/^[ MADRCU?!]{1,2} \.github\//.test(line)),`Unrelated changes in ${repository}`);
     git(root,'add','.github');git(root,'diff','--cached','--check');
     if(git(root,'diff','--cached','--name-only')) git(root,'commit','-m',`Synchronize shared CI engine ${commit.slice(0,12)}`);
     const head=git(root,'rev-parse','HEAD');git(root,'-c','push.followTags=false','push','origin',`HEAD:refs/heads/${branch}`);

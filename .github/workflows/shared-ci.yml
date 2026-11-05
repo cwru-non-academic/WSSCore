@@ -24,6 +24,13 @@ jobs:
           node-version: '24'
       - run: node --test tools/release/*.test.mjs tools/ci/sync-tooling.test.mjs
       - shell: pwsh
+        run: |
+          Get-ChildItem tools/ci/shared -File -Filter '*.ps1' | ForEach-Object {
+            $errors=$null
+            [Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$null,[ref]$errors)|Out-Null
+            if($errors){throw ($errors|Out-String)}
+          }
+      - shell: pwsh
         run: ./tools/ci/shared/Archive.Tests.ps1
       - shell: pwsh
         run: ./tools/ci/shared/Process.Tests.ps1

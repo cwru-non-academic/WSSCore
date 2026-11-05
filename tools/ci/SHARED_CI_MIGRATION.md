@@ -8,11 +8,17 @@ PowerShell archive inspection remains one shared implementation. Language code
 is an adapter for execution, projection and rich proof validation, not a second
 implementation of generic policy.
 
-The first migration shares these real execution paths:
+The proposed common bundle shares these execution paths. Installation into a
+receiver is complete only when its lock and call sites reference this version:
 
 | Concern | Canonical source | Consumers |
 | --- | --- | --- |
-| Frozen plan, candidate, manifest and digest validation | `tools/release/verify.mjs` and `verify-plan.mjs` | C# and Unity receipt writers |
+| Frozen plan, candidate, manifest and digest validation | `tools/release/verify.mjs`, `github.mjs::loadPlan`, `receipt.mjs` | All four receipt families |
+| Receipt assembly, exact merge/source, live run/attempt and rich-proof orchestration | `tools/release/receipt.mjs`, `receipt-targets.json` | All nine targets through adapters |
+| Six-field normalized provenance | `tools/release/normalize-candidate.mjs` | All four wrapper resolvers; diagnostic tag metadata stays in selection.json |
+| Promotion PR publication | `tools/release/promotion.mjs` | All four families after adapter staging |
+| Staged producer policy and uncertain-dispatch rules | `tools/release/staging.mjs`, `dispatch-proof.mjs` | All four fanout adapters |
+| Typed evidence fields, file hashes, architecture pairing and native argv | `tools/ci/shared/Evidence.ps1`, `Process.ps1` | Existing runtime-specific evidence adapters |
 | Actual-merge CI selection | `tools/release/normal-ci.mjs` | C#, Unity, Python and MATLAB receipt writers |
 | ZIP path/type/size/hash validation before extraction | `tools/ci/shared/Assert-UniversalArchive.ps1` | Core projection reader and all four wrapper resolvers |
 | Copying, immutable version lock and identity check | `tools/ci/sync-tooling.mjs` and `.json` | All nine receiver repositories |
@@ -30,8 +36,12 @@ required for this rollout.
 ## Update process
 
 1. Change and commit the common source in Core on a dev feature branch.
-2. Run `node tools/ci/sync-tooling.mjs copy <workspace-containing-all-nine-checkouts>`.
-   The command copies only manifest-owned files and records the Core commit.
+2. Preview local copies with `node tools/ci/sync-tooling.mjs copy <workspace-containing-all-nine-checkouts>`.
+   After review, `node tools/ci/publish-tooling.mjs <workspace>` retains a durable
+   `ci/tooling/<Core-commit>` ref, copies the registered bundle, updates receipt
+   adapter pins, pushes non-force branches and creates/updates draft dev PRs.
+   It performs no merge or workflow dispatch. Review its proposed adapter changes
+   before invocation; a failed/uncertain publication requires readback before retry.
 3. Adapt only the receiver-owned call sites, configuration and native proof code.
    Open coordinated draft PRs into dev. Run hosted normal CI and source-identity
    checks. A Core update is not deployed merely because its PR passed.
@@ -46,6 +56,43 @@ required for this rollout.
 The lock stores SHA-256 of Git blob content. Checks use Git's clean filters so
 normal CRLF Windows checkouts and LF Unix checkouts identify the same source.
 No global Git configuration or repository-wide EOL conversion is needed.
+
+The durable source ref is independent of the feature branch. Its recorded commit
+must match the checked-out Core HEAD; moving the ref cannot authorize different
+code under an existing lock. Preserve these refs after squash merge or feature
+branch deletion. Python/MATLAB receipt adapter checkouts receive their own
+durable refs, separate from runtime dependency gitlinks.
+
+## Evidence stages and current blockers
+
+Reviewed PR-head CI proves the proposed dependency-only change against its
+preflight source, before an actual target merge exists. Receipt acceptance is a
+later gate: it requires the actual human merge, exact current merged tree and
+postmerge push/manual CI. These are distinct evidence stages, not alternate
+language implementations. Keep their event/source associations explicit; never
+use PR-head evidence alone as a release acceptance receipt. Generic identity,
+job and ambiguity checks should continue to be extracted without confusing the
+two stages.
+
+The common receipt engine imports the copied current Core verifier, not the
+legacy `be8546c` checkout. Its loadPlan still binds the downloaded plan to the
+canonical producer and the policy at that producer commit. Old contract
+checkouts in existing YAML do not select the new engine's verifier.
+
+Mac report identity remains an unfinished migration: C# records run/attempt/source;
+Python records run/source and file hashes; Unity and MATLAB still depend more on
+their enclosing artifact/run checks. Shared primitive field checks preserve
+existing native proof, but do not invent the missing bindings. A versioned common
+run/attempt/source envelope must be produced and consumed everywhere, with rerun
+rejection fixtures and fresh guarded candidate proofs. Until that is complete,
+do not claim fully equivalent evidence or producer readiness.
+
+As of the independent November 4 review, receiver drafts still carried the
+initial six-file bundle. Later source and adapter changes require a coordinated
+reviewed synchronization and fresh hosted results. Do not treat earlier green
+heads as proof of the larger migration. The older WSS_Documentation workflow
+guides are an October 24 historical snapshot and are not current operational
+instructions; their separate documentation refresh is still required.
 
 ## Audit and remaining migrations
 
@@ -63,9 +110,11 @@ plus their application repositories and independent language audit findings.
 | Payload inventories | Hardcoded legacy/macOS inventories and projection mappings differ. | Generate reviewed inventory from the pinned Core manifest; keep language mapping/importer rules as explicit adapters. |
 | Candidate normalization and argv | C# resolver adds `release_tag` to the six-field normalized record; older promotion/resolver/fanout helpers retain positional-array forwarding. | Move the six-field writer and argument-safe process boundary into the common reference, with golden-record and real-argv hosted regressions before adoption. |
 
-These are subsequent coordinated migrations, not claims of completion in this
-first PR set. In particular, this change does not refresh the old receipt
-contract pin, homogenize evidence schemas or enable a new producer.
+This table records the audit boundaries, not a claim that all migrations are
+deployed. The new receipt engine and shared publication/dispatch primitives are
+implemented in the reference; receiver adoption, evidence envelope work, staged
+deployment/pin refresh and current operational documentation remain explicit
+review gates. No new producer is enabled.
 
 Keep MATLAB native version/architecture proof, Python/pythonnet/ROS Humble proof,
 Unity importer and Editor versus .NET harness distinctions, C# packaged/native
