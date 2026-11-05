@@ -48,6 +48,28 @@ so ordinary Windows CRLF and Unix LF checkouts have the same source identity.
 
 ## Proof and trust boundaries
 
+Receiver-owned target policy is defined once in the integration reference's
+`receipt-targets.json` and enforced by its exported `receipt.mjs::targetPolicy`.
+Core's frozen producer policy is an independent authority that must agree with
+that receiver policy; do not remove either trust boundary to resolve drift.
+C# rich-proof adapters import the existing canonical target and plan validators
+from their already-verified frozen tooling. They validate the full context plan,
+its digests and exact target agreement, including the wrapper notifier path.
+They do not maintain a second jobs/parents/trusted-path policy table.
+
+The PowerShell boundary is assertion-only. A fixed native argument sentinel
+prevents the imported module from entering its receipt CLI, while literal context
+and module paths travel as separate arguments. Hosted Linux, Windows and macOS
+contracts exercise this actual invocation, including rejected policy weakening,
+invalid digests, malformed contexts, process failures and denied side effects.
+Language-specific native/projection/merge evidence remains in the C# adapter.
+
+A policy adapter fix does not repair an existing candidate's frozen script
+identity. Deploy and verify the affected tooling on dev and trusted main, retain
+matching executable sources, and use a fresh canonical dev-push producer. Keep
+the old artifacts and partial receipts unchanged; do not substitute fixed code,
+edit an old plan or reuse its receipts under the new plan ID.
+
 Select exactly one eligible committed-state push/manual CI run after the actual
 dependency merge. Multiple eligible runs are ambiguous, even when the newest is
 green. Required jobs belong to the selected attempt; do not combine unrelated
