@@ -10,7 +10,18 @@ const manifest=JSON.parse(readFileSync(resolve(root,'tools/ci/sync-tooling.json'
 const lockPath='.github/scripts/wss-ci.lock.json';
 const git=(...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8'}).trim();
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
-const sourceBytes=path=>execFileSync('git',['-C',root,'show',`HEAD:${path}`],{maxBuffer:32*1024*1024});
+const origins=manifest.origins||{};
+const sourceDescriptor=value=>typeof value==='string'?{origin:'core',path:value}:value;
+export function sourceBytes(value,workspace=resolve(root,'.ci-origins')) {
+  const entry=sourceDescriptor(value);
+  requireThat(entry && typeof entry.path==='string' && (entry.origin==='core'||Object.hasOwn(origins,entry.origin)),'Unknown canonical CI origin');
+  const origin=entry.origin==='core'?null:origins[entry.origin];
+  const sourceRoot=origin?safePath(workspace,origin.workspace):root;
+  const revision=origin?origin.commit:'HEAD';
+  if(origin)requireThat(origin.repository===`cwru-non-academic/${origin.workspace}` && /^[a-f0-9]{40}$/.test(revision) && origin.ref===`refs/heads/ci/tooling/${revision}`,'Invalid canonical CI origin');
+  safePath(sourceRoot,entry.path);
+  return execFileSync('git',['-C',sourceRoot,'show',`${revision}:${entry.path}`],{maxBuffer:32*1024*1024});
+}
 const blobId=bytes=>createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
 const same=(a,b)=>canonical(a)===canonical(b);
 
@@ -26,22 +37,23 @@ function safePath(base,path) {
   return full;
 }
 
-export function expectedLock(repository,commit) {
+export function expectedLock(repository,commit,workspace=resolve(root,'.ci-origins')) {
   requireThat(manifest.repositories.includes(repository),'Unknown WSS target repository');
   return {schema:manifest.schema,repository:`cwru-non-academic/${repository}`,source_repository:'cwru-non-academic/WSSCore',source_commit:commit,
     source_ref:`refs/heads/ci/tooling/${commit}`,
-    files:Object.fromEntries(Object.entries(manifest.files).map(([source,target])=>[target,{source,sha256:hash(sourceBytes(source))}]))};
+    origins:structuredClone(origins),
+    files:Object.fromEntries(Object.entries(manifest.files).map(([target,value])=>{const entry=sourceDescriptor(value);return [target,{origin:entry.origin,source:entry.path,sha256:hash(sourceBytes(entry,workspace))}];}))};
 }
 
-export function check(repository,targetRoot) {
+export function check(repository,targetRoot,workspace=resolve(root,'.ci-origins')) {
   const actual=JSON.parse(readFileSync(safePath(targetRoot,lockPath),'utf8'));
   const commit=git('rev-parse','HEAD');
-  requireThat(same(actual,expectedLock(repository,commit)),`Tooling lock differs from immutable Core ${commit}`);
+  requireThat(same(actual,expectedLock(repository,commit,workspace)),`Tooling lock differs from immutable CI sources at Core ${commit}`);
   for(const [path,entry] of Object.entries(actual.files)) {
     // Git's clean filters own LF/CRLF; compare canonical blobs, not OS checkout bytes.
     const target=safePath(targetRoot,path);
     const actualBlob=execFileSync('git',['-C',targetRoot,'hash-object',`--path=${path}`,target],{encoding:'utf8'}).trim();
-    requireThat(actualBlob===blobId(sourceBytes(entry.source)),`Shared CI drift: ${repository}/${path}`);
+    requireThat(actualBlob===blobId(sourceBytes({origin:entry.origin,path:entry.source},workspace)),`Shared CI drift: ${repository}/${path}`);
   }
   console.log(`Verified ${repository}: ${Object.keys(actual.files).length} identical common files from ${commit}`);
 }
@@ -52,13 +64,13 @@ function copy(workspace) {
   for(const repository of manifest.repositories) {
     const targetRoot=safePath(workspace,repository);
     requireThat(existsSync(resolve(targetRoot,'.git')),`Missing target checkout: ${repository}`);
-    const lock=expectedLock(repository,commit);
+    const lock=expectedLock(repository,commit,workspace);
     for(const [path,entry] of Object.entries(lock.files)) {
       const target=safePath(targetRoot,path);mkdirSync(dirname(target),{recursive:true});
-      writeFileSync(target,sourceBytes(entry.source));
+      writeFileSync(target,sourceBytes({origin:entry.origin,path:entry.source},workspace));
     }
     writeFileSync(safePath(targetRoot,lockPath),JSON.stringify(lock,null,2)+'\n');
-    check(repository,targetRoot);
+    check(repository,targetRoot,workspace);
   }
 }
 

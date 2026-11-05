@@ -1,34 +1,116 @@
 {
-  "schema": "wss-shared-ci/v1",
+  "schema": "wss-shared-ci/v2",
   "repositories": [
-    "CSharp_WSS_Integration_Lib", "CLI_CSharp_WSS_Application",
-    "Unity_WSS_Integration_Lib", "GUI_Unity_WSS_Application",
-    "Python_WSS_Integration_Lib", "CLI_Python_WSS_Application", "ROS_Python_WSS_Application",
-    "Matlab_WSS_Integration_Lib", "CLI_Matlab_WSS_Application"
+    "CSharp_WSS_Integration_Lib",
+    "CLI_CSharp_WSS_Application",
+    "Unity_WSS_Integration_Lib",
+    "GUI_Unity_WSS_Application",
+    "Python_WSS_Integration_Lib",
+    "CLI_Python_WSS_Application",
+    "ROS_Python_WSS_Application",
+    "Matlab_WSS_Integration_Lib",
+    "CLI_Matlab_WSS_Application"
   ],
+  "origins": {
+    "integration": {
+      "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workspace": "Python_WSS_Integration_Lib",
+      "commit": "5980c649b3b32fae1d765150f293bcc42b607960",
+      "ref": "refs/heads/ci/tooling/5980c649b3b32fae1d765150f293bcc42b607960"
+    }
+  },
   "files": {
-    "tools/release/verify.mjs": ".github/scripts/wss-ci/verify.mjs",
-    "tools/release/producer-jobs.mjs": ".github/scripts/wss-ci/producer-jobs.mjs",
-    "tools/ci/shared/Producer.ps1": ".github/scripts/wss-ci/Producer.ps1",
-    "tools/release/github.mjs": ".github/scripts/wss-ci/github.mjs",
-    "tools/release/policy.mjs": ".github/scripts/wss-ci/policy.mjs",
-    "tools/release/receipt.mjs": ".github/scripts/wss-ci/receipt.mjs",
-    "tools/release/promotion.mjs": ".github/scripts/wss-ci/promotion.mjs",
-    "tools/release/dispatch-proof.mjs": ".github/scripts/wss-ci/dispatch-proof.mjs",
-    "tools/ci/shared/DispatchProof.ps1": ".github/scripts/wss-ci/DispatchProof.ps1",
-    "tools/release/receipt-targets.json": ".github/scripts/wss-ci/receipt-targets.json",
-    "tools/release/staging.mjs": ".github/scripts/wss-ci/staging.mjs",
-    "tools/release/staging-targets.json": ".github/scripts/wss-ci/staging-targets.json",
-    "tools/ci/shared/Staging.ps1": ".github/scripts/wss-ci/Staging.ps1",
-    "tools/ci/shared/Prepare-StagedApplicationFanout.ps1": ".github/scripts/wss-ci/Prepare-StagedApplicationFanout.ps1",
-    "tools/release/normalize-candidate.mjs": ".github/scripts/wss-ci/normalize-candidate.mjs",
-    "tools/ci/shared/Process.ps1": ".github/scripts/wss-ci/Process.ps1",
-    "tools/ci/shared/Evidence.ps1": ".github/scripts/wss-ci/Evidence.ps1",
-    "tools/ci/shared/README.md": ".github/scripts/wss-ci/README.md",
-    "tools/release/normal-ci.mjs": ".github/scripts/wss-ci/normal-ci.mjs",
-    "tools/release/normal-ci-select.mjs": ".github/scripts/wss-ci/normal-ci-select.mjs",
-    "tools/release/verify-plan.mjs": ".github/scripts/wss-ci/verify-plan.mjs",
-    "tools/ci/shared/Assert-UniversalArchive.ps1": ".github/scripts/wss-ci/Assert-UniversalArchive.ps1",
-    "tools/ci/shared/shared-ci.yml": ".github/workflows/shared-ci.yml"
+    ".github/scripts/wss-ci/verify.mjs": {
+      "origin": "core",
+      "path": "tools/release/verify.mjs"
+    },
+    ".github/scripts/wss-ci/producer-jobs.mjs": {
+      "origin": "core",
+      "path": "tools/release/producer-jobs.mjs"
+    },
+    ".github/scripts/wss-ci/Producer.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/Producer.ps1"
+    },
+    ".github/scripts/wss-ci/github.mjs": {
+      "origin": "core",
+      "path": "tools/release/github.mjs"
+    },
+    ".github/scripts/wss-ci/policy.mjs": {
+      "origin": "core",
+      "path": "tools/release/policy.mjs"
+    },
+    ".github/scripts/wss-ci/receipt.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt.mjs"
+    },
+    ".github/scripts/wss-ci/promotion.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/promotion.mjs"
+    },
+    ".github/scripts/wss-ci/dispatch-proof.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/dispatch-proof.mjs"
+    },
+    ".github/scripts/wss-ci/DispatchProof.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/DispatchProof.ps1"
+    },
+    ".github/scripts/wss-ci/receipt-targets.json": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-targets.json"
+    },
+    ".github/scripts/wss-ci/staging.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/staging.mjs"
+    },
+    ".github/scripts/wss-ci/staging-targets.json": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/staging-targets.json"
+    },
+    ".github/scripts/wss-ci/Staging.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/Staging.ps1"
+    },
+    ".github/scripts/wss-ci/Prepare-StagedApplicationFanout.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/Prepare-StagedApplicationFanout.ps1"
+    },
+    ".github/scripts/wss-ci/normalize-candidate.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/normalize-candidate.mjs"
+    },
+    ".github/scripts/wss-ci/Process.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/Process.ps1"
+    },
+    ".github/scripts/wss-ci/Evidence.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/Evidence.ps1"
+    },
+    ".github/scripts/wss-ci/README.md": {
+      "origin": "core",
+      "path": "tools/ci/shared/README.md"
+    },
+    ".github/scripts/wss-ci/normal-ci.mjs": {
+      "origin": "core",
+      "path": "tools/release/normal-ci.mjs"
+    },
+    ".github/scripts/wss-ci/normal-ci-select.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/normal-ci-select.mjs"
+    },
+    ".github/scripts/wss-ci/verify-plan.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/verify-plan.mjs"
+    },
+    ".github/scripts/wss-ci/Assert-UniversalArchive.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/Assert-UniversalArchive.ps1"
+    },
+    ".github/workflows/shared-ci.yml": {
+      "origin": "core",
+      "path": "tools/ci/shared/shared-ci.yml"
+    }
   }
 }

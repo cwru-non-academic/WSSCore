@@ -22,6 +22,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Read pinned integration reference
+        id: integration
+        shell: pwsh
+        run: |
+          $origin=(Get-Content tools/ci/sync-tooling.json -Raw|ConvertFrom-Json).origins.integration
+          if($origin.repository -cne 'cwru-non-academic/Python_WSS_Integration_Lib' -or $origin.commit -cnotmatch '^[a-f0-9]{40}$') {throw 'Unreviewed integration origin'}
+          "commit=$($origin.commit)" >> $env:GITHUB_OUTPUT
+      - uses: actions/checkout@v4
+        with:
+          repository: cwru-non-academic/Python_WSS_Integration_Lib
+          ref: ${{ steps.integration.outputs.commit }}
+          path: .ci-origins/Python_WSS_Integration_Lib
+          persist-credentials: false
       - name: Report effective non-secret deployment switches
         shell: pwsh
         env:
@@ -44,7 +57,3 @@ jobs:
           }
       - shell: pwsh
         run: ./tools/ci/shared/Archive.Tests.ps1
-      - shell: pwsh
-        run: ./tools/ci/shared/Process.Tests.ps1
-      - shell: pwsh
-        run: ./tools/ci/shared/Evidence.Tests.ps1

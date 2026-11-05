@@ -67,6 +67,39 @@ code under an existing lock. Preserve these refs after squash merge or feature
 branch deletion. Python/MATLAB receipt adapter checkouts receive their own
 durable refs, separate from runtime dependency gitlinks.
 
+## November 5: tiered canonical sources and guarded campaign
+
+The original 23-file bundle was deployed on dev and main in all nine receivers.
+Core #34 merged at `f1380c32`; real producer `41992814727` built and passed all
+platform consumers. Its retained pre-write report confirms actual payload
+changes in all four projections. Both frozen plans passed live receiver/policy
+readiness. This is producer evidence, not downstream acceptance.
+
+That campaign exposed a duplicate Authorization header in publication and an
+older Python CLI reusable-workflow pin that produces evidence without the new
+identity envelope. Fix the header once in the Python integration reference and
+update stale pins; do not weaken identity checks or retry stale frozen plans.
+
+The user's clarified ownership rule is now reflected in source-lock v2. Core
+owns policy/producer/plan/GitHub/normal-CI validation, archive safety and the
+cross-tier copier. Python_WSS_Integration_Lib owns receiver-only receipt writing,
+promotion publication, fanout and evidence primitives, with hosted contracts in
+that integration. Identical files are copied horizontally and into applications.
+No current shared feature requires an application-only origin. A future
+application-only feature must originate in one application and copy horizontally,
+rather than being placed in Core solely for storage.
+
+The lock records exact retained Core and integration revisions and per-file
+origins/hashes. Hosted identity resolves both reviewed sources and rejects code,
+origin or pin drift. `sync-tooling.mjs copy <workspace>` updates all nine actual
+copies locally; repository PRs and hosted checks perform reviewed deployment.
+The previously unvalidated bulk publisher is removed; it was never the verified
+rollout mechanism. Preserve old retained source refs for existing locks.
+
+Changing frozen receiver tooling requires coherent dev/main deployment and a
+fresh Core producer. No receipts or approvals from the old campaign may be
+relabelled as proof for the new source or candidate. Publication stays disabled.
+
 ## Evidence stages and current blockers
 
 Reviewed PR-head CI proves the proposed dependency-only change against its
