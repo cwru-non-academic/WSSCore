@@ -21,6 +21,7 @@ export function policy(m) {
   requireThat(m.schema==='wss-dev-stage/v1' && m.channel==='dev','Unsupported dev staging policy');
   requireThat(same(m.libraries.map(t=>t.id).sort(),['csharp','matlab','python','unity']),'All four integrations are required');
   requireThat(new Set(m.libraries.map(t=>t.repository)).size===4,'Duplicate integration repository');
+  requireThat(m.application_fanout===undefined || ['all-integrations','per-integration'].includes(m.application_fanout),'Unknown integration fanout policy');
   for(const t of m.libraries) {
     requireThat(/^cwru-non-academic\/[A-Za-z0-9_]+$/.test(t.repository) && t.jobs.length>0 && t.applications.length>0,'Invalid integration policy');
     for(const f of [t.normal,t.fanout]) requireThat(/^[a-z-]+\.yml$/.test(f),'Invalid registered workflow');
@@ -139,37 +140,52 @@ function priorIntents(g,p,excludeRun='') {
 export function prepareStage(g,p,run,attempt,excludeCurrent=false) {
   validatePlan(p);
   requireThat(/^[1-9][0-9]*$/.test(run) && Number.isSafeInteger(attempt) && attempt>=1,'Invalid stage emitter');
-  const integrations={},pending=[],actions=[];
+  const perFamily=p.policy.application_fanout==='per-integration';
+  const integrations={},pending=[],blocked=[],actions=[];
   for(const t of p.policy.libraries) {
-    const accepted=mergedLibrary(g,p,t);
-    if(!accepted) pending.push(t.id); else integrations[t.id]=accepted;
+    try {
+      const accepted=mergedLibrary(g,p,t);
+      if(!accepted) pending.push(t.id); else integrations[t.id]=accepted;
+    } catch(error) {if(!perFamily)throw error;blocked.push({target:t.id,reason:error.message});pending.push(t.id);}
   }
   const base={schema:'wss-dev-stage-intents/v1',plan_id:p.plan_id,candidate:p.candidate,run_id:run,attempt};
-  // No application work or CI write token until every integration is merged.
-  if(pending.length) return {...base,state:'waiting-for-integrations',pending,actions};
-  let normalsReady=true;
+  // Preserve older frozen all-integration policy. New reviewed producers authorize
+  // each family independently, without accepting another family's missing proof.
+  if(!perFamily && pending.length) return {...base,state:'waiting-for-integrations',pending,actions};
+  const ready={};
   for(const t of p.policy.libraries) {
-    const accepted=integrations[t.id],runs=normalRuns(g,t,accepted);
-    requireThat(runs.length<=1,`Ambiguous committed-state CI for ${t.id}; inspect recovery`);
-    if(!runs.length) {actions.push(action(p,t,accepted,'normal-ci',{}));normalsReady=false;continue;}
-    const r=runs[0];
-    requireThat(r.repository?.full_name===t.repository && r.head_repository?.full_name===t.repository && r.path===`.github/workflows/${t.normal}` && r.head_sha===accepted.head_sha,'Normal CI source mismatch');
-    requireThat(r.status!=='completed' || r.conclusion==='success',`Failed integration CI for ${t.id}; no blind retry`);
-    if(r.status!=='completed') {normalsReady=false;continue;}
-    jobs(g.jobs(t.repository,r),t.jobs);
-    accepted.normal_ci={run_id:String(r.id),attempt:r.run_attempt};
+    const accepted=integrations[t.id];if(!accepted)continue;
+    try {
+      const runs=normalRuns(g,t,accepted);
+      requireThat(runs.length<=1,`Ambiguous committed-state CI for ${t.id}; inspect recovery`);
+      if(!runs.length) {actions.push(action(p,t,accepted,'normal-ci',{}));pending.push(t.id);continue;}
+      const r=runs[0];
+      requireThat(r.repository?.full_name===t.repository && r.head_repository?.full_name===t.repository && r.path===`.github/workflows/${t.normal}` && r.head_sha===accepted.head_sha,'Normal CI source mismatch');
+      requireThat(r.status!=='completed' || r.conclusion==='success',`Failed integration CI for ${t.id}; no blind retry`);
+      if(r.status!=='completed') {pending.push(t.id);continue;}
+      jobs(g.jobs(t.repository,r),t.jobs);
+      accepted.normal_ci={run_id:String(r.id),attempt:r.run_attempt};ready[t.id]=accepted;
+    } catch(error) {if(!perFamily)throw error;blocked.push({target:t.id,reason:error.message});pending.push(t.id);}
   }
-  const barrier=normalsReady?{schema:'wss-integration-barrier/v1',plan_id:p.plan_id,candidate:p.candidate,integrations,emitter:{run_id:run,attempt,workflow:WORKFLOW}}:null;
-  if(barrier) for(const t of p.policy.libraries) actions.push(action(p,t,integrations[t.id],'applications',{producer_run_id:p.candidate.run_id,barrier_run_id:run,barrier_attempt:String(attempt)}));
+  const authorized=perFamily?Object.keys(ready).length>0:Object.keys(ready).length===4;
+  const barrier=authorized?{schema:perFamily?'wss-integration-barrier/v2':'wss-integration-barrier/v1',plan_id:p.plan_id,candidate:p.candidate,integrations:ready,emitter:{run_id:run,attempt,workflow:WORKFLOW}}:null;
+  if(barrier) for(const t of p.policy.libraries.filter(t=>Object.hasOwn(ready,t.id))) actions.push(action(p,t,ready[t.id],'applications',{producer_run_id:p.candidate.run_id,barrier_run_id:run,barrier_attempt:String(attempt)}));
   const prior=priorIntents(g,p,excludeCurrent?run:''),needed=[];
   for(const a of actions) {
-    const runs=existing(g,p,a);
-    requireThat(runs.length<=1,`Ambiguous staged dispatch for ${a.target}`);
-    if(runs.length) {requireThat(runs[0].status!=='completed' || runs[0].conclusion==='success',`Staged dispatch failed for ${a.target}; inspect before recovery`);continue;}
-    requireThat(!prior.some(x=>x.key===a.key),`Uncertain prior dispatch for ${a.target}; no automatic duplicate`);
-    needed.push(a);
+    try {
+      const runs=existing(g,p,a);
+      requireThat(runs.length<=1,`Ambiguous staged dispatch for ${a.target}`);
+      if(runs.length) {requireThat(runs[0].status!=='completed' || runs[0].conclusion==='success',`Staged dispatch failed for ${a.target}; inspect before recovery`);continue;}
+      requireThat(!prior.some(x=>x.key===a.key),`Uncertain prior dispatch for ${a.target}; no automatic duplicate`);
+      needed.push(a);
+    } catch(error) {if(!perFamily)throw error;blocked.push({target:a.target,reason:error.message});}
   }
-  return {...base,state:barrier?'applications-authorized':'waiting-for-committed-ci',pending:[],actions:needed,...(barrier?{barrier}:{})};
+  return {...base,state:barrier?'applications-authorized':Object.keys(integrations).length?'waiting-for-committed-ci':'waiting-for-integrations',pending:[...new Set(pending)],...(blocked.length?{blocked}:{}),actions:needed,...(barrier?{barrier}:{})};
+}
+export function assertFamilyBarrier(p,barrier,live,target,run,attempt) {
+  requireThat(barrier?.schema==='wss-integration-barrier/v2' && barrier.plan_id===p.plan_id && same(barrier.candidate,p.candidate) && same(barrier.emitter,{run_id:run,attempt,workflow:WORKFLOW}) &&
+    Object.keys(barrier.integrations||{}).every(id=>p.policy.libraries.some(t=>t.id===id)) &&
+    barrier.integrations?.[target.id] && live?.integrations?.[target.id] && same(barrier.integrations[target.id],live.integrations[target.id]),'Current integration no longer matches its authorized barrier');
 }
 export function executeStage(g,reader,p,j) {
   validatePlan(p);
@@ -177,14 +193,16 @@ export function executeStage(g,reader,p,j) {
   requireThat(same(saved,j),'Durable dev stage journal differs');
   const live=prepareStage(reader,p,j.run_id,j.attempt,true);
   requireThat(live.plan_id===j.plan_id,'Dev plan changed');
-  if(j.barrier) requireThat(same(j.barrier,live.barrier),'Integration barrier changed after journaling');
+  const perFamily=p.policy.application_fanout==='per-integration';
+  if(j.barrier && !perFamily) requireThat(same(j.barrier,live.barrier),'Integration barrier changed after journaling');
   for(const a of j.actions) {
     const t=p.policy.libraries.find(t=>t.id===a.target);
     const inputs=a.phase==='normal-ci'?{}:{producer_run_id:p.candidate.run_id,barrier_run_id:j.run_id,barrier_attempt:String(j.attempt)};
     requireThat(t && same(a.inputs,inputs) && same(a,action(p,t,{head_sha:a.head_sha,merged_at:a.merged_at},a.phase,inputs)),'Invalid staged action');
-    requireThat(a.phase==='normal-ci' || a.phase==='applications' && j.barrier && Object.keys(j.barrier.integrations).length===4,'Applications require the complete integration barrier');
+    requireThat(a.phase==='normal-ci' || a.phase==='applications' && j.barrier && (perFamily?Boolean(j.barrier.integrations[t.id]):Object.keys(j.barrier.integrations).length===4),'Applications require their verified integration authorization');
+    if(perFamily && a.phase==='applications')assertFamilyBarrier(p,j.barrier,live.barrier,t,j.run_id,j.attempt);
     requireThat(reader.head(CORE)===p.candidate.commit,'Core moved before stage dispatch');
-    for(const lib of p.policy.libraries) requireThat(reader.head(lib.repository)=== (j.barrier?.integrations[lib.id]?.head_sha || mergedLibrary(reader,p,lib)?.head_sha),'Integration moved before stage dispatch');
+    for(const lib of perFamily?[t]:p.policy.libraries) requireThat(reader.head(lib.repository)=== (j.barrier?.integrations[lib.id]?.head_sha || mergedLibrary(reader,p,lib)?.head_sha),'Integration moved before stage dispatch');
     requireThat(reader.head(a.repository,a.ref)===a.source_sha,'Dispatch source moved');
     trusted(reader,p,t,a.head_sha);
     const runs=existing(reader,p,a);
@@ -197,7 +215,8 @@ export function executeStage(g,reader,p,j) {
 }
 export function verifyBarrier(g,producerId,runId,attempt,repository) {
   const p=loadStage(g,producerId);
-  requireThat(p.policy.libraries.some(t=>t.repository===repository),'Unknown application fanout caller');
+  const target=p.policy.libraries.find(t=>t.repository===repository);
+  requireThat(target,'Unknown application fanout caller');
   requireThat(/^[1-9][0-9]*$/.test(runId) && Number.isSafeInteger(attempt) && attempt>=1,'Invalid barrier emitter identity');
   const r=g.run(CORE,runId);
   requireThat(r.repository?.full_name===CORE && r.head_repository?.full_name===CORE && r.path===WORKFLOW && r.head_branch==='main' && r.head_sha===g.head(CORE,'main') && r.run_attempt===attempt && ['workflow_run','schedule','workflow_dispatch'].includes(r.event),'Barrier did not originate from trusted Core main');
@@ -207,7 +226,9 @@ export function verifyBarrier(g,producerId,runId,attempt,repository) {
   requireThat(a.workflow_run.head_sha===r.head_sha,'Barrier artifact source mismatch');
   const barrier=JSON.parse(g.download(CORE,runId,name,['barrier.json'])['barrier.json']);
   const live=prepareStage(g,p,runId,attempt,true);
-  requireThat(barrier.schema==='wss-integration-barrier/v1' && same(barrier,live.barrier),'Current integrations no longer match the authorized barrier');
+  if(p.policy.application_fanout==='per-integration') {
+    assertFamilyBarrier(p,barrier,live.barrier,target,runId,attempt);
+  } else requireThat(barrier.schema==='wss-integration-barrier/v1' && same(barrier,live.barrier),'Current integrations no longer match the authorized barrier');
   return barrier;
 }
 async function main() {
@@ -228,7 +249,7 @@ async function main() {
     mkdirSync(directory,{recursive:true});writeFileSync(join(directory,'intent.json'),canonical(j)+'\n');
     if(j.barrier) writeFileSync(join(directory,'barrier.json'),canonical(j.barrier)+'\n');
     appendFileSync(process.env.GITHUB_OUTPUT,`producer_run_id=${id}\nartifact_name=${journalName(p,j.run_id,j.attempt)}\nactions=${j.actions.length}\nbarrier=${Boolean(j.barrier)}\n`);
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY,`Dev propagation: ${j.state}; pending integrations: ${j.pending.join(', ') || 'none'}. No release publication.\n`);
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY,`Dev propagation: ${j.state}; pending integrations: ${j.pending.join(', ') || 'none'}; blocked families: ${(j.blocked||[]).map(x=>`${x.target}: ${x.reason}`).join('; ') || 'none'}. No release publication.\n`);
   } else if(command==='dispatch') {
     requireThat(process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main' && process.env.GITHUB_WORKFLOW_REF===`${CORE}/${WORKFLOW}@refs/heads/main`,'Dispatch only from registered trusted Core main workflow');
     const j=JSON.parse(readFileSync(args[0]));
