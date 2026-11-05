@@ -21,3 +21,11 @@ export function findNormalRuns(g,target,head,mergedAt) {
   requireThat(eligible.length<=1,`Ambiguous committed-state CI for ${target.repository}; inspect recovery`);
   return eligible;
 }
+
+// Receipt adapters use the coordinator's exact ambiguity and identity rules.
+export function selectNormalRun(runs,target,head,mergedAt) {
+  const eligible=findNormalRuns({pages:()=>runs},target,head,mergedAt);
+  requireThat(eligible.length===1 && eligible[0].status==='completed' && eligible[0].conclusion==='success',
+    'Unique successful actual-merge normal CI is missing/pending/failed');
+  return eligible[0];
+}

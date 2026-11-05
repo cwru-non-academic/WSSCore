@@ -1,0 +1,136 @@
+{
+  "schema": "wss-shared-ci/v2",
+  "repositories": [
+    "CSharp_WSS_Integration_Lib",
+    "CLI_CSharp_WSS_Application",
+    "Unity_WSS_Integration_Lib",
+    "GUI_Unity_WSS_Application",
+    "Python_WSS_Integration_Lib",
+    "CLI_Python_WSS_Application",
+    "ROS_Python_WSS_Application",
+    "Matlab_WSS_Integration_Lib",
+    "CLI_Matlab_WSS_Application"
+  ],
+  "origins": {
+    "integration": {
+      "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workspace": "Python_WSS_Integration_Lib",
+      "commit": "21ea1f7eaf2b0b812eabf429163eb9234df3f195",
+      "ref": "refs/heads/ci/tooling/21ea1f7eaf2b0b812eabf429163eb9234df3f195"
+    }
+  },
+  "files": {
+    ".github/scripts/wss-ci/verify.mjs": {
+      "origin": "core",
+      "path": "tools/release/verify.mjs"
+    },
+    ".github/scripts/wss-ci/producer-jobs.mjs": {
+      "origin": "core",
+      "path": "tools/release/producer-jobs.mjs"
+    },
+    ".github/scripts/wss-ci/Producer.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/Producer.ps1"
+    },
+    ".github/scripts/wss-ci/github.mjs": {
+      "origin": "core",
+      "path": "tools/release/github.mjs"
+    },
+    ".github/scripts/wss-ci/policy.mjs": {
+      "origin": "core",
+      "path": "tools/release/policy.mjs"
+    },
+    ".github/scripts/wss-ci/receipt.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt.mjs"
+    },
+    ".github/scripts/wss-ci/promotion.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/promotion.mjs"
+    },
+    ".github/scripts/wss-ci/dispatch-proof.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/dispatch-proof.mjs"
+    },
+    ".github/scripts/wss-ci/DispatchProof.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/DispatchProof.ps1"
+    },
+    ".github/scripts/wss-ci/receipt-targets.json": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-targets.json"
+    },
+    ".github/scripts/wss-ci/staging.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/staging.mjs"
+    },
+    ".github/scripts/wss-ci/staging-targets.json": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/staging-targets.json"
+    },
+    ".github/scripts/wss-ci/Staging.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/Staging.ps1"
+    },
+    ".github/scripts/wss-ci/Prepare-StagedApplicationFanout.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/Prepare-StagedApplicationFanout.ps1"
+    },
+    ".github/scripts/wss-ci/normalize-candidate.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/normalize-candidate.mjs"
+    },
+    ".github/scripts/wss-ci/Process.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/Process.ps1"
+    },
+    ".github/scripts/wss-ci/Evidence.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/Evidence.ps1"
+    },
+    ".github/scripts/wss-ci/README.md": {
+      "origin": "core",
+      "path": "tools/ci/shared/README.md"
+    },
+    ".github/scripts/wss-ci/normal-ci.mjs": {
+      "origin": "core",
+      "path": "tools/release/normal-ci.mjs"
+    },
+    ".github/scripts/wss-ci/normal-ci-select.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/normal-ci-select.mjs"
+    },
+    ".github/scripts/wss-ci/verify-plan.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/verify-plan.mjs"
+    },
+    ".github/scripts/wss-ci/Assert-UniversalArchive.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/Assert-UniversalArchive.ps1"
+    },
+    ".github/workflows/shared-ci.yml": {
+      "origin": "core",
+      "path": "tools/ci/shared/shared-ci.yml"
+    },
+    ".github/scripts/wss-ci/notify-family.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/notify-family.mjs",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "Unity_WSS_Integration_Lib",
+        "Python_WSS_Integration_Lib",
+        "Matlab_WSS_Integration_Lib"
+      ]
+    },
+    ".github/workflows/notify-core-stage.yml": {
+      "origin": "integration",
+      "path": ".github/workflows/notify-core-stage.yml",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "Unity_WSS_Integration_Lib",
+        "Python_WSS_Integration_Lib",
+        "Matlab_WSS_Integration_Lib"
+      ]
+    }
+  }
+}
