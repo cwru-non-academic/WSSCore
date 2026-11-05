@@ -121,6 +121,9 @@ See [consumer integration requirements](#consumer-integration-reference).
 
 ## CI and releases
 
+Hosted documentation: [Core PR validation and promotion](https://cwru-non-academic.github.io/WSS_Documentation/apiDocs/conceptual/ci-core-promotion.html#producer-validation-and-release-are-separate)
+and [Core functions](https://cwru-non-academic.github.io/WSS_Documentation/apiDocs/api/core/Wss.CoreModule.WssStimulationCore.html#methods).
+
 `.github/workflows/artifacts.yml` runs for PRs targeting `dev`, `main`, or
 `net2_BLE`, manual dispatch, and ordinary dev pushes. `Core conformance` runs the
 functional suite once on Linux. `Build and validate artifacts` builds its own inputs
