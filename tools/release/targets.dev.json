@@ -1,6 +1,7 @@
 {
   "schema": "wss-required-targets/v1",
   "channel": "dev",
+  "workflow_snapshot_policy": "wss-workflow-snapshots/v1",
   "release_kind": "beta",
   "stable_enabled": false,
   "targets": [

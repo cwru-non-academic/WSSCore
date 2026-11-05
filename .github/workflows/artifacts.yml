@@ -601,6 +601,10 @@ jobs:
           name: wss-projection-classification
           path: ${{ runner.temp }}/projection-classification/report.json
           if-no-files-found: error
+      - name: Check frozen workflow trees before write credentials
+        env:
+          GH_TOKEN: ${{ steps.projection-token.outputs.token }}
+        run: node tools/ci/workflow-freeze.mjs check-initial csharp '${{ runner.temp }}/dev-propagation-plan/plan.json'
       - name: Create Integration dispatch-only App token
         id: integration-token
         uses: actions/create-github-app-token@v2
@@ -614,6 +618,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ steps.integration-token.outputs.token }}
+          WSS_WORKFLOW_READ_TOKEN: ${{ steps.projection-token.outputs.token }}
           PRODUCER_SHA: ${{ github.sha }}
           PRODUCER_RUN: ${{ github.run_id }}
           ARTIFACT_ID: ${{ needs.package-universal.outputs.artifact-id }}
@@ -630,6 +635,8 @@ jobs:
           } | ConvertTo-Json -Depth 4 -Compress
           $head = gh api repos/cwru-non-academic/WSSCore/branches/dev --jq .commit.sha
           if ($LASTEXITCODE -ne 0 -or $head.Trim() -cne $env:PRODUCER_SHA) { throw 'Core dev moved before Integration dispatch; no stale candidate handoff.' }
-          $body | gh api --method POST repos/cwru-non-academic/CSharp_WSS_Integration_Lib/actions/workflows/promote-wss.yml/dispatches --input -
+          $requestPath=Join-Path $env:RUNNER_TEMP 'csharp-handoff.json'
+          [IO.File]::WriteAllText($requestPath,$body,[Text.UTF8Encoding]::new($false))
+          node tools/ci/workflow-freeze.mjs dispatch-initial csharp "$env:RUNNER_TEMP/dev-propagation-plan/plan.json" $requestPath
           if ($LASTEXITCODE -ne 0) { throw 'Routine handoff failed: verify App installation, Integration Actions-write permission, and the deployed dev workflow.' }
           "Automatic candidate: commit $env:PRODUCER_SHA; run $env:PRODUCER_RUN; artifact $env:ARTIFACT_ID; WSS-Universal-ci.zip; SHA-256 $env:SHA256. Integration waits for this producer run to complete successfully." >> $env:GITHUB_STEP_SUMMARY
