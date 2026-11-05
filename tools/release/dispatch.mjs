@@ -2,6 +2,7 @@ import {basename} from 'node:path';
 import {archive} from './github.mjs';
 import {findNormalRuns} from './normal-ci.mjs';
 import {bytesDigest,canonical,CORE,digest,plan,producer,requireThat} from './verify.mjs';
+import {assertWorkflows,guardedWriter} from '../ci/workflow-freeze.mjs';
 
 export const journalName = (p,run,attempt) => `wss-dispatch-intents-${p.plan_id}-${run}-a${attempt}`;
 export function action(p,t,workflow,head,inputs,mergedAt) {
@@ -45,6 +46,7 @@ export function previousIntents(g,p) {
 }
 export function prepare(g,p,run,attempt) {
   plan(p);
+  assertWorkflows(g,p,'acceptance',{live:false});
   const c=p.candidate,r=g.run(CORE,c.run_id),zip=archive(g,c);
   producer(p,{run:r,current_head:g.head(CORE),jobs:g.jobs(CORE,r),artifact:zip.artifact,archive_sha256:bytesDigest(zip.files[c.archive])});
   const prior=previousIntents(g,p),actions=[];
@@ -54,6 +56,7 @@ export function prepare(g,p,run,attempt) {
     actions.push(a);
   }
   for(const t of p.manifest.targets) {
+    assertWorkflows(g,p,'acceptance',{ids:[t.id]});
     const head=g.head(t.repository);
     if(head===p.target_snapshots[t.id].head_sha) continue;
     const prs=g.pages(`repos/${t.repository}/commits/${head}/pulls`).filter(pr=>pr.merged_at && pr.merge_commit_sha===head && pr.base?.ref==='dev' && pr.base?.repo?.full_name===t.repository && pr.head?.repo?.full_name===t.repository);
@@ -76,6 +79,7 @@ export function prepare(g,p,run,attempt) {
 }
 export function execute(g,reader,p,j) {
   plan(p);validateJournal(p,j);
+  assertWorkflows(reader,p,'acceptance',{live:false});
   // A successful upload is required BEFORE the first external mutation. A crash,
   // failed HTTP response, or missing run after this point remains a durable intent.
   const saved=reader.download(CORE,j.run_id,journalName(p,j.run_id,j.attempt),['intent.json'])['intent.json'];
@@ -95,6 +99,6 @@ export function execute(g,reader,p,j) {
     requireThat(reader.head(CORE)===p.candidate.commit && reader.head(a.repository)===a.head_sha,'Branch moved before proof dispatch');
     const args=['api','--method','POST',`repos/${a.repository}/actions/workflows/${basename(a.workflow)}/dispatches`,'-f','ref=dev'];
     for(const [key,value] of Object.entries(a.inputs)) args.push('-f',`inputs[${key}]=${value}`);
-    g.command(args);
+    guardedWriter(g,reader,p,'acceptance',{ids:[a.target_id],purpose:'proof'}).command(args);
   }
 }

@@ -12,6 +12,7 @@ import {bytesDigest,CORE,digest} from './verify.mjs';
 const sha=n=>n.toString(16).padStart(40,'0');
 function fixture(equal=[]) {
   const policy=JSON.parse(readFileSync(new URL('../ci/dev-propagation.json',import.meta.url)));
+  delete policy.workflow_snapshot_policy; // Preserve coverage of prior producer envelopes.
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:'a'.repeat(64)};
   const receivers=Object.fromEntries(policy.libraries.map(t=>[t.id,{heads:{main:sha(2),dev:sha(3)},trusted:{main:{},dev:{}}}]));
   const body={schema:'wss-dev-propagation-plan/v1',candidate,policy,policy_sha256:digest(policy),receivers};
@@ -43,6 +44,7 @@ function fixture(equal=[]) {
   }
   const g={head:(repo,branch='dev')=>repo===CORE?candidate.commit:branch==='main'?sha(2):sha(3),
     get:path=>{
+      if(path===`repos/${CORE}/contents/tools/ci/dev-propagation.json?ref=${candidate.commit}`)return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(policy)).toString('base64')};
       const commit=path.match(/^repos\/(cwru-non-academic\/[^/]+)\/git\/commits\/([a-f0-9]+)$/);
       if(commit) return {sha:commit[2],tree:{sha:sha(80)}};
       const tree=path.match(/^repos\/(cwru-non-academic\/[^/]+)\/git\/trees\/([a-f0-9]+)\?recursive=1$/);

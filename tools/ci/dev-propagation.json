@@ -1,6 +1,7 @@
 {
   "schema": "wss-dev-stage/v1",
   "channel": "dev",
+  "workflow_snapshot_policy": "wss-workflow-snapshots/v1",
   "libraries": [
     {
       "id": "csharp",
@@ -74,11 +75,11 @@
       },
       "promotion_contract_test": {
         "path": ".github/scripts/tests/Test-MatlabPromotion.ps1",
-        "sha": "21105989daea4a857d003f8536bb78249714a9d3"
+        "sha": "11d5d06257122aaf5d37548eea3b8f62e8294bf7"
       },
       "merge_evidence_guard": {
         "path": ".github/scripts/MatlabPromotion.ps1",
-        "sha": "58770e30f7d763f65090c5c232b0b75bd60c265c"
+        "sha": "975d11902af5bb4143f0728c26a259804ae9e061"
       }
     }
   ],
