@@ -18,9 +18,10 @@ these sources, not separate implementations in each product language.
 | Candidate normalization and constrained PR publication | Python integration `normalize-candidate.mjs`, `promotion.mjs` |
 | Staging, durable dispatch proof and adapters | Python integration `staging.mjs`, `dispatch-proof.mjs` and associated profiles/bridges |
 | Process arguments and versioned native evidence identity | Python integration `Process.ps1`, `Evidence.ps1` |
+| Correlated preflight requests and exact-run waiting | Python integration `preflight.mjs`, `Preflight.ps1` |
 | Integration-only coordinator notification | Python integration `notify-family.mjs`, `notify-core-stage.yml` |
 
-Integrations receive 25 managed files and applications receive 23; notifier files
+Integrations receive 27 managed files and applications receive 25; notifier files
 are scoped to integrations. Preserve receiver runtime tests, projection/importer
 rules, native evidence interpretation, explicit executable pins, job names and
 application gitlinks. The shared source does not replace language-specific proof.
