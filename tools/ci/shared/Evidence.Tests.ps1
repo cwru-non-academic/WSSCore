@@ -1,5 +1,20 @@
 $ErrorActionPreference='Stop'
 . "$PSScriptRoot/Evidence.ps1"
+$repo='cwru-non-academic/WSSCore';$source='a'*40
+$identity=New-WssCiEvidenceIdentity $repo '123' '2' $source 'X86_64'
+Assert-WssCiEvidenceIdentity $identity $repo '123' '2' $source 'X64'
+foreach($field in @('repository','run_id','attempt','source_sha','architecture','schema')) {
+    $bad=$identity|ConvertTo-Json|ConvertFrom-Json
+    $bad.$field='wrong'
+    $rejected=$false;try{Assert-WssCiEvidenceIdentity $bad $repo '123' '2' $source 'x64'}catch{$rejected=$true}
+    if(!$rejected){throw "Changed CI identity accepted: $field"}
+}
+foreach($priorAttempt in @('1','3')) {
+    $rejected=$false;try{Assert-WssCiEvidenceIdentity $identity $repo '123' $priorAttempt $source 'x64'}catch{$rejected=$true}
+    if(!$rejected){throw 'Evidence from another workflow attempt accepted.'}
+}
+$rejected=$false;try{New-WssCiEvidenceIdentity $repo '123' '' $source 'x64'}catch{$rejected=$true}
+if(!$rejected){throw 'Missing workflow attempt accepted.'}
 $record=[pscustomobject]@{schema='fixture/v1';run_id='1';attempt='2';source_sha=('a'*40);hardware=$false}
 $expected=@{schema='fixture/v1';run_id='1';attempt='2';source_sha=('a'*40);hardware=$false}
 Assert-WssCiEvidenceFields $record $expected
