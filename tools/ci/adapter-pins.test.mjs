@@ -1,0 +1,54 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {workflowPins,replacePins,verifyWorkflowPins,refreshWorkflowPins} from './adapter-pins.mjs';
+const sha=n=>String(n).repeat(40),core='cwru-non-academic/WSSCore',parent='cwru-non-academic/Python_WSS_Integration_Lib',repository='cwru-non-academic/CLI_Python_WSS_Application';
+const profiles={wrapper:{role:'wrapper',family:'python',wrapper:'wrapper',target:{repository:parent}},app:{role:'cli',family:'python',wrapper:'wrapper',target:{repository}}};
+const lock={repository,source_repository:core,source_commit:sha(1),origins:{integration:{commit:sha(2)}}};
+const files={'release-receipt.yml':`steps:\r\n  - uses: actions/checkout@v4\r\n    with:\r\n      repository: ${parent}\r\n      ref: ${sha(3)}\r\n      path: tools\r\n  - uses: actions/checkout@v4\r\n    with:\r\n      repository: ${core}\r\n      ref: ${sha(1)}\r\n`};
+const g={head:(_r,b)=>b==='dev'?sha(4):sha(5),object:()=>({sha:sha(6)})};
+test('matching pinned validator tree/config works across distinct current dev/main commits',()=>assert.equal(verifyWorkflowPins({repository,profiles,lock,files},g).references,2));
+test('copied source identity cannot hide stale executable integration or Core pins',()=>{
+  const different={...g,object:(_r,ref,path)=>({sha:ref===sha(3)&&path==='.github/scripts'?sha(9):sha(6)})};
+  assert.throws(()=>verifyWorkflowPins({repository,profiles,lock,files},different),/Pinned integration tooling/);
+  assert.throws(()=>verifyWorkflowPins({repository,profiles,lock,files:{'release-receipt.yml':files['release-receipt.yml'].replace(sha(1),sha(8))}},g),/Core workflow pin/);
+});
+test('execution config and default-main differences fail even when script copies match',()=>{
+  for(const path of ['.github/scripts','.github/python-ci.json']){
+    const changed={...g,object:(_r,ref,p)=>({sha:ref===sha(5)&&p===path?sha(8):sha(6)})};
+    assert.throws(()=>verifyWorkflowPins({repository,profiles,lock,files},changed),/Pinned integration tooling/);
+  }
+});
+test('receipt validator may not silently become a floating branch checkout',()=>{
+  assert.throws(()=>verifyWorkflowPins({repository,profiles,lock,files:{'release-receipt.yml':files['release-receipt.yml'].replace(sha(3),'dev')}},g),/pin its integration validator/);
+});
+test('refresh preserves CRLF, runtime gitlink expressions and unrelated fixtures literally',()=>{
+  const text=files['release-receipt.yml']+`  - uses: ${parent}/.github/workflows/_python-validation.yml@${sha(3)}\r\n  - uses: actions/checkout@v4\r\n    with:\r\n      repository: ${parent}\r\n      ref: \${{ inputs.wrapper_sha }}\r\n  - uses: actions/checkout@v4\r\n    with:\r\n      repository: unrelated/fixture\r\n      ref: ${sha(7)}\r\n`;
+  const pins=workflowPins(text,[core,parent]);assert.equal(pins.length,3);
+  const result=replacePins(text,pins,{[core]:sha(8),[parent]:sha(9)});
+  assert.ok(result.includes('ref: ${{ inputs.wrapper_sha }}\r\n'));assert.ok(result.includes(`ref: ${sha(7)}`));assert.equal(result.split(sha(9)).length-1,2);assert.equal(result.split('\r\n').length,text.split('\r\n').length);
+});
+test('refresh refuses an integration snapshot with a different common lock',()=>{
+  assert.throws(()=>refreshWorkflowPins({repository,profiles,lock,files,adapter:sha(8),adapterLock:{...lock,repository:parent,source_commit:sha(9)}}),/matching integration source/);
+  const result=refreshWorkflowPins({repository,profiles,lock,files,adapter:sha(8),adapterLock:{...lock,repository:parent}});
+  assert.ok(result['release-receipt.yml'].includes(sha(8)));
+});
+test('unregistered targets, malformed checkout layout and floating reusable workflows fail closed',()=>{
+  assert.throws(()=>verifyWorkflowPins({repository:'foreign/repo',profiles,lock,files},g),/Unknown target/);
+  assert.throws(()=>workflowPins(`repository: ${parent}\npath: tools\nref: ${sha(3)}\n`,[parent]),/immediately after/);
+  assert.throws(()=>workflowPins(`uses: ${parent}/.github/workflows/_python-validation.yml@main\n`,[parent]),/immutable/);
+});
+test('libraries check their Core contract pins without inventing a parent integration',()=>{
+  const data={repository:parent,profiles,lock:{...lock,repository:parent},files:{'contracts.yml':`repository: ${core}\nref: ${sha(1)}\n`}};
+  assert.equal(verifyWorkflowPins(data,g).references,1);
+});
+test('C# runtime gitlink expressions and trusted branch checkouts stay distinct from immutable tool pins',()=>{
+  const p={wrapper:{...profiles.wrapper,family:'csharp'},app:{...profiles.app,family:'csharp'}};
+  const data={repository,profiles:p,lock,files:{'release-receipt.yml':`repository: ${parent}\nref: main\n`,'runtime.yml':`repository: ${parent}\nref: \${{ inputs.integration_sha }}\n`}};
+  assert.equal(verifyWorkflowPins(data,{head:()=>{throw Error('Must not reinterpret runtime sources as tool pins');}}).references,0);
+});
+test('Unity reusable workers must match the registered workflow blob as well as scripts and config',()=>{
+  const p={wrapper:{...profiles.wrapper,family:'unity'},app:{...profiles.app,family:'unity'}};
+  const data={repository,profiles:p,lock,files:{'ci.yml':`uses: ${parent}/.github/workflows/_unity-validation.yml@${sha(3)}\n`}};
+  assert.equal(verifyWorkflowPins(data,g).references,1);
+  assert.throws(()=>verifyWorkflowPins(data,{...g,object:(_r,ref,path)=>({sha:ref===sha(3)&&path.endsWith('.yml')?sha(9):sha(6)})}),/Pinned integration tooling/);
+});
