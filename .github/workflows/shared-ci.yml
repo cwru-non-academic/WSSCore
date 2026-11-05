@@ -22,6 +22,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Report effective non-secret deployment switches
+        shell: pwsh
+        env:
+          WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
+          WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
+        run: |
+          foreach($name in @('WSS_DEV_ACCEPTANCE_ENABLED','WSS_DEV_RELEASE_ENABLED')) {
+            $value=[Environment]::GetEnvironmentVariable($name)
+            if($value -cnotin @('','true','false')) {throw "Unexpected boolean deployment switch: $name"}
+            $display=if($value -ceq '') {'<unset>'} else {$value}
+            Write-Output "$name=$display"
+          }
       - run: node --test tools/release/*.test.mjs tools/ci/sync-tooling.test.mjs
       - shell: pwsh
         run: |
