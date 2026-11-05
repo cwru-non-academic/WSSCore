@@ -4,6 +4,7 @@ import {pathToFileURL} from 'node:url';
 import {GitHub,archive} from '../release/github.mjs';
 import {findNormalRuns} from '../release/normal-ci.mjs';
 import {CORE,CORE_JOBS,candidate,canonical,digest,jobs,requireThat} from '../release/verify.mjs';
+import {assertWorkflows,freezeWorkflows,guardedWriter} from './workflow-freeze.mjs';
 
 const POLICY='tools/ci/dev-propagation.json',WORKFLOW='.github/workflows/dev-propagation.yml';
 const RECEIVER='.github/dev-propagation.json';
@@ -75,7 +76,7 @@ export function freezeStage(g,m,c) {
   }
   const body={schema:'wss-dev-propagation-plan/v1',candidate:c,policy:m,policy_sha256:digest(m),receivers};
   requireThat(g.head(CORE)===c.commit,'Core dev moved while freezing receiver tooling');
-  return {...body,plan_id:digest(body)};
+  return freezeWorkflows(g,{...body,plan_id:digest(body)},'stage');
 }
 export function validatePlan(p) {
   candidate(p.candidate);policy(p.policy);
@@ -92,9 +93,11 @@ export function loadStage(g,id) {
   jobs(g.jobs(CORE,r),CORE_JOBS);
   archive(g,c);
   requireThat(same(json(g,CORE,c.commit,POLICY),p.policy),'Plan policy is not the reviewed producer policy');
+  assertWorkflows(g,p,'stage',{live:false});
   return p;
 }
 function trusted(g,p,t,head) {
+  assertWorkflows(g,p,'stage',{ids:[t.id]});
   for(const branch of ['main','dev']) {
     const ref=branch==='main'?g.head(t.repository,'main'):head;
     for(const [path,sha] of Object.entries(p.receivers[t.id].trusted[branch])) requireThat(g.object(t.repository,ref,path).sha===sha,`Staged receiver tooling changed: ${t.id}/${branch}/${path}`);
@@ -140,6 +143,7 @@ function priorIntents(g,p,excludeRun='') {
 }
 export function prepareStage(g,p,run,attempt,excludeCurrent=false) {
   validatePlan(p);
+  assertWorkflows(g,p,'stage',{live:false});
   requireThat(/^[1-9][0-9]*$/.test(run) && Number.isSafeInteger(attempt) && attempt>=1,'Invalid stage emitter');
   const perFamily=p.policy.application_fanout==='per-integration';
   const integrations={},pending=[],blocked=[],actions=[];
@@ -211,7 +215,7 @@ export function executeStage(g,reader,p,j) {
     if(runs.length) {requireThat(runs[0].status!=='completed' || runs[0].conclusion==='success','Concurrent stage failed');continue;}
     const args=['api','--method','POST',`repos/${a.repository}/actions/workflows/${a.workflow}/dispatches`,'-f',`ref=${a.ref}`];
     for(const [k,v] of Object.entries(a.inputs)) args.push('-f',`inputs[${k}]=${v}`);
-    g.command(args);
+    guardedWriter(g,reader,p,'stage',{ids:[t.id],purpose:'stage'}).command(args);
   }
 }
 export function verifyBarrier(g,producerId,runId,attempt,repository) {

@@ -25,12 +25,20 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - name: Validate completed producer, exact artifact and destination readiness
         id: prepare
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./tools/ci/prepare-unity-handoff.ps1 -EventPath $env:GITHUB_EVENT_PATH -WorkRoot "$env:RUNNER_TEMP/unity-handoff"
+      - name: Check frozen workflow trees before write credentials
+        if: steps.prepare.outputs.dispatch_needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/workflow-freeze.mjs check-initial unity '${{ github.event.workflow_run.id }}'
       - name: Require existing App configuration only when dispatch is needed
         if: steps.prepare.outputs.dispatch_needed == 'true'
         shell: pwsh
@@ -54,8 +62,9 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ steps.dispatch.outputs.token }}
+          WSS_WORKFLOW_READ_TOKEN: ${{ github.token }}
         run: |
-          gh api --method POST repos/cwru-non-academic/Unity_WSS_Integration_Lib/actions/workflows/promote-wss.yml/dispatches --input "$env:RUNNER_TEMP/unity-handoff/dispatch.json"
+          node tools/ci/workflow-freeze.mjs dispatch-initial unity '${{ github.event.workflow_run.id }}' "$env:RUNNER_TEMP/unity-handoff/dispatch.json"
           if ($LASTEXITCODE -ne 0) { throw 'Unity handoff failed or is uncertain. Inspect the correlated run before retrying; verify the existing App installation has Unity wrapper Actions-write access.' }
           'Unity wrapper dispatch accepted. Candidate validation and dependency PR publication run separately; human merges remain required.' >> $env:GITHUB_STEP_SUMMARY
       - uses: actions/upload-artifact@v4

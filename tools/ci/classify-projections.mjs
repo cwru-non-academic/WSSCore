@@ -6,6 +6,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {GitHub} from '../release/github.mjs';
 import {bytesDigest,candidate,canonical,CORE,requireThat} from '../release/verify.mjs';
 import {validatePlan} from './dev-propagation.mjs';
+import {assertWorkflows} from './workflow-freeze.mjs';
 
 export const UNIVERSAL_FILES=JSON.parse(readFileSync(new URL('../ArtifactBuild/manifests/universal.json',import.meta.url))).files;
 const legacy=UNIVERSAL_FILES.filter(path=>!path.startsWith('backends/macos/'));
@@ -130,6 +131,7 @@ export function classifyProjections(g,p,archiveHashes) {
     const head=p.receivers[t.id]?.heads?.dev;
     const row={target:t.id,repository:t.repository,head_sha:head,status:'blocked',acceptance:false};
     try {
+      assertWorkflows(g,p,'stage',{ids:[t.id]});
       requireThat(!archiveError,archiveError);
       requireThat(/^[a-f0-9]{40}$/.test(head) && g.head(t.repository)===head &&
         g.head(t.repository,'main')===p.receivers[t.id].heads.main,'Receiver moved from frozen heads');
