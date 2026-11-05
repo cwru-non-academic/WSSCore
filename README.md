@@ -1090,7 +1090,8 @@ to publish a
 single JSON file `receipt.json` in an artifact named
 `wss-acceptance-<target_id>-<plan_id>-a<run_attempt>` after actual human merge and
 successful normal committed-state CI. An explicit reconciliation dispatch may
-recheck an existing merge/no-op; it must not create a dependency PR or merge one.
+recheck an existing dependency merge; it must not create a dependency PR or merge
+one. Preparation-only or no-op dispositions do not produce acceptance receipts.
 The receipt writer needs read access only. Receipt tooling must be registered on default/main and dev; missing tooling blocks
 plan production.
 
