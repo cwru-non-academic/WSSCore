@@ -51,6 +51,7 @@ test('Unity reusable workers must match the registered workflow blob as well as 
   const data={repository,profiles:p,lock,files:{'ci.yml':`uses: ${parent}/.github/workflows/_unity-validation.yml@${sha(3)}\n`}};
   assert.equal(verifyWorkflowPins(data,g).references,1);
   assert.throws(()=>verifyWorkflowPins(data,{...g,object:(_r,ref,path)=>({sha:ref===sha(3)&&path.endsWith('.yml')?sha(9):sha(6)})}),/Pinned integration tooling/);
+  assert.throws(()=>verifyWorkflowPins(data,{...g,object:(_r,ref,path)=>({sha:ref===sha(3)&&path==='.github/workflows'?sha(9):sha(6)})}),/Pinned integration tooling/,'An unchanged entry workflow must not hide changed nested local workflows');
 });
 test('a reviewed Core native fixture stays distinct from the canonical CI tooling revision',()=>{
   const owner='cwru-non-academic/CSharp_WSS_Integration_Lib';
