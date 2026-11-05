@@ -25,3 +25,5 @@ jobs:
       - run: node --test tools/release/*.test.mjs tools/ci/sync-tooling.test.mjs
       - shell: pwsh
         run: ./tools/ci/shared/Archive.Tests.ps1
+      - shell: pwsh
+        run: ./tools/ci/shared/Process.Tests.ps1

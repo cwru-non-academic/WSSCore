@@ -29,6 +29,7 @@ function safePath(base,path) {
 export function expectedLock(repository,commit) {
   requireThat(manifest.repositories.includes(repository),'Unknown WSS target repository');
   return {schema:manifest.schema,repository:`cwru-non-academic/${repository}`,source_repository:'cwru-non-academic/WSSCore',source_commit:commit,
+    source_ref:`refs/heads/ci/tooling/${commit}`,
     files:Object.fromEntries(Object.entries(manifest.files).map(([source,target])=>[target,{source,sha256:hash(sourceBytes(source))}]))};
 }
 

@@ -8,6 +8,13 @@
   ],
   "files": {
     "tools/release/verify.mjs": ".github/scripts/wss-ci/verify.mjs",
+    "tools/release/github.mjs": ".github/scripts/wss-ci/github.mjs",
+    "tools/release/policy.mjs": ".github/scripts/wss-ci/policy.mjs",
+    "tools/release/receipt.mjs": ".github/scripts/wss-ci/receipt.mjs",
+    "tools/release/receipt-targets.json": ".github/scripts/wss-ci/receipt-targets.json",
+    "tools/release/normalize-candidate.mjs": ".github/scripts/wss-ci/normalize-candidate.mjs",
+    "tools/ci/shared/Process.ps1": ".github/scripts/wss-ci/Process.ps1",
+    "tools/ci/shared/README.md": ".github/scripts/wss-ci/README.md",
     "tools/release/normal-ci.mjs": ".github/scripts/wss-ci/normal-ci.mjs",
     "tools/release/normal-ci-select.mjs": ".github/scripts/wss-ci/normal-ci-select.mjs",
     "tools/release/verify-plan.mjs": ".github/scripts/wss-ci/verify-plan.mjs",
