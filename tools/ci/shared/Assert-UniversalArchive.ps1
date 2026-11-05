@@ -3,7 +3,8 @@ function Get-WssUniversalArchiveHashes {
     param(
         [Parameter(Mandatory)][string]$Archive,
         [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{64}$')][string]$ExpectedSha256,
-        [Parameter(Mandatory)][string[]]$ExpectedFiles
+        [Parameter(Mandatory)][string[]]$ExpectedFiles,
+        [switch]$AllowDirectoryEntries
     )
     $ErrorActionPreference = 'Stop'
     if ((Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ExpectedSha256) { throw 'Candidate ZIP checksum mismatch.' }
@@ -23,6 +24,7 @@ try {
     foreach ($entry in $zip.Entries) {
         if (!$seen.Add($entry.FullName)) { throw 'Duplicate/case-colliding ZIP entry.' }
         if ($entry.FullName.EndsWith('/')) {
+            if (!$AllowDirectoryEntries) { throw 'Unexpected ZIP directory.' }
             if (!$directories.Contains($entry.FullName) -or $entry.Length -ne 0) { throw 'Unexpected ZIP directory.' }
             continue
         }

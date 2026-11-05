@@ -31,6 +31,7 @@ try {
     Assert-Rejected 'traversal' @(@{path='WSS-Universal/../file.dll';content='a'}) 'Unexpected'
     Assert-Rejected 'symlink' @(@{path='WSS-Universal/file.dll';content='a';attributes=[int](-1610612736)}) 'regular files'
     Assert-Rejected 'empty' @(@{path='WSS-Universal/file.dll';content=''}) 'Unexpected'
-    Assert-Rejected 'missing' @(@{path='WSS-Universal/';content=''}) 'incomplete'
+    Assert-Rejected 'unexpected-directory' @(@{path='WSS-Universal/';content=''}) 'Unexpected ZIP directory'
+    Assert-Rejected 'missing' @() 'incomplete'
     Write-Output 'Shared archive contracts passed.'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }

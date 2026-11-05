@@ -61,6 +61,7 @@ plus their application repositories and independent language audit findings.
 | Preflight/promotion/fanout | Receiver scripts repeat source/intent/barrier checks with different approval schemas. | Extract generic journal/correlation and barrier checks from existing Core code. Preserve the four-wrapper barrier, late revalidation, credential separation and uncertain-dispatch handling. |
 | macOS summaries/evidence | Repeated aggregators differ in run/attempt/source bindings and schema. | Use Core's exact-attempt job gate, then runtime-specific envelope adapters retaining the strongest fields. Version envelope changes. |
 | Payload inventories | Hardcoded legacy/macOS inventories and projection mappings differ. | Generate reviewed inventory from the pinned Core manifest; keep language mapping/importer rules as explicit adapters. |
+| Candidate normalization and argv | C# resolver adds `release_tag` to the six-field normalized record; older promotion/resolver/fanout helpers retain positional-array forwarding. | Move the six-field writer and argument-safe process boundary into the common reference, with golden-record and real-argv hosted regressions before adoption. |
 
 These are subsequent coordinated migrations, not claims of completion in this
 first PR set. In particular, this change does not refresh the old receipt
