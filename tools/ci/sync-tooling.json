@@ -8,6 +8,8 @@
   ],
   "files": {
     "tools/release/verify.mjs": ".github/scripts/wss-ci/verify.mjs",
+    "tools/release/producer-jobs.mjs": ".github/scripts/wss-ci/producer-jobs.mjs",
+    "tools/ci/shared/Producer.ps1": ".github/scripts/wss-ci/Producer.ps1",
     "tools/release/github.mjs": ".github/scripts/wss-ci/github.mjs",
     "tools/release/policy.mjs": ".github/scripts/wss-ci/policy.mjs",
     "tools/release/receipt.mjs": ".github/scripts/wss-ci/receipt.mjs",
