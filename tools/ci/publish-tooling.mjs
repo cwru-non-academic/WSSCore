@@ -34,7 +34,7 @@ try {
       const original=readFileSync(workflow,'utf8');
       const pattern=new RegExp(`(repository: cwru-non-academic/${parent}\\r?\\n\\s+ref:) [^\\r\\n]+`);
       requireThat(pattern.test(original),'Missing pinned receipt adapter checkout');
-      writeFileSync(workflow,original.replace(pattern,`$1 refs/heads/ci/tooling/${parentCommit}`));
+      writeFileSync(workflow,original.replace(pattern,`$1 ${parentCommit}`));
     }
     // Inspectable receiver adapter changes may accompany this coordinated update.
     const dirty=git(root,'status','--porcelain','--untracked-files=all').split(/\r?\n/).filter(Boolean);
