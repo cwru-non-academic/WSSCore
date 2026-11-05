@@ -57,3 +57,5 @@ jobs:
           }
       - shell: pwsh
         run: ./tools/ci/shared/Archive.Tests.ps1
+      - shell: pwsh
+        run: ./tools/ci/shared/Channel.Tests.ps1
