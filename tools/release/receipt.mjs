@@ -49,6 +49,8 @@ export async function runReceipt(config,{g=new ReadOnly(),env=process.env,adapte
     for(const path of ['.github/scripts',WORKFLOW]) v.requireThat(object(toolsRoot,path)===snapshot.trusted[path],`Trusted main receipt tooling differs: ${path}`);
   } else {
     v.requireThat(object(toolsRoot,'.github/scripts')===p.target_snapshots[profile.wrapper].trusted['.github/scripts'],'Pinned wrapper validator tree differs from frozen tooling');
+    const configPath=`.github/${profile.family}-ci.json`;
+    v.requireThat(object(toolsRoot,configPath)===p.target_snapshots[profile.wrapper].trusted[configPath],'Pinned wrapper execution configuration differs from frozen tooling');
   }
   if(profile.family==='matlab') {
     const readiness=JSON.parse(readFileSync(join(sourceRoot,'.github/matlab-ci.json'),'utf8'));

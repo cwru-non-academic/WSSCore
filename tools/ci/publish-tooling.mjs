@@ -27,12 +27,27 @@ try {
   for(const repository of manifest.repositories) {
     const root=join(workspace,repository);
     requireThat(git(root,'branch','--show-current')===branch,`Use the existing reviewed draft branch in ${repository}`);
+    const parent=repository==='CLI_Python_WSS_Application'||repository==='ROS_Python_WSS_Application'?'Python_WSS_Integration_Lib':repository==='CLI_Matlab_WSS_Application'?'Matlab_WSS_Integration_Lib':null;
+    if(parent) {
+      const parentRoot=join(workspace,parent),parentCommit=git(parentRoot,'rev-parse','HEAD');
+      const workflow=join(root,'.github/workflows/release-receipt.yml');
+      const original=readFileSync(workflow,'utf8');
+      const pattern=new RegExp(`(repository: cwru-non-academic/${parent}\\r?\\n\\s+ref:) [^\\r\\n]+`);
+      requireThat(pattern.test(original),'Missing pinned receipt adapter checkout');
+      writeFileSync(workflow,original.replace(pattern,`$1 refs/heads/ci/tooling/${parentCommit}`));
+    }
     // Inspectable receiver adapter changes may accompany this coordinated update.
     const dirty=git(root,'status','--porcelain','--untracked-files=all').split(/\r?\n/).filter(Boolean);
     requireThat(dirty.every(line=>/^.{3}\.github\//.test(line)),`Unrelated changes in ${repository}`);
     git(root,'add','.github');git(root,'diff','--cached','--check');
     if(git(root,'diff','--cached','--name-only')) git(root,'commit','-m',`Synchronize shared CI engine ${commit.slice(0,12)}`);
     const head=git(root,'rev-parse','HEAD');git(root,'-c','push.followTags=false','push','origin',`HEAD:refs/heads/${branch}`);
+    if(repository==='Python_WSS_Integration_Lib'||repository==='Matlab_WSS_Integration_Lib') {
+      const adapterAnchor=`refs/heads/ci/tooling/${head}`;
+      const prior=git(root,'ls-remote','origin',adapterAnchor);
+      if(prior) requireThat(prior.split(/\s+/)[0]===head,'Pinned adapter anchor differs');
+      else git(root,'-c','push.followTags=false','push','origin',`${head}:${adapterAnchor}`);
+    }
     const prs=JSON.parse(run('gh',['pr','list','--repo',`cwru-non-academic/${repository}`,'--state','open','--head',branch,'--base','dev','--json','number,url,isDraft']));
     requireThat(prs.length<=1,'Ambiguous synchronization PR');
     let url;

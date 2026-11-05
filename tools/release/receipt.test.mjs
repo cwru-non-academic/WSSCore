@@ -11,13 +11,13 @@ const sha=n=>String(n).repeat(40);
 function fixture() {
   const root=mkdtempSync(join(tmpdir(),'wss receipt '));
   const git=(...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8'}).trim();
-  git('init');mkdirSync(join(root,'.github/scripts'),{recursive:true});writeFileSync(join(root,'.github/scripts/proof.ps1'),'# trusted adapter\n');
+  git('init');mkdirSync(join(root,'.github/scripts'),{recursive:true});writeFileSync(join(root,'.github/scripts/proof.ps1'),'# trusted adapter\n');writeFileSync(join(root,'.github/python-ci.json'),'{}\n');
   git('add','.');git('-c','user.name=CI','-c','user.email=ci@example.invalid','commit','-m','fixture');
-  const head=git('rev-parse','HEAD'),scripts=git('rev-parse','HEAD:.github/scripts');
+  const head=git('rev-parse','HEAD'),scripts=git('rev-parse','HEAD:.github/scripts'),config=git('rev-parse','HEAD:.github/python-ci.json');
   const manifest=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
   const id='python-wrapper',t=manifest.targets.find(t=>t.id===id);
   const zip=Buffer.from('canonical archive'),candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(zip)};
-  const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(target=>[target.id,{head_sha:sha(2),trusted:Object.fromEntries(target.trusted_paths.map(path=>[path,path==='.github/scripts'&&target.id===id?scripts:sha(3)]))}]))};
+  const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(target=>[target.id,{head_sha:sha(2),trusted:Object.fromEntries(target.trusted_paths.map(path=>[path,target.id===id&&path==='.github/scripts'?scripts:target.id===id&&path==='.github/python-ci.json'?config:sha(3)]))}]))};
   const p={...body,plan_id:digest(body)};
   const pr={number:10,merged:true,state:'closed',merge_commit_sha:head,merged_at:'2026-11-01T00:00:00Z',user:{type:'Bot'},merged_by:{type:'User'},base:{ref:'dev',repo:{full_name:t.repository}},head:{sha:sha(4),repo:{full_name:t.repository}}};
   const identity={repository:{full_name:t.repository},head_repository:{full_name:t.repository},head_sha:head,head_branch:'dev',run_attempt:1};
