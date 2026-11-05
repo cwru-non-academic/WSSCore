@@ -62,6 +62,17 @@ test('all four changed projections permit only the existing reviewed promotion r
   assert.equal(projectedPath('unity','backends/macos/libwss_macos_ble.dylib'),'backends/macos/libwss_macos_ble.dylib');
   assert.equal(projectedPath('unity','runtimes/unix/lib/net8.0/System.IO.Ports.dll'),'runtimes/unix/lib/net8.0/System.IO.Ports.dll');
 });
+test('regular executable Git blobs preserve byte-based classification and provenance',()=>{
+  for(const equal of [[],Object.keys(PROFILES),['unity']]) {
+    const f=fixture(equal),expected=classifyProjections(f.g,f.p,f.hashes);
+    const before=Object.values(f.records).map(b=>b.toString());
+    for(const entries of Object.values(f.trees)) {
+      entries.forEach((entry,index)=>{if(index%2===0) entry.mode='100755';});
+    }
+    assert.deepEqual(classifyProjections(f.g,f.p,f.hashes),expected);
+    assert.deepEqual(Object.values(f.records).map(b=>b.toString()),before);
+  }
+});
 test('all-equal and mixed targets stop the whole handoff without fabricating acceptance',()=>{
   for(const equal of [Object.keys(PROFILES),['unity']]) {
     const f=fixture(equal),r=classifyProjections(f.g,f.p,f.hashes);
@@ -132,6 +143,14 @@ for(const [name,corrupt] of [
   ['missing DLL',f=>f.trees[PROFILES.python.repository].shift()],
   ['wrong Git blob bytes',f=>{const b=f.blobs.get(f.trees[PROFILES.python.repository][0].sha);b.content=Buffer.from('altered').toString('base64');}],
   ['symlink DLL',f=>f.trees[PROFILES.python.repository][0].mode='120000'],
+  ['submodule DLL',f=>Object.assign(f.trees[PROFILES.python.repository][0],{mode:'160000',type:'commit'})],
+  ['tree in place of DLL',f=>Object.assign(f.trees[PROFILES.python.repository][0],{mode:'040000',type:'tree'})],
+  ['unsupported regular file mode',f=>f.trees[PROFILES.python.repository][0].mode='100664'],
+  ['nonblob executable entry',f=>Object.assign(f.trees[PROFILES.python.repository][0],{mode:'100755',type:'commit'})],
+  ['wrong executable Git blob bytes',f=>{
+    const entry=f.trees[PROFILES.python.repository][0];entry.mode='100755';
+    f.blobs.get(entry.sha).content=Buffer.from('altered').toString('base64');
+  }],
   ['truncated Git tree',f=>{const get=f.g.get;f.g.get=path=>{const value=get(path);return path.includes('/git/trees/')?{...value,truncated:true}:value;};}],
   ['case collision',f=>f.trees[PROFILES.python.repository].push({...f.trees[PROFILES.python.repository][0],path:'Cs_Libraries/wss_core_interface.dll'})],
   ['extra Unity DLL',f=>f.trees[PROFILES.unity.repository].push({...f.trees[PROFILES.unity.repository][0],path:'Plugins/WSS_Core_Interface/unreviewed.dll'})],
