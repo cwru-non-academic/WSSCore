@@ -1,0 +1,17 @@
+{
+  "schema": "wss-shared-ci/v1",
+  "repositories": [
+    "CSharp_WSS_Integration_Lib", "CLI_CSharp_WSS_Application",
+    "Unity_WSS_Integration_Lib", "GUI_Unity_WSS_Application",
+    "Python_WSS_Integration_Lib", "CLI_Python_WSS_Application", "ROS_Python_WSS_Application",
+    "Matlab_WSS_Integration_Lib", "CLI_Matlab_WSS_Application"
+  ],
+  "files": {
+    "tools/release/verify.mjs": ".github/scripts/wss-ci/verify.mjs",
+    "tools/release/normal-ci.mjs": ".github/scripts/wss-ci/normal-ci.mjs",
+    "tools/release/normal-ci-select.mjs": ".github/scripts/wss-ci/normal-ci-select.mjs",
+    "tools/release/verify-plan.mjs": ".github/scripts/wss-ci/verify-plan.mjs",
+    "tools/ci/shared/Assert-UniversalArchive.ps1": ".github/scripts/wss-ci/Assert-UniversalArchive.ps1",
+    "tools/ci/shared/shared-ci.yml": ".github/workflows/shared-ci.yml"
+  }
+}

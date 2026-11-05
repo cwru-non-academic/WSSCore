@@ -1,0 +1,27 @@
+name: Common CI contracts
+on:
+  pull_request:
+    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml']
+  push:
+    branches: [dev, main]
+    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml']
+permissions:
+  contents: read
+jobs:
+  contracts:
+    name: Common tooling contracts (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test tools/release/*.test.mjs tools/ci/sync-tooling.test.mjs
+      - shell: pwsh
+        run: ./tools/ci/shared/Archive.Tests.ps1
