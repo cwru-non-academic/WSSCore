@@ -12,11 +12,13 @@ const normalRun=(t,r)=>({repository:{full_name:t.repository},head_repository:{fu
   head_sha:sha(10),head_branch:'dev',event:'workflow_dispatch',created_at:'2026-10-29T00:01:00Z',run_attempt:1,...r});
 function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false,targetId='csharp-cli'}={}) {
   const manifest=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
+  delete manifest.workflow_snapshot_policy; // Existing journal cases model historical frozen plans.
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(Buffer.from('zip'))};
   const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:sha(2),trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,sha(3)]))}]))};
   const p={...body,plan_id:digest(body)},t=manifest.targets.find(t=>t.id===targetId),requests=[];
   const old=journal(p,'90',1,prior.length?prior:[action(p,t,t.workflow,sha(10),{})]);
   const g={
+    get:path=>{assert.equal(path,`repos/${CORE}/contents/tools/release/targets.dev.json?ref=${candidate.commit}`);return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(manifest)).toString('base64')};},
     run:()=>({id:1,repository:{full_name:CORE},head_repository:{full_name:CORE},path:'.github/workflows/artifacts.yml',head_sha:sha(1),head_branch:'dev',event:'push',status:'completed',conclusion:'success',run_attempt:1}),
     head:repo=>repo===CORE?sha(1):repo===t.repository?(moved?sha(99):sha(10)):sha(2),
     jobs:()=>CORE_JOBS.map(name=>({name,status:'completed',conclusion:'success'})),
@@ -65,33 +67,33 @@ test('expired journal blocks recovery rather than forgetting a possible dispatch
 });
 test('execution requires the exact already-uploaded intent before the first mutation',()=>{
   const f=fixture(),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
-  const reader={download:()=>{throw new Error('upload missing');},head:f.g.head};
+  const reader={get:f.g.get,download:()=>{throw new Error('upload missing');},head:f.g.head};
   assert.throws(()=>execute(f.g,reader,f.p,j),/upload missing/);assert.equal(f.requests.length,0);
 });
 test('execution rejects changed branch before issuing any requests',()=>{
   const f=fixture({moved:true}),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
-  const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[]};
+  const reader={get:f.g.get,download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[]};
   assert.throws(()=>execute(f.g,reader,f.p,j),/moved/);assert.equal(f.requests.length,0);
 });
 test('a saved exact intent dispatches only the registered workflow on dev',()=>{
   const f=fixture(),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
-  const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[]};
+  const reader={get:f.g.get,download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[]};
   execute(f.g,reader,f.p,j);assert.equal(f.requests.length,1);assert.deepEqual(f.requests[0].slice(-2),['-f','ref=dev']);
 });
 test('execution rechecks downstream after journaling and reuses a concurrent pending run',()=>{
   const f=fixture(),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
-  const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[normalRun(f.t,{id:200,status:'queued',event:'push'})]};
+  const reader={get:f.g.get,download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[normalRun(f.t,{id:200,status:'queued',event:'push'})]};
   execute(f.g,reader,f.p,j);assert.equal(f.requests.length,0);
 });
 test('execution rejects multiple normal runs instead of superseding a failed run',()=>{
   const f=fixture(),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
-  const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[normalRun(f.t,{id:201,status:'queued',event:'push'}),normalRun(f.t,{id:200,status:'completed',conclusion:'failure'})]};
+  const reader={get:f.g.get,download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:f.g.head,pages:()=>[normalRun(f.t,{id:201,status:'queued',event:'push'}),normalRun(f.t,{id:200,status:'completed',conclusion:'failure'})]};
   assert.throws(()=>execute(f.g,reader,f.p,j),/Ambiguous/);assert.equal(f.requests.length,0);
 });
 test('execution checks branch again immediately before its POST',()=>{
   const f=fixture(),j=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
   let targetReads=0;
-  const reader={download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:repo=>repo===CORE?sha(1):++targetReads===1?sha(10):sha(99),pages:()=>[]};
+  const reader={get:f.g.get,download:()=>({'intent.json':Buffer.from(JSON.stringify(j))}),head:repo=>repo===CORE?sha(1):++targetReads===1?sha(10):sha(99),pages:()=>[]};
   assert.throws(()=>execute(f.g,reader,f.p,j),/moved/);assert.equal(f.requests.length,0);
 });
 for(const [name,mutate]of [

@@ -4,6 +4,7 @@ import {GitHub,archive,collect,freeze,loadPlan,publish} from './github.mjs';
 import {execute,journalName,prepare} from './dispatch.mjs';
 import {CORE,digest,requireThat} from './verify.mjs';
 import {tagPolicy} from './policy.mjs';
+import {assertWorkflows,collectWithWorkflows,freezeWorkflows,guardedWriter} from '../ci/workflow-freeze.mjs';
 
 const [command,...args]=process.argv.slice(2);
 const g=new GitHub();
@@ -17,7 +18,7 @@ try {
     requireThat(args.length===3,'freeze requires candidate.json manifest.json output directory');
     const c=JSON.parse(readFileSync(candidateFile)),m=JSON.parse(readFileSync(manifestFile));
     archive(g,c);
-    const p=freeze(g,m,c,{verificationOnly:process.env.WSS_DEV_RELEASE_ENABLED!=='true'});
+    const p=freezeWorkflows(g,freeze(g,m,c,{verificationOnly:process.env.WSS_DEV_RELEASE_ENABLED!=='true'}),'acceptance');
     mkdirSync(destination,{recursive:true});writeFileSync(join(destination,'plan.json'),JSON.stringify(p,null,2)+'\n');
     console.log(`Frozen plan ${p.plan_id}`);
   } else if(command==='prepare-dispatches') {
@@ -38,13 +39,16 @@ try {
     requireThat(args.length===2,'verify/publish requires producer run ID and output directory');
     if(command==='publish') requireThat(process.env.WSS_EVIDENCE_READ_TOKEN,'Publication requires a separate read-only evidence token');
     const reader=command==='publish'?new GitHub(process.env.WSS_EVIDENCE_READ_TOKEN):g;
-    const p=loadPlan(reader,run),accepted=collect(reader,p);
+    const p=loadPlan(reader,run),accepted=collectWithWorkflows(reader,p,collect);
     mkdirSync(destination,{recursive:true});
     writeFileSync(join(destination,'acceptance.json'),JSON.stringify(accepted.record,null,2)+'\n');
     if(command==='publish') {
       requireThat(process.env.WSS_DEV_RELEASE_ENABLED==='true','Dev publication must be explicitly enabled after reviewed deployment');
       requireThat(process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main','Publisher runs only trusted default-branch workflow');
-      console.log(JSON.stringify(publish(g,p,accepted,resolve(destination),reader)));
+      assertWorkflows(reader,p,'acceptance');
+      const published=publish(guardedWriter(g,reader,p,'acceptance',{purpose:'publication'}),p,accepted,resolve(destination),reader);
+      assertWorkflows(reader,p,'acceptance');
+      console.log(JSON.stringify(published));
     } else console.log(`All nine targets accepted plan ${p.plan_id}; no publication requested`);
   } else throw new Error('Expected inspect-tag-guard, freeze, prepare-dispatches, dispatch, verify or publish');
 } catch(error) { console.error(error.message); process.exitCode=1; }

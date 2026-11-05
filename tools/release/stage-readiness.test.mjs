@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {freezeStage} from '../ci/dev-propagation.mjs';
 import {CORE} from './verify.mjs';
+import {SNAPSHOT_POLICY} from '../ci/workflow-freeze.mjs';
 
 // Metadata rejection fixtures only; these do not establish native runtime proof.
 const policy=JSON.parse(readFileSync(new URL('../ci/dev-propagation.json',import.meta.url)));
@@ -12,8 +13,9 @@ const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archiv
 function fixture(){
   return {
     head:(repo,branch='dev')=>repo===CORE?candidate.commit:branch==='main'?sha(3):sha(4),
-    object:(repo,ref,path)=>({sha:repo===matlab.repository?(['native_evidence_guard','promotion_contract_test','merge_evidence_guard'].map(key=>matlab[key]).find(pin=>pin.path===path)?.sha||sha(5)):sha(5)}),
+    object:(repo,ref,path)=>({type:path==='.github/workflows'?'tree':'blob',sha:repo===matlab.repository?(['native_evidence_guard','promotion_contract_test','merge_evidence_guard'].map(key=>matlab[key]).find(pin=>pin.path===path)?.sha||sha(5)):sha(5)}),
     get(path){
+      if(path===`repos/${CORE}/contents/tools/ci/dev-propagation.json?ref=${candidate.commit}`)return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(policy)).toString('base64')};
       const workflow=path.match(/\/actions\/workflows\/([^/]+)$/);
       if(workflow)return {path:'.github/workflows/'+workflow[1],state:'active'};
       const receiver=policy.libraries.find(target=>path.startsWith(`repos/${target.repository}/contents/.github/dev-propagation.json?`));
@@ -26,6 +28,8 @@ function fixture(){
 }
 test('staging requires all four deployed receivers and their registered workflows',()=>{
   const frozen=freezeStage(fixture(),policy,candidate);
+  assert.equal(frozen.workflow_snapshots.schema,SNAPSHOT_POLICY);
+  assert.equal(Object.keys(frozen.workflow_snapshots.targets).length,8);
   assert.deepEqual(Object.keys(frozen.receivers).sort(),['csharp','matlab','python','unity']);
   for(const library of policy.libraries){
     const g=fixture(),get=g.get;

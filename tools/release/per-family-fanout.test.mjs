@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {prepareStage,executeStage,assertFamilyBarrier} from '../ci/dev-propagation.mjs';
 import {CORE,digest} from './verify.mjs';
+import {freezeWorkflows} from '../ci/workflow-freeze.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
 function fixture(perFamily=true){
   const policy=JSON.parse(readFileSync(new URL('../ci/dev-propagation.json',import.meta.url)));
-  if(perFamily)policy.application_fanout='per-integration';else delete policy.application_fanout;
+  if(perFamily)policy.application_fanout='per-integration';else {delete policy.application_fanout;delete policy.workflow_snapshot_policy;}
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:'a'.repeat(64)};
   const receivers=Object.fromEntries(policy.libraries.map((t,i)=>[t.id,{heads:{main:sha(10+i),dev:sha(20+i)},trusted:{main:{'.github/scripts':sha(5)},dev:{'.github/scripts':sha(5)}}}]));
   const body={schema:'wss-dev-propagation-plan/v1',candidate,policy,policy_sha256:digest(policy),receivers};
@@ -17,8 +18,9 @@ function fixture(perFamily=true){
   const pr=t=>({number:1,merged:true,state:'closed',merged_at:'2026-01-01T00:00:00Z',merge_commit_sha:head(t),user:{type:'Bot'},merged_by:{type:'User'},base:{ref:'dev',repo:{full_name:t.repository}},head:{sha:sha(8),repo:{full_name:t.repository}}});
   const g={
     head:(repo,branch='dev')=>repo===CORE?candidate.commit:branch==='main'?receivers[target(repo).id].heads.main:head(target(repo)),
-    object:()=>({sha:sha(5)}),
+    object:()=>({type:'tree',sha:sha(5)}),
     get(path){
+      if(path===`repos/${CORE}/contents/tools/ci/dev-propagation.json?ref=${candidate.commit}`)return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(policy)).toString('base64')};
       const t=policy.libraries.find(t=>path.startsWith(`repos/${t.repository}/`));assert.ok(t,'Unexpected lookup '+path);
       if(path.includes('/contents/'))return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(state.merged.has(t.id)?{candidate}:{})).toString('base64')};
       if(path.endsWith('/pulls/1'))return pr(t);throw Error('Unexpected lookup '+path);
@@ -33,7 +35,7 @@ function fixture(perFamily=true){
     jobs:(repo)=>target(repo).jobs.map(name=>({name,status:'completed',conclusion:'success'})),
     download:()=>({'intent.json':JSON.stringify(state.saved)}),command:args=>commands.push(args)
   };
-  return {p,g,state,commands,python:policy.libraries.find(t=>t.id==='python')};
+  return {p:freezeWorkflows(g,p,'stage'),g,state,commands,python:policy.libraries.find(t=>t.id==='python')};
 }
 test('a ready integration authorizes only its linked applications before other integrations merge',()=>{
   const f=fixture(),j=prepareStage(f.g,f.p,'9',1);
@@ -46,6 +48,13 @@ test('a failed family does not delay another ready family or authorize its own a
   const j=prepareStage(f.g,f.p,'9',1);
   assert.deepEqual(j.actions.map(a=>a.target),['python']);assert.equal(j.blocked[0].target,'csharp');
   f.state.failed.add('python');assert.equal(prepareStage(f.g,f.p,'9',1).actions.length,0);
+});
+test('a changed default-main nested workflow blocks only its own integration family',()=>{
+  const f=fixture();f.state.merged.add('csharp');const t=f.p.policy.libraries.find(t=>t.id==='csharp'),head=f.g.head,object=f.g.object;
+  f.g.head=(repo,branch='dev')=>repo===t.repository&&branch==='main'?sha(999):head(repo,branch);
+  f.g.object=(repo,ref,path)=>repo===t.repository&&ref===sha(999)&&path==='.github/workflows'?{type:'tree',sha:sha(998)}:object(repo,ref,path);
+  const j=prepareStage(f.g,f.p,'9',1);assert.deepEqual(j.actions.map(a=>a.target),['python']);assert.ok(j.blocked.some(b=>b.target==='csharp'&&b.reason.includes('Workflow tree changed')));
+  f.state.saved=j;executeStage(f.g,f.g,f.p,j);assert.equal(f.commands.length,1);assert.ok(f.commands[0].some(x=>x.includes(f.python.repository)));
 });
 test('committed CI can be requested for one merged family while other integrations remain pending',()=>{
   const f=fixture();f.state.missing.add('python');const j=prepareStage(f.g,f.p,'9',1);
