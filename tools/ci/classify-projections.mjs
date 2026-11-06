@@ -1,3 +1,4 @@
+import {isEntrypoint} from '../release/entrypoint.mjs';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {readFileSync,writeFileSync,mkdirSync,appendFileSync} from 'node:fs';
@@ -7,6 +8,7 @@ import {GitHub} from '../release/github.mjs';
 import {bytesDigest,candidate,canonical,CORE,requireThat} from '../release/verify.mjs';
 import {validatePlan} from './dev-propagation.mjs';
 import {assertWorkflows} from './workflow-freeze.mjs';
+import {channelContext} from '../release/channels.mjs';
 
 export const UNIVERSAL_FILES=JSON.parse(readFileSync(new URL('../ArtifactBuild/manifests/universal.json',import.meta.url))).files;
 const legacy=UNIVERSAL_FILES.filter(path=>!path.startsWith('backends/macos/'));
@@ -125,15 +127,15 @@ export function classifyProjections(g,p,archiveHashes) {
   try {
     requireThat(archiveHashes?.sha256===p.candidate.sha256 && inventory(Object.keys(archiveHashes.files || {}),UNIVERSAL_FILES) &&
       Object.values(archiveHashes.files).every(hash),'Verified candidate ZIP inventory/checksum evidence missing');
-    requireThat(g.head(CORE)===p.candidate.commit,'Core moved before classification');
+    requireThat(g.head(CORE,p.policy.channel)===p.candidate.commit,'Core moved before classification');
   } catch(error) {archiveError=error.message;}
   for(const t of p.policy.libraries) {
-    const head=p.receivers[t.id]?.heads?.dev;
+    const head=p.receivers[t.id]?.heads?.[p.policy.channel];
     const row={target:t.id,repository:t.repository,head_sha:head,status:'blocked',acceptance:false};
     try {
       assertWorkflows(g,p,'stage',{ids:[t.id]});
       requireThat(!archiveError,archiveError);
-      requireThat(/^[a-f0-9]{40}$/.test(head) && g.head(t.repository)===head &&
+      requireThat(/^[a-f0-9]{40}$/.test(head) && g.head(t.repository,p.policy.channel)===head &&
         g.head(t.repository,'main')===p.receivers[t.id].heads.main,'Receiver moved from frozen heads');
       const old=installed(g,t,head,cache),profile=PROFILES[t.id];
       row.installed_candidate=old.candidate;
@@ -148,7 +150,7 @@ export function classifyProjections(g,p,archiveHashes) {
   }
   // Classifying one target cannot hide another target moving during these reads.
   for(const row of results) {
-    try {requireThat(g.head(CORE)===p.candidate.commit && g.head(row.repository)===row.head_sha &&
+    try {requireThat(g.head(CORE,p.policy.channel)===p.candidate.commit && g.head(row.repository,p.policy.channel)===row.head_sha &&
       g.head(row.repository,'main')===p.receivers[row.target].heads.main,'Core/receiver moved during classification');}
     catch(error) {row.status='blocked';row.reason=error.message;}
   }
@@ -160,7 +162,7 @@ function main() {
   const [planPath,archivePath,outputPath]=process.argv.slice(2);
   requireThat(planPath && archivePath && outputPath,'Expected frozen plan, candidate ZIP and report destination');
   const p=validatePlan(JSON.parse(readFileSync(planPath)));
-  requireThat(process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/dev' && process.env.GITHUB_EVENT_NAME==='push' &&
+  requireThat(process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF===channelContext(p.policy.channel).ref && process.env.GITHUB_EVENT_NAME==='push' &&
     p.candidate.run_id===process.env.GITHUB_RUN_ID && p.candidate.commit===process.env.GITHUB_SHA,'Classification only for this canonical dev producer');
   let hashes;
   try {
@@ -173,5 +175,5 @@ function main() {
   if(process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY,`\n### Pre-write projection classification\n| Target | Outcome | Detail |\n|---|---|---|\n${rows}\n\nDiagnostic only; no acceptance receipt or provenance update.\n`);
   requireThat(report.downstream_writes_allowed,'Downstream handoff blocked by pre-write projection classification; inspect the retained report. No no-op acceptance is authorized.');
 }
-if(process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href)
+if(isEntrypoint(import.meta.url))
   try {main();} catch(error) {console.error(error.message);process.exitCode=1;}
