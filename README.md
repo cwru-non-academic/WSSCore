@@ -151,6 +151,13 @@ or repackaging. Main/stable publication is disabled
 in this dev policy. See the expandable release reference below for its current
 contract and limitations. Hardware diagnostics remain opt-in.
 
+Downstream candidate preflights use the same locked CI validators as their receipt
+writers. The ROS preflight checks its registered workflow, exact source commit and
+clean source tree before loading repository helpers, then checks the ROS-owned
+Core tooling lock before acquiring application-read credentials. Its three resolver
+jobs share this boundary; hosted regression checks cover both channels, mismatched
+source/tooling roots and rejection before a mismatched helper can execute.
+
 ## Universal artifact reference
 
 <details>
