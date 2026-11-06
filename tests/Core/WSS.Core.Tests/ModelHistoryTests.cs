@@ -66,6 +66,42 @@ namespace WSS.Core.Tests
                 ["PDModeProportional"] = 0f, ["PDModeDerivative"] = 0f, ["PDModeOffset"] = 0f }
         };
 
+        [Test]
+        public void AlternatePathReloadUsesNestedValuesAndRetainsHistoryAndSelectedPath()
+        {
+            using var fixture = new Fixture(1);
+            fixture.Model.Initialize();
+            fixture.Time = 1;
+            Assert.That(fixture.Sample(2, 0.5f), Is.EqualTo(48));
+            string alternate = Path.Combine(Path.GetDirectoryName(fixture.ModelPath), "alternate-model.json");
+            var json = ConstantFixture("PD");
+            json["constants"]["PDModeProportional"] = 0.25f;
+            json["constants"]["PDModeDerivative"] = 0.5f;
+            json["PDModeProportional"] = 99f;
+            File.WriteAllText(alternate, json.ToString());
+            fixture.Model.GetModelConfigController().LoadModelJson(alternate);
+            fixture.Time = 2;
+            Assert.That(fixture.Sample(2, 0.5f), Is.EqualTo(16));
+            json["constants"]["PDModeProportional"] = 0.5f;
+            File.WriteAllText(alternate, json.ToString());
+            fixture.Model.GetModelConfigController().LoadModelJson();
+            fixture.Time = 3;
+            Assert.That(fixture.Sample(2, 0.5f), Is.EqualTo(32));
+        }
+
+        [Test]
+        public void MissingModelFileUsesNestedTemplateAndMalformedJsonStillThrows()
+        {
+            using var fixture = new Fixture(1);
+            File.Delete(fixture.ModelPath);
+            fixture.Model.GetModelConfigController().LoadModelJson();
+            fixture.Model.Initialize();
+            fixture.Time = 1;
+            Assert.That(fixture.Sample(2, 0.5f), Is.EqualTo(64));
+            File.WriteAllText(fixture.ModelPath, "{");
+            Assert.Throws<Newtonsoft.Json.JsonReaderException>(() => fixture.Model.GetModelConfigController().LoadModelJson());
+        }
+
         [TestCase(1, 3), TestCase(2, 6), TestCase(3, 9)]
         public void LastSupportedChannelHasModelHistory(int devices, int channel)
         {
