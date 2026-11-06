@@ -264,6 +264,7 @@ async function main() {
     initialAuthority=()=>{
       const current=assertInitialCompletionAuthority(reader,family);
       requireThat(inspectInitialHandoff(reader,p,family,current).dispatch_needed,'Correlated initial promotion already exists; no redispatch');
+      assertInitialCompletionAuthority(reader,family);
     };
     initialAuthority();
   }

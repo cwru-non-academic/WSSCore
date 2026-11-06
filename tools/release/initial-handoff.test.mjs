@@ -42,10 +42,10 @@ function fixture(channel,active=true) {
   writeFileSync(preload,`import {readFileSync,appendFileSync} from 'node:fs';
 import {GitHub} from ${JSON.stringify(pathToFileURL(join(source,'tools/release/github.mjs')).href)};
 const d=JSON.parse(readFileSync(${JSON.stringify(dataPath)})),mode=process.env.WSS_TEST_CASE,profile=d.profiles[process.env.WSS_TEST_FAMILY],CORE=${JSON.stringify(CORE)};
-let mainReads=0,readinessReads=0;
+let readinessReads=0,lateCoreMove=false;
 const json=x=>({type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(x)).toString('base64')});
 GitHub.prototype.command=args=>{if(args[0]!=='api'||args[1]!=='--method'||args[2]!=='POST')throw Error('Unexpected network command');appendFileSync(${JSON.stringify(posts)},JSON.stringify(args)+'\\n');return '';};
-GitHub.prototype.head=(repo,branch)=>{if(repo===CORE){if(branch==='main'){mainReads++;return mode==='core-moved'||mode==='late-core-moved'&&mainReads>=3?'f'.repeat(40):d.head;}return d.c.commit;}
+GitHub.prototype.head=(repo,branch)=>{if(repo===CORE){if(branch==='main')return mode==='core-moved'||lateCoreMove?'f'.repeat(40):d.head;return d.c.commit;}
   if(mode==='missing-baseline'&&repo===profile.destinations.at(-1).repository&&branch==='dev')return 'invalid';
   if(mode==='target-moved'&&repo===profile.repository&&branch===d.channel)return 'f'.repeat(40);
   return d.heads[repo+':'+branch];};
@@ -56,7 +56,7 @@ GitHub.prototype.get=path=>{
   if(path.includes('/actions/workflows/')){const file=path.split('/').at(-1);return {id:file==='artifacts.yml'?91:92,path:'.github/workflows/'+file,state:mode==='unregistered'&&file==='promote-wss.yml'?'disabled_manually':'active'};}
   if(path.includes('/git/trees/')){const repository=path.split('/').slice(1,3).join('/'),destination=Object.values(d.profiles).flatMap(p=>p.destinations).find(t=>t.repository===repository);
     return {truncated:mode==='truncated',tree:destination.workflows.filter(file=>!(mode==='missing-app-workflow'&&repository===profile.destinations.at(-1).repository&&file===profile.destinations.at(-1).workflows.at(-1))).map(file=>({path:'.github/workflows/'+file,type:'blob',mode:'100644'}))};}
-  if(/^repos\\/[^/]+\\/[^/]+$/.test(path)){readinessReads++;return {full_name:path.slice(6),default_branch:mode==='default-branch'||mode==='late-readiness'&&readinessReads>profile.destinations.length?'dev':'main'};}
+  if(/^repos\\/[^/]+\\/[^/]+$/.test(path)){readinessReads++;if(mode==='late-core-moved'&&readinessReads>profile.destinations.length)lateCoreMove=true;return {full_name:path.slice(6),default_branch:mode==='default-branch'||mode==='late-readiness'&&readinessReads>profile.destinations.length?'dev':'main'};}
   throw Error('Unexpected read '+path);
 };
 GitHub.prototype.object=(repo,ref,path)=>{if(path!=='.github/workflows')throw Error('Unexpected object');return {type:'tree',sha:mode==='workflow-drift'&&repo===profile.repository?'e'.repeat(40):d.trees[repo+':'+ref]};};
