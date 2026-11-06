@@ -147,15 +147,28 @@ namespace Wss.ModelModule
         /// <remarks>
         /// A successful synchronous initialization starts a new model-history session. Parameter and model
         /// reloads preserve history. Changing the device count requires constructing a new complete stack.
+        /// Core owns shutdown and configuration loading during initialization. A failed attempt shuts down
+        /// the inner session and retains prior model history. If cleanup fails, that exception is attached
+        /// to the original error's Data under Wss.ModelInitialization.ShutdownException.
         /// </remarks>
         /// <exception cref="InvalidOperationException">The loaded topology differs from the parameter controller capacity.</exception>
         public void Initialize()
         {
-            _inner.LoadConfigFile();
-            ValidateTopology();
-            _inner.Initialize();
-            ValidateTopology();
-            ResetModelArrays();
+            try
+            {
+                _inner.Initialize();
+                ValidateTopology();
+                ResetModelArrays();
+            }
+            catch (Exception error)
+            {
+                try { _inner.Shutdown(); }
+                catch (Exception cleanupError)
+                {
+                    error.Data["Wss.ModelInitialization.ShutdownException"] = cleanupError;
+                }
+                throw;
+            }
         }
 
         private void ValidateTopology()
@@ -164,7 +177,6 @@ namespace Wss.ModelModule
             int devices = _inner.GetCoreConfigController().MaxWss;
             if (devices < 1 || (long)devices * parameters.PerWss != parameters.TotalChannels)
             {
-                _inner.Shutdown();
                 throw new InvalidOperationException(
                     $"Configured device count {devices} does not match the parameter controller capacity " +
                     $"of {parameters.TotalChannels} channels. Construct a new complete stimulation stack after changing device count.");
@@ -219,18 +231,24 @@ namespace Wss.ModelModule
 
         private void ResetModelArrays()
         {
-            if (_timer == null) _timer = new Stopwatch();
-            _timer.Restart();
-            _timeOrigin = _elapsedSeconds == null ? 0f : _elapsedSeconds();
+            // Prepare without mutating live history: a failed allocation/clock read must not partially reset it.
+            var timer = Stopwatch.StartNew();
+            float origin = _elapsedSeconds == null ? 0f : _elapsedSeconds();
             int n = _inner.GetStimParamsConfigController().TotalChannels;
 
-            _prevMagnitude = new float[n];
-            _currentMag = new float[n];
-            _d_dt = new float[n];
-            _tPrev = new float[n];
+            var previous = new float[n];
+            var current = new float[n];
+            var derivative = new float[n];
+            var previousTime = new float[n];
 
-            float now = ElapsedSeconds;
-            for (int i = 0; i < n; i++) { _prevMagnitude[i] = 0f; _tPrev[i] = now; }
+            float now = _elapsedSeconds == null ? timer.ElapsedMilliseconds / 1000.0f : _elapsedSeconds() - origin;
+            for (int i = 0; i < n; i++) previousTime[i] = now;
+            _timer = timer;
+            _timeOrigin = origin;
+            _prevMagnitude = previous;
+            _currentMag = current;
+            _d_dt = derivative;
+            _tPrev = previousTime;
         }
 
         /// <summary>

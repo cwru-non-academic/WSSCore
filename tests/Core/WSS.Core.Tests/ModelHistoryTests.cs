@@ -188,7 +188,7 @@ namespace WSS.Core.Tests
 
         [TestCase(1, 2, false), TestCase(2, 1, false)]
         [TestCase(1, 2, true), TestCase(2, 1, true)]
-        public void ChangedTopologyFailsClearlyBeforeInitializationOrReinitialization(int before, int after, bool reinitialize)
+        public void TopologyChangedSinceConstructionIsRejectedOnInitializationOrReinitialization(int before, int after, bool reinitialize)
         {
             using var fixture = new Fixture(before);
             if (reinitialize) fixture.Model.Initialize();

@@ -21,6 +21,8 @@ A failed nested lookup uses the corresponding built-in value shown above. Top-le
 
 Ordinary calls reuse each channel's magnitude and derivative history. Reloading model or stimulation-parameter files does not reset history. Successful synchronous `Initialize()` resets history and timing, including the original first-sample derivative and minimum-dt behavior. Changing device count after stack construction requires a new complete stack; initialization rejects a topology that differs from the parameter controller capacity. This does not provide live topology reconfiguration.
 
+Initialization delegates once to Core, preserving Core's shutdown-before-configuration-load order. Model topology validation and complete replacement-history preparation follow that call. A failure invokes the existing shutdown API and retains the old model history; it does not resume a session. The original exception and stack are rethrown. If shutdown also fails, the cleanup exception is attached under `exception.Data["Wss.ModelInitialization.ShutdownException"]`; a stopped session cannot be guaranteed in that case.
+
 Zero raw input can produce nonzero calculated output because of offsets and PD history. Zero calculated output still follows the calibration layer's existing PW/PA rules.
 
 ## Behavior change
