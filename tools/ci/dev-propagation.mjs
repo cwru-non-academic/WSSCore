@@ -5,7 +5,8 @@ import {GitHub,archive,loadPlan} from '../release/github.mjs';
 import {findNormalRuns} from '../release/normal-ci.mjs';
 import {CORE,CORE_JOBS,candidate,canonical,digest,jobs,requireThat} from '../release/verify.mjs';
 import {assertWorkflows,assertWorkflowPair,freezeWorkflows,guardedWriter} from './workflow-freeze.mjs';
-import {channelContext,channelActivation,controllerContext,integrationConfiguration} from '../release/channels.mjs';
+import {channelContext,integrationConfiguration} from '../release/channels.mjs';
+import {channelActivation,controllerContext} from './channel-controls.mjs';
 
 const same=(a,b)=>canonical(a)===canonical(b);
 const stageContext=p=>channelContext(p.policy.channel);

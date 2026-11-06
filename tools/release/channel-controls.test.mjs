@@ -6,7 +6,8 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {CORE} from './verify.mjs';
-import {channelActivation,channelContext,controllerContext} from './channels.mjs';
+import {channelContext} from './channels.mjs';
+import {channelActivation,controllerContext,publicationControls} from '../ci/channel-controls.mjs';
 const active=channelActivation({schema:'wss-ci-channel-activation/v1',dev:true,main:true});
 const inactive=channelActivation({...active,main:false});
 function environment(operation='verify'){
@@ -15,7 +16,7 @@ function environment(operation='verify'){
 }
 test('temporary beta/stable publication alias is explicit and cannot grant activation',()=>{
   for(const channel of ['dev','main']){
-    const c=channelContext(channel);assert.equal(c.acceptanceVariable,'WSS_DEV_ACCEPTANCE_ENABLED');assert.equal(c.publicationVariable,'WSS_DEV_RELEASE_ENABLED');
+    const c=publicationControls();assert.equal(c.acceptance,'WSS_DEV_ACCEPTANCE_ENABLED');assert.equal(c[channel],'WSS_DEV_RELEASE_ENABLED');
   }
   for(const op of ['prepare-dispatches','dispatch','publish','stage-dispatch'])assert.throws(()=>controllerContext({...environment(op),WSS_DEV_RELEASE_ENABLED:'true'},op,CORE,inactive),/not activated/);
   assert.equal(controllerContext(environment(),'verify',CORE,inactive).channel,'main');
@@ -27,6 +28,12 @@ test('main publication still needs acceptance and release switches after activat
   assert.throws(()=>controllerContext({...environment('publish'),WSS_DEV_RELEASE_ENABLED:'true',WSS_DEV_ACCEPTANCE_ENABLED:'false'},'publish',CORE,active),/Acceptance reconciliation/);
   // A pure configuration check; this performs no GitHub operation or release.
   assert.equal(controllerContext({...environment('publish'),WSS_DEV_RELEASE_ENABLED:'true'},'publish',CORE,active).kind,'stable');
+});
+test('a later separate stable switch is a Core-only mapping and fails closed while unset',()=>{
+  const controls=publicationControls({...publicationControls(),main:'WSS_MAIN_RELEASE_ENABLED'});
+  assert.throws(()=>controllerContext({...environment('publish'),WSS_DEV_RELEASE_ENABLED:'true'},'publish',CORE,active,controls),/Publication must/);
+  assert.equal(controllerContext({...environment('publish'),WSS_MAIN_RELEASE_ENABLED:'true'},'publish',CORE,active,controls).publicationVariable,'WSS_MAIN_RELEASE_ENABLED');
+  for(const value of [{...controls,main:'UNTRUSTED_NAME'},{...controls,acceptance:'OTHER'},{...controls,allow_publish:true}])assert.throws(()=>publicationControls(value));
 });
 test('main controller cannot select another workflow, branch, source, event or repository',()=>{
   for(const op of ['verify','dispatch','publish','stage-prepare','stage-dispatch'])for(const patch of [

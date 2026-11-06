@@ -6,7 +6,8 @@ import {CORE,digest,requireThat} from './verify.mjs';
 import {tagPolicy} from './policy.mjs';
 import {assertWorkflows,collectWithWorkflows,freezeWorkflows,freezeWorkflowPair,guardedWriter} from '../ci/workflow-freeze.mjs';
 import {freezeStage} from '../ci/dev-propagation.mjs';
-import {channelContext,channelActivation,controllerContext} from './channels.mjs';
+import {channelContext} from './channels.mjs';
+import {channelActivation,controllerContext,publicationControls} from '../ci/channel-controls.mjs';
 
 const [command,...args]=process.argv.slice(2);
 const g=new GitHub();
@@ -24,7 +25,7 @@ try {
     const c=JSON.parse(readFileSync(candidateFile)),m=JSON.parse(readFileSync(manifestFile));
     requireThat(m.channel==='dev','Main requires the atomic paired freeze command');
     archive(g,c);
-    const p=freezeWorkflows(g,freeze(g,m,c,{verificationOnly:process.env.WSS_DEV_RELEASE_ENABLED!=='true'}),'acceptance');
+    const p=freezeWorkflows(g,freeze(g,m,c,{verificationOnly:process.env[publicationControls()[m.channel]]!=='true'}),'acceptance');
     mkdirSync(destination,{recursive:true});writeFileSync(join(destination,'plan.json'),JSON.stringify(p,null,2)+'\n');
     console.log(`Frozen plan ${p.plan_id}`);
   } else if(command==='freeze-campaign') {
@@ -34,7 +35,7 @@ try {
     requireThat(activation.main===true&&context.channel==='main'&&process.env.GITHUB_ACTIONS==='true'&&process.env.GITHUB_REPOSITORY===CORE&&process.env.GITHUB_REF===context.ref&&process.env.GITHUB_EVENT_NAME==='push'&&process.env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/artifacts.yml@refs/heads/main`&&process.env.GITHUB_WORKFLOW_SHA===process.env.GITHUB_SHA&&c.commit===process.env.GITHUB_SHA&&c.run_id===process.env.GITHUB_RUN_ID,'Paired freeze requires this activated exact canonical main push producer');
     archive(g,c);
     const stagePolicy=JSON.parse(readFileSync(new URL('../ci/main-propagation.json',import.meta.url)));
-    const pair=freezeWorkflowPair(g,freeze(g,m,c,{verificationOnly:process.env.WSS_DEV_RELEASE_ENABLED!=='true'}),freezeStage(g,stagePolicy,c,{freeze:false}));
+    const pair=freezeWorkflowPair(g,freeze(g,m,c,{verificationOnly:process.env[publicationControls()[m.channel]]!=='true'}),freezeStage(g,stagePolicy,c,{freeze:false}));
     // No artifact is emitted and no initial handoff occurs unless BOTH plans
     // pass the shared observation/recheck boundary above.
     for(const [directory,p] of [[acceptanceDirectory,pair.acceptance],[stageDirectory,pair.stage]]){
@@ -63,7 +64,6 @@ try {
     mkdirSync(destination,{recursive:true});
     writeFileSync(join(destination,'acceptance.json'),JSON.stringify(accepted.record,null,2)+'\n');
     if(command==='publish') {
-      requireThat(process.env.WSS_DEV_RELEASE_ENABLED==='true','Dev publication must be explicitly enabled after reviewed deployment');
       requireThat(process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main','Publisher runs only trusted default-branch workflow');
       assertWorkflows(reader,p,'acceptance');
       const published=publish(guardedWriter(g,reader,p,'acceptance',{purpose:'publication',...(p.channel==='main'?{acceptedHeads:Object.fromEntries(Object.entries(accepted.record.targets).map(([id,t])=>[id,t.merge.sha]))}:{})}),p,accepted,resolve(destination),reader);
