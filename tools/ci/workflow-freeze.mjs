@@ -1,10 +1,10 @@
 // Core coordinator extension. Receiver-owned target profiles remain unchanged.
-import {readFileSync,existsSync,realpathSync} from 'node:fs';
+import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {pathToFileURL} from 'node:url';
 import {GitHub,loadPlan} from '../release/github.mjs';
 import {candidate,canonical,CORE,CORE_JOBS,digest,jobs,requireThat} from '../release/verify.mjs';
 import {channelContext,releaseFingerprint} from '../release/channels.mjs';
+import {isEntrypoint} from '../release/entrypoint.mjs';
 
 export const SNAPSHOT_POLICY='wss-workflow-snapshots/v1';
 export const MAIN_SNAPSHOT_POLICY='wss-workflow-snapshots/v2';
@@ -269,4 +269,4 @@ async function main() {
     writer.command(['api','--method','POST',`repos/${t.repository}/actions/workflows/promote-wss.yml/dispatches`,'--input',resolve(request)]);
   }
 }
-if(process.argv[1]&&existsSync(process.argv[1])&&import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href)main().catch(error=>{console.error(error.message);process.exitCode=1;});
+if(isEntrypoint(import.meta.url))main().catch(error=>{console.error(error.message);process.exitCode=1;});

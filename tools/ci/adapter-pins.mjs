@@ -4,6 +4,7 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {isEntrypoint} from '../release/entrypoint.mjs';
 import {GitHub} from '../release/github.mjs';
 import {CORE,canonical,requireThat} from '../release/verify.mjs';
 import {sourceBytes} from './sync-tooling.mjs';
@@ -101,7 +102,7 @@ export function refreshWorkflowPins({repository,profiles,lock,files,adapter,adap
   }));
 }
 
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+if(isEntrypoint(import.meta.url)){
   const [operation,name,target,workspace,adapter]=process.argv.slice(2);
   requireThat(['check','refresh'].includes(operation)&&/^[A-Za-z0-9_]+$/.test(name||'')&&target,'Usage: adapter-pins.mjs check|refresh <repository> <checkout> [workspace] [verified-adapter-sha]');
   const profiles=JSON.parse(sourceBytes({origin:'integration',path:'.github/scripts/wss-ci/receipt-targets.json'},workspace?resolve(workspace):undefined));

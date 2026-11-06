@@ -1,3 +1,4 @@
+import {isEntrypoint} from '../release/entrypoint.mjs';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {readFileSync,writeFileSync,mkdirSync,appendFileSync} from 'node:fs';
@@ -174,5 +175,5 @@ function main() {
   if(process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY,`\n### Pre-write projection classification\n| Target | Outcome | Detail |\n|---|---|---|\n${rows}\n\nDiagnostic only; no acceptance receipt or provenance update.\n`);
   requireThat(report.downstream_writes_allowed,'Downstream handoff blocked by pre-write projection classification; inspect the retained report. No no-op acceptance is authorized.');
 }
-if(process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href)
+if(isEntrypoint(import.meta.url))
   try {main();} catch(error) {console.error(error.message);process.exitCode=1;}

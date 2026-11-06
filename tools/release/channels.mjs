@@ -1,7 +1,6 @@
 // Branch/release identity shared by Core and all receiver adapters. Publication
 // permission remains a separate, explicit gate; channel selection cannot grant it.
-import {existsSync,realpathSync} from 'node:fs';
-import {fileURLToPath} from 'node:url';
+import {isEntrypoint} from './entrypoint.mjs';
 export function channelContext(value) {
   if(!['dev','main'].includes(value))throw Error('CI channel must be exactly dev or main');
   const stable=value==='main';
@@ -31,4 +30,4 @@ export function releaseFingerprint(value,run,planId) {
 }
 // macOS temporary paths can name /var while Node canonicalizes the loaded
 // module to /private/var. Imported assertion sentinels are not filesystem paths.
-if(process.argv[1]&&existsSync(process.argv[1])&&realpathSync(process.argv[1])===fileURLToPath(import.meta.url))console.log(JSON.stringify(channelContext(process.argv[2])));
+if(isEntrypoint(import.meta.url))console.log(JSON.stringify(channelContext(process.argv[2])));

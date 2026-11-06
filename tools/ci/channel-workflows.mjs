@@ -1,10 +1,11 @@
 // Canonical controller definitions. Channel overlays cannot select code,
 // permissions, credentials or alternative publication implementations.
-import {readFileSync,writeFileSync,mkdirSync,existsSync,realpathSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {channelContext} from '../release/channels.mjs';
 import {channelActivation,publicationControls} from './channel-controls.mjs';
+import {isEntrypoint} from '../release/entrypoint.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 export function renderChannelWorkflow(operation,channel,{activation=channelActivation(JSON.parse(readFileSync(resolve(root,'tools/ci/channel-activation.json'),'utf8'))),controls=publicationControls()}={}){
   const c=channelContext(channel),config=channelActivation(activation);
@@ -26,4 +27,4 @@ function main(){
   }
   console.log(`Channel workflows ${command}: one implementation per operation; exact closed overlays.`);
 }
-if(process.argv[1]&&existsSync(process.argv[1])&&realpathSync(process.argv[1])===fileURLToPath(import.meta.url))main();
+if(isEntrypoint(import.meta.url))main();

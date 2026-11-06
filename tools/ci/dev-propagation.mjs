@@ -1,3 +1,4 @@
+import {isEntrypoint} from '../release/entrypoint.mjs';
 import {readFileSync,writeFileSync,mkdirSync,appendFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -301,4 +302,4 @@ async function main() {
     appendFileSync(process.env.GITHUB_OUTPUT,`dispatch_needed=${runs.length===0}\n`);
   } else throw new Error('Expected freeze, prepare, dispatch, verify-barrier or matlab');
 }
-if(process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href) main().catch(e=>{console.error(e.message);process.exitCode=1;});
+if(isEntrypoint(import.meta.url)) main().catch(e=>{console.error(e.message);process.exitCode=1;});

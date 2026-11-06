@@ -147,6 +147,10 @@
     ".github/scripts/wss-ci/Channel.ps1": {
       "origin": "core",
       "path": "tools/ci/shared/Channel.ps1"
+    },
+    ".github/scripts/wss-ci/entrypoint.mjs": {
+      "origin": "core",
+      "path": "tools/release/entrypoint.mjs"
     }
   }
 }

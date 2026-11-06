@@ -3,6 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,writeFileSync,mkdirSync,existsSync,realpathSync} from 'node:fs';
 import {dirname,resolve,relative,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {isEntrypoint} from '../release/entrypoint.mjs';
 import {canonical,requireThat} from '../release/verify.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
@@ -79,7 +80,7 @@ function copy(workspace) {
   }
 }
 
-if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
+if(isEntrypoint(import.meta.url)) {
   const [command,arg,target]=process.argv.slice(2);
   if(command==='copy' && arg && !target) copy(resolve(arg));
   else if(command==='check' && arg && target) check(arg,resolve(target));
