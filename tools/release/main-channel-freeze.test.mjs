@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {CORE,CORE_JOBS,digest,plan} from './verify.mjs';
-import {channelContext,targetForChannel} from './channels.mjs';
+import {channelContext,targetForChannel,integrationConfiguration} from './channels.mjs';
 import {assertWorkflows,freezeWorkflows,freezeWorkflowPair,receiverAuthorization,MAIN_SNAPSHOT_POLICY} from '../ci/workflow-freeze.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
@@ -30,6 +30,14 @@ test('main target policy is the exact shared definition with closed channel over
   const dev=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
   const main=JSON.parse(readFileSync(new URL('./targets.main.json',import.meta.url)));
   assert.deepEqual(main,{...dev,schema:'wss-required-targets/v2',channel:'main',release_kind:'stable',stable_enabled:true,workflow_snapshot_policy:MAIN_SNAPSHOT_POLICY,targets:dev.targets.map(t=>targetForChannel(t,'main'))});
+});
+test('integration configuration roles use the actual immutable family paths',()=>{
+  assert.equal(integrationConfiguration('csharp'),'.github/universal-bootstrap.json');
+  for(const family of ['unity','python','matlab'])assert.equal(integrationConfiguration(family),`.github/${family}-ci.json`);
+  assert.throws(()=>integrationConfiguration('foreign'));
+  const dev=JSON.parse(readFileSync(new URL('../ci/dev-propagation.json',import.meta.url)));
+  const main=JSON.parse(readFileSync(new URL('../ci/main-propagation.json',import.meta.url)));
+  assert.deepEqual(main,{...dev,schema:channelContext('main').stageSchema,channel:'main',workflow_snapshot_policy:MAIN_SNAPSHOT_POLICY});
 });
 test('main keeps both same-branch roles and one physical source without overwriting',()=>{
   const f=fixture(),pair=freezeWorkflowPair(f.g,f.acceptance,f.stage);

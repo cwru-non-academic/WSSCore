@@ -81,7 +81,7 @@ export function verifyWorkflowPins({repository,profiles,lock,files,roles=pinRole
     heads??=['dev','main'].map(branch=>g.head(parent,branch));
     for(const head of heads){
       requireThat(fullSha(head),'Invalid current integration source');
-      for(const path of ['.github/scripts',integrationConfiguration(profile.family),...(pin.workflow?['.github/workflows',pin.workflow]:[])])
+      for(const path of ['.github/scripts',integrationConfiguration(profile.family),'.github/dev-propagation.json','.github/main-propagation.json',...(pin.workflow?['.github/workflows',pin.workflow]:[])])
         requireThat(object(parent,pin.sha,path)===object(parent,head,path),`Pinned integration tooling differs from current verified dev/main: ${pin.file} / ${path}`);
     }
   }

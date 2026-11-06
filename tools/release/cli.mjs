@@ -6,12 +6,14 @@ import {CORE,digest,requireThat} from './verify.mjs';
 import {tagPolicy} from './policy.mjs';
 import {assertWorkflows,collectWithWorkflows,freezeWorkflows,freezeWorkflowPair,guardedWriter} from '../ci/workflow-freeze.mjs';
 import {freezeStage} from '../ci/dev-propagation.mjs';
-import {channelContext} from './channels.mjs';
+import {channelContext,channelActivation,controllerContext} from './channels.mjs';
 
 const [command,...args]=process.argv.slice(2);
 const g=new GitHub();
-const selected=p=>{requireThat(p.channel===channelContext(process.env.WSS_CI_CHANNEL||'dev').channel,'Producer plan belongs to another CI channel');return p;};
+const activation=channelActivation(JSON.parse(readFileSync(new URL('../ci/channel-activation.json',import.meta.url))));
+const selected=p=>{requireThat(p.channel===channelContext(process.env.WSS_CI_CHANNEL||'dev').channel,'Producer plan belongs to another CI channel');if(p.channel==='main')requireThat(process.env.GITHUB_SHA===p.candidate.commit,'Main controller source differs from the exact main candidate');return p;};
 try {
+  if(['prepare-dispatches','dispatch','verify','publish'].includes(command))controllerContext(process.env,command,CORE,activation);
   if(command==='inspect-tag-guard') {
     requireThat(args.length===1 && /^[1-9][0-9]*$/.test(args[0]),'inspect-tag-guard requires a ruleset ID');
     const policy=tagPolicy(g.get(`repos/${CORE}/rulesets/${args[0]}`));
@@ -29,7 +31,7 @@ try {
     requireThat(args.length===4,'freeze-campaign requires candidate.json main manifest and two output directories');
     const [candidateFile,manifestFile,acceptanceDirectory,stageDirectory]=args;
     const c=JSON.parse(readFileSync(candidateFile)),m=JSON.parse(readFileSync(manifestFile)),context=channelContext(m.channel);
-    requireThat(context.channel==='main'&&process.env.GITHUB_REPOSITORY===CORE&&process.env.GITHUB_REF===context.ref&&process.env.GITHUB_EVENT_NAME==='push'&&c.commit===process.env.GITHUB_SHA&&c.run_id===process.env.GITHUB_RUN_ID,'Paired freeze requires this exact canonical main push producer');
+    requireThat(activation.main===true&&context.channel==='main'&&process.env.GITHUB_ACTIONS==='true'&&process.env.GITHUB_REPOSITORY===CORE&&process.env.GITHUB_REF===context.ref&&process.env.GITHUB_EVENT_NAME==='push'&&process.env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/artifacts.yml@refs/heads/main`&&process.env.GITHUB_WORKFLOW_SHA===process.env.GITHUB_SHA&&c.commit===process.env.GITHUB_SHA&&c.run_id===process.env.GITHUB_RUN_ID,'Paired freeze requires this activated exact canonical main push producer');
     archive(g,c);
     const stagePolicy=JSON.parse(readFileSync(new URL('../ci/main-propagation.json',import.meta.url)));
     const pair=freezeWorkflowPair(g,freeze(g,m,c,{verificationOnly:process.env.WSS_DEV_RELEASE_ENABLED!=='true'}),freezeStage(g,stagePolicy,c,{freeze:false}));

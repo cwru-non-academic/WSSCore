@@ -5,7 +5,7 @@ import {GitHub,archive,loadPlan} from '../release/github.mjs';
 import {findNormalRuns} from '../release/normal-ci.mjs';
 import {CORE,CORE_JOBS,candidate,canonical,digest,jobs,requireThat} from '../release/verify.mjs';
 import {assertWorkflows,assertWorkflowPair,freezeWorkflows,guardedWriter} from './workflow-freeze.mjs';
-import {channelContext,integrationConfiguration} from '../release/channels.mjs';
+import {channelContext,channelActivation,controllerContext,integrationConfiguration} from '../release/channels.mjs';
 
 const same=(a,b)=>canonical(a)===canonical(b);
 const stageContext=p=>channelContext(p.policy.channel);
@@ -257,6 +257,7 @@ export function verifyBarrier(g,producerId,runId,attempt,repository,{channel='de
 async function main() {
   const [command,...args]=process.argv.slice(2),g=new GitHub();
   const context=channelContext(process.env.WSS_CI_CHANNEL||'dev');
+  if(['prepare','dispatch'].includes(command))controllerContext(process.env,command==='prepare'?'stage-prepare':'stage-dispatch',CORE,channelActivation(JSON.parse(readFileSync(new URL('./channel-activation.json',import.meta.url)))));
   if(command==='freeze') {
     requireThat(context.channel==='dev','Main requires the atomic paired freeze command');
     const [candidateFile,directory]=args,c=JSON.parse(readFileSync(candidateFile)),m=JSON.parse(readFileSync(new URL(`./${context.channel}-propagation.json`,import.meta.url)));
@@ -270,7 +271,9 @@ async function main() {
       if(event.workflow_run) id=String(event.workflow_run.id);
       else {const runs=g.pages(`repos/${CORE}/actions/workflows/artifacts.yml/runs?branch=${context.branch}&event=push&head_sha=${g.head(CORE,context.branch)}`,'workflow_runs');requireThat(runs.length===1,'Require one current canonical producer');id=String(runs[0].id);}
     }
-    const p=loadStage(g,id,{channel:context.channel}),j=prepareStage(g,p,process.env.GITHUB_RUN_ID,Number(process.env.GITHUB_RUN_ATTEMPT));
+    const p=loadStage(g,id,{channel:context.channel});
+    if(context.channel==='main')requireThat(process.env.GITHUB_SHA===p.candidate.commit,'Main stage controller source differs from the canonical main candidate');
+    const j=prepareStage(g,p,process.env.GITHUB_RUN_ID,Number(process.env.GITHUB_RUN_ATTEMPT));
     mkdirSync(directory,{recursive:true});writeFileSync(join(directory,'intent.json'),canonical(j)+'\n');
     if(j.barrier) writeFileSync(join(directory,'barrier.json'),canonical(j.barrier)+'\n');
     appendFileSync(process.env.GITHUB_OUTPUT,`producer_run_id=${id}\nartifact_name=${journalName(p,j.run_id,j.attempt)}\nactions=${j.actions.length}\nbarrier=${Boolean(j.barrier)}\n`);
@@ -281,6 +284,7 @@ async function main() {
     requireThat(j.run_id===process.env.GITHUB_RUN_ID && j.attempt===Number(process.env.GITHUB_RUN_ATTEMPT),'Journal must belong to this exact workflow attempt');
     requireThat(process.env.WSS_JOURNAL_READ_TOKEN,'Missing Core read-only journal token');
     const reader=new GitHub(process.env.WSS_JOURNAL_READ_TOKEN),p=loadStage(reader,j.candidate.run_id,{channel:context.channel});
+    if(context.channel==='main')requireThat(process.env.GITHUB_SHA===p.candidate.commit,'Main stage controller source differs from the canonical main candidate');
     executeStage(g,reader,p,j);
   } else if(command==='verify-barrier') {
     requireThat(args.length===3,'verify-barrier requires producer run ID, barrier run ID and attempt');
