@@ -14,6 +14,8 @@ namespace Wss.ModelModule
     {
         private readonly IStimParamsCore _inner;          // params + core underneath
         private readonly ModelConfigController _modelCfg;  // model settings (mode + constants)
+        private readonly Func<float> _elapsedSeconds;
+        private float _timeOrigin;
 
         // model math state
         private bool _validMode;
@@ -31,9 +33,16 @@ namespace Wss.ModelModule
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="inner"/> is null.</exception>
         /// <exception cref="ArgumentException">Thrown when <paramref name="modelPathOrDir"/> is null or whitespace.</exception>
         public ModelParamsLayer(IStimParamsCore inner, string modelPathOrDir)
+            : this(inner, modelPathOrDir, null)
+        {
+        }
+
+        // Instance-specific test clock; public callers retain the production stopwatch and min-dt rule.
+        internal ModelParamsLayer(IStimParamsCore inner, string modelPathOrDir, Func<float> elapsedSeconds)
         {
             _inner    = inner ?? throw new ArgumentNullException(nameof(inner));
             _modelCfg = new ModelConfigController(modelPathOrDir); 
+            _elapsedSeconds = elapsedSeconds;
         }
 
         // ===== IModelParamsCore (extras) =====
@@ -135,10 +144,31 @@ namespace Wss.ModelModule
 
         // ===== IStimulationCore (lifecycle/core → delegate) =====
         /// <inheritdoc/>
+        /// <remarks>
+        /// A successful synchronous initialization starts a new model-history session. Parameter and model
+        /// reloads preserve history. Changing the device count requires constructing a new complete stack.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">The loaded topology differs from the parameter controller capacity.</exception>
         public void Initialize()
         {
+            _inner.LoadConfigFile();
+            ValidateTopology();
             _inner.Initialize();
-            EnsureModelArrays(); // lazy arrays stand up after core init
+            ValidateTopology();
+            ResetModelArrays();
+        }
+
+        private void ValidateTopology()
+        {
+            var parameters = _inner.GetStimParamsConfigController();
+            int devices = _inner.GetCoreConfigController().MaxWss;
+            if (devices < 1 || (long)devices * parameters.PerWss != parameters.TotalChannels)
+            {
+                _inner.Shutdown();
+                throw new InvalidOperationException(
+                    $"Configured device count {devices} does not match the parameter controller capacity " +
+                    $"of {parameters.TotalChannels} channels. Construct a new complete stimulation stack after changing device count.");
+            }
         }
 
         /// <inheritdoc/>
@@ -175,21 +205,31 @@ namespace Wss.ModelModule
         /// Starts the internal stopwatch on first use and initializes per-channel state.
         /// </summary>
         /// <remarks>
-        /// Channel count is derived from <see cref="CoreConfigController.MaxWss"/> on the inner core.
+        /// Channel count is derived from the active parameter controller's total channel capacity.
         /// Arrays hold last magnitude, derivative estimate, and previous timestamps per channel.
         /// </remarks>
         private void EnsureModelArrays()
         {
-            if (_timer == null) { _timer = new Stopwatch(); _timer.Start(); }
-            int n = _inner.GetCoreConfigController().MaxWss;
-            if (_currentMag != null && _currentMag.Length == n) return;
+            if (_currentMag == null) ResetModelArrays();
+        }
+
+        private float ElapsedSeconds => _elapsedSeconds == null
+            ? _timer.ElapsedMilliseconds / 1000.0f
+            : _elapsedSeconds() - _timeOrigin;
+
+        private void ResetModelArrays()
+        {
+            if (_timer == null) _timer = new Stopwatch();
+            _timer.Restart();
+            _timeOrigin = _elapsedSeconds == null ? 0f : _elapsedSeconds();
+            int n = _inner.GetStimParamsConfigController().TotalChannels;
 
             _prevMagnitude = new float[n];
             _currentMag = new float[n];
             _d_dt = new float[n];
             _tPrev = new float[n];
 
-            float now = _timer.ElapsedMilliseconds / 1000.0f;
+            float now = ElapsedSeconds;
             for (int i = 0; i < n; i++) { _prevMagnitude[i] = 0f; _tPrev[i] = now; }
         }
 
@@ -229,7 +269,7 @@ namespace Wss.ModelModule
 
             // time + derivative bookkeeping
             _currentMag[idx] = Clamp01(magnitude01);
-            float tNow = _timer.ElapsedMilliseconds / 1000.0f;
+            float tNow = ElapsedSeconds;
             // Avoid MathF for netstandard2.0: compute with double and cast back
             float dt = (float)Math.Max(1e-5, (double)tNow - _tPrev[idx]);
             _d_dt[idx] = (_currentMag[idx] - _prevMagnitude[idx]) / dt;
