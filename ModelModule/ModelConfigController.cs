@@ -14,6 +14,16 @@ namespace Wss.ModelModule
     public sealed class ModelConfigController
     {
         private ModelConfig _cfg;
+        internal string StartupPath { get; private set; }
+        internal string ActivePath => _cfg.Path;
+        internal JObject CopyRoot() => _cfg.CopyRoot();
+        internal ModelConfigController(string path, JObject snapshot, string startupPath)
+        {
+            StartupPath = startupPath;
+            _cfg = new ModelConfig(path, snapshot);
+        }
+        internal void UseGate(object gate) => _cfg.UseGate(gate);
+        internal void ApplySnapshot(string path, JObject root) => _cfg.ApplySnapshot(path, root);
 
         /// <summary>
         /// Create or open a model config at <paramref name="path"/>.
@@ -40,6 +50,8 @@ namespace Wss.ModelModule
 
             string resolved = isDir ? Path.Combine(path, "modelConfig.json") : path;
 
+            resolved = Path.GetFullPath(resolved);
+            StartupPath = resolved;
             _cfg = new ModelConfig(resolved); // loads via DictConfigBase
             _cfg.Save();                      // persist defaults if first run
         }

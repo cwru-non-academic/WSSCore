@@ -16,8 +16,25 @@ namespace Wss.CalibrationModule
         private const int ChannelsPerWss = 3;
 
         private StimParamsConfig _cfg;
-        private readonly int _maxWss;
-        private readonly int _totalChannels;
+        private int _maxWss;
+        private int _totalChannels;
+        internal string StartupPath { get; private set; }
+        internal string ActivePath => _cfg.Path;
+        internal JObject CopyRoot() => _cfg.CopyRoot();
+        internal StimParamsConfigController(string path, JObject snapshot, int maxWss, string startupPath)
+        {
+            StartupPath = startupPath;
+            _cfg = new StimParamsConfig(path, snapshot);
+            _maxWss = maxWss;
+            _totalChannels = checked(maxWss * ChannelsPerWss);
+        }
+        internal void UseGate(object gate) => _cfg.UseGate(gate);
+        internal void ApplySnapshot(string path, JObject root, int maxWss)
+        {
+            _cfg.ApplySnapshot(path, root);
+            _maxWss = maxWss;
+            _totalChannels = checked(maxWss * ChannelsPerWss);
+        }
 
         /// <summary>Number of WSS units allowed by configuration.</summary>
         public int MaxWss => _maxWss;
@@ -48,6 +65,8 @@ namespace Wss.CalibrationModule
             _totalChannels = ChannelsPerWss * _maxWss;
 
             // Loads from disk and merges defaults internally (via DictConfigBase).
+            resolved = Path.GetFullPath(resolved);
+            StartupPath = resolved;
             _cfg = new StimParamsConfig(resolved);  // loads here 
 
             EnsureTemplate(_totalChannels);

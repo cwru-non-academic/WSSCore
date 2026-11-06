@@ -9,13 +9,16 @@ namespace Wss.CalibrationModule
     /// </summary>
     public sealed class StimParamsConfig : DictConfigBase
     {
+        internal StimParamsConfig(string path, JObject snapshot) : base(path, snapshot, true) { }
         /// <summary>
         /// Initializes a stimulation-parameters config backed by the JSON file at <paramref name="path"/>.
         /// Creates the file with defaults when missing.
         /// </summary>
         /// <param name="path">Destination file path.</param>
         public StimParamsConfig(string path)
-            : base(path, defaults: new JObject
+            : base(path, CreateDefaults()) { }
+
+        internal static JObject CreateDefaults() => new JObject
             {
                 ["stim"] = new JObject
                 {
@@ -34,7 +37,6 @@ namespace Wss.CalibrationModule
                         }
                     }
                 }
-            })
-        { }
+            };
     }
 }
