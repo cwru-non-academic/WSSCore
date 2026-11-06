@@ -1,12 +1,10 @@
 # PowerShell adapters use the same Core channel policy as the Node engines.
 function Get-WssCiChannelContext([string]$Channel='') {
     if(!$Channel){$Channel=$env:WSS_CI_CHANNEL}
-    if(!$Channel){
-        if($env:GITHUB_BASE_REF){$Channel=$env:GITHUB_BASE_REF}
-        elseif($env:GITHUB_REF -cmatch '^refs/heads/(dev|main)$'){$Channel=$Matches[1]}
-        elseif($env:GITHUB_ACTIONS -cne 'true'){$Channel='dev'}
-        else{throw 'Trusted CI channel context is required.'}
-    }
+    # Execution may be on trusted main while the authorized target is dev.
+    # Never infer an authorization channel from GITHUB_REF or a PR base.
+    if(!$Channel -and $env:GITHUB_ACTIONS -cne 'true'){$Channel='dev'}
+    if(!$Channel){throw 'An explicit CI channel context is required.'}
     if(!(Get-Variable WssCiChannelContexts -Scope Script -ErrorAction SilentlyContinue)){$script:WssCiChannelContexts=@{}}
     if(!$script:WssCiChannelContexts.ContainsKey($Channel)){
         $module=if(Test-Path -LiteralPath (Join-Path $PSScriptRoot 'channels.mjs')){Join-Path $PSScriptRoot 'channels.mjs'}else{Join-Path $PSScriptRoot '../../release/channels.mjs'}

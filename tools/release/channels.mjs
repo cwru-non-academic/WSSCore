@@ -10,6 +10,10 @@ export function channelContext(value) {
     planSchema:stable?'wss-propagation-plan/v2':'wss-propagation-plan/v1',
     receiptSchema:stable?'wss-acceptance-receipt/v2':'wss-acceptance-receipt/v1',
     acceptanceSchema:stable?'wss-release-acceptance/v2':'wss-release-acceptance/v1',
+    stageSchema:stable?'wss-main-stage/v1':'wss-dev-stage/v1',
+    stagePlanSchema:stable?'wss-main-propagation-plan/v1':'wss-dev-propagation-plan/v1',
+    receiverSchema:stable?'wss-main-stage-receiver/v1':'wss-dev-stage-receiver/v1',
+    receiverPolicy:`.github/${value}-propagation.json`,
     targetPolicy:`tools/release/targets.${value}.json`,stagePolicy:`tools/ci/${value}-propagation.json`,
     stageWorkflow:`.github/workflows/${value}-propagation.yml`,acceptanceWorkflow:`.github/workflows/${value}-release.yml`,
     stageArtifact:stable?'wss-main-propagation-plan':'wss-dev-propagation-plan'});

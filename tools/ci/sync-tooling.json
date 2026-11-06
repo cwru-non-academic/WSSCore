@@ -139,6 +139,14 @@
     ".github/scripts/wss-ci/Preflight.ps1": {
       "origin": "integration",
       "path": ".github/scripts/wss-ci/Preflight.ps1"
+    },
+    ".github/scripts/wss-ci/channels.mjs": {
+      "origin": "core",
+      "path": "tools/release/channels.mjs"
+    },
+    ".github/scripts/wss-ci/Channel.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/Channel.ps1"
     }
   }
 }
