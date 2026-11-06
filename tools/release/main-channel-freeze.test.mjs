@@ -7,7 +7,7 @@ import {resolve,join} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {CORE,CORE_JOBS,digest,plan} from './verify.mjs';
 import {channelContext,targetForChannel,integrationConfiguration} from './channels.mjs';
-import {assertWorkflows,freezeWorkflows,freezeWorkflowPair,receiverAuthorization,MAIN_SNAPSHOT_POLICY} from '../ci/workflow-freeze.mjs';
+import {assertWorkflows,freezeWorkflows,freezeWorkflowPair,assertWorkflowPair,initialProducerPlan,initialRequest,guardedWriter,receiverAuthorization,MAIN_SNAPSHOT_POLICY} from '../ci/workflow-freeze.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
 const json=x=>({type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(x)).toString('base64')});
@@ -87,6 +87,28 @@ test('receiver authorization uses the same Core guard and completed canonical pr
   for(const patch of [{head_branch:'dev'},{event:'workflow_dispatch'},{status:'in_progress'},{conclusion:'failure'},{head_repository:{full_name:'fork/Core'}}]){
     f.g.run=()=>({...run,...patch});assert.throws(()=>receiverAuthorization(f.g,'11',repository,options));
   }
+});
+
+test('paired main initial C# handoff does not wait on itself and rejects a later equivalent main source',()=>{
+  const f=fixture(),pair=freezeWorkflowPair(f.g,f.acceptance,f.stage),p=pair.stage,c=p.candidate;
+  assertWorkflowPair(f.g,pair.acceptance,p);
+  const env={GITHUB_ACTIONS:'true',GITHUB_EVENT_NAME:'push',GITHUB_WORKFLOW_REF:`${CORE}/.github/workflows/artifacts.yml@refs/heads/main`,GITHUB_REPOSITORY:CORE,GITHUB_REF:'refs/heads/main',GITHUB_SHA:c.commit,GITHUB_RUN_ID:c.run_id};
+  f.g.run=()=>assert.fail('Initial dispatch cannot wait for its own producer completion');
+  initialProducerPlan(p,'csharp',env);
+  const body={ref:'main',inputs:{wss_run_id:c.run_id,wss_commit:c.commit,wss_artifact_id:c.artifact_id,wss_sha256:c.sha256,correlation_id:`wss-${c.run_id}-${c.artifact_id}`}};
+  const t=initialRequest(p,'csharp',body),root=mkdtempSync(join(tmpdir(),'wss main initial ')),calls=[];
+  f.g.command=args=>calls.push(args);
+  try{
+    const file=join(root,'request.json');writeFileSync(file,JSON.stringify(body));
+    const writer=guardedWriter(f.g,f.g,p,'stage',{ids:['csharp'],purpose:'initial'});
+    const args=['api','--method','POST',`repos/${t.repository}/actions/workflows/promote-wss.yml/dispatches`,'--input',file];
+    writer.command(args);assert.equal(calls.length,1);
+    const prior=f.heads.get(`${t.repository}:main`),later=sha(999);
+    f.heads.set(`${t.repository}:main`,later);f.trees.set(`${t.repository}:${later}`,f.trees.get(`${t.repository}:${prior}`));
+    assert.throws(()=>writer.command(args),/source moved/);assert.equal(calls.length,1);
+    assert.throws(()=>initialRequest(p,'csharp',{...body,ref:'dev'}));
+    assert.throws(()=>initialProducerPlan(p,'csharp',{...env,GITHUB_RUN_ID:'99'}));
+  }finally{rmSync(root,{recursive:true,force:true});}
 });
 test('actual PowerShell receiver bridge executes locked Core CLI and rejects missing or invalid proof',()=>{
   const f=fixture(),p=freezeWorkflows(f.g,f.acceptance,'acceptance'),root=mkdtempSync(join(tmpdir(),'wss receiver authorization '));
