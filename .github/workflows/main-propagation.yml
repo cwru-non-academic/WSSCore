@@ -1,6 +1,12 @@
 name: Reconcile staged main propagation
 run-name: Reconcile main integrations and applications / ${{ inputs.producer_run_id || github.event.workflow_run.id || 'current-main' }}
 on:
+  workflow_run:
+    workflows: [Build universal WSS release]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '47 * * * *'
   workflow_dispatch:
     inputs:
       producer_run_id:
@@ -71,14 +77,14 @@ jobs:
           PRODUCER_RUN: ${{ inputs.producer_run_id }}
         run: node tools/ci/dev-propagation.mjs prepare "$PRODUCER_RUN" "$RUNNER_TEMP/main-stage"
       - name: Retain dispatch intent before any write token or POST
-        if: false
+        if: (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.stage.outputs.artifact_name }}
           path: ${{ runner.temp }}/main-stage/intent.json
           if-no-files-found: error
       - name: Retain all-integration authorization
-        if: steps.stage.outputs.barrier == 'true' && (false)
+        if: steps.stage.outputs.barrier == 'true' && ((github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile'))
         uses: actions/upload-artifact@v4
         with:
           name: wss-integration-barrier-${{ steps.stage.outputs.producer_run_id }}-a${{ github.run_attempt }}
@@ -88,8 +94,8 @@ jobs:
     name: Reconcile committed CI or authorized application promotion
     needs: prepare
     if: >-
-      false && needs.prepare.outputs.actions != '0' &&
-      (false)
+      true && needs.prepare.outputs.actions != '0' &&
+      ((github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
