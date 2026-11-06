@@ -159,7 +159,7 @@ export function receiverAuthorization(g,producerId,repository,{loadFrozenPlan=lo
 
 // Preserve the existing publisher/dispatchers. The only additional write client
 // checks run at their command boundary, using a separate read-only credential.
-export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,acceptedHeads}={}) {
+export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,acceptedHeads,initialAuthority}={}) {
   requireThat(['initial','proof','stage','publication'].includes(purpose),'Unknown guarded write purpose');
   const c=context(p,kind);
   if(c.channel==='main'&&purpose==='initial')requireThat(ids?.length===1,'Initial main mutation requires one exact family scope');
@@ -210,6 +210,7 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,
           }
         }
         assertWorkflows(reader,p,kind,{ids});
+        if(purpose==='initial'&&initialAuthority)initialAuthority();
         if(c.channel==='main') {
           if(purpose==='publication')for(const t of p.manifest.targets)requireThat(reader.head(t.repository,c.branch)===acceptedHeads[t.id],'Accepted main target moved at publication boundary');
           else {
@@ -248,8 +249,8 @@ async function main() {
     console.log(canonical(receiverAuthorization(reader,family,source)));return;
   }
   requireThat(['check-initial','dispatch-initial'].includes(command)&&family&&source&&(command==='check-initial'?!request:Boolean(request)),'Expected check-initial family plan-or-run or dispatch-initial family plan-or-run request.json');
-  const {loadStage,validatePlan}=await import('./dev-propagation.mjs');
-  let p;
+  const {loadStage,validatePlan,assertInitialCompletionAuthority,inspectInitialHandoff}=await import('./dev-propagation.mjs');
+  let p,initialAuthority;
   if(process.env.GITHUB_EVENT_NAME==='push') {
     p=initialProducerPlan(validatePlan(JSON.parse(readFileSync(source))),family,process.env);
     if(p.policy.channel==='main') {
@@ -257,15 +258,21 @@ async function main() {
       assertWorkflowPair(reader,JSON.parse(readFileSync(process.env.WSS_ACCEPTANCE_PLAN)),p);
     }
   } else {
-    requireThat(process.env.GITHUB_EVENT_NAME==='workflow_run'&&process.env.GITHUB_REPOSITORY===CORE&&process.env.GITHUB_REF==='refs/heads/main'&&
-      process.env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/propagate-${family}.yml@refs/heads/main`,'Initial handoff requires registered trusted main workflow');
-    p=loadStage(reader,source,{channel:channelContext(process.env.WSS_CI_CHANNEL||'dev').channel});
+    const context=assertInitialCompletionAuthority(reader,family),event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH));
+    requireThat(String(event.workflow_run?.id)===source,'Initial handoff producer differs from runner event');
+    p=loadStage(reader,source,{channel:context.channel,initialEvent:event.workflow_run});
+    initialAuthority=()=>{
+      const current=assertInitialCompletionAuthority(reader,family);
+      requireThat(inspectInitialHandoff(reader,p,family,current).dispatch_needed,'Correlated initial promotion already exists; no redispatch');
+      assertInitialCompletionAuthority(reader,family);
+    };
+    initialAuthority();
   }
   assertWorkflows(reader,p,'stage',{ids:[family]});
   if(command==='dispatch-initial') {
     requireThat(process.env.WSS_WORKFLOW_READ_TOKEN,'Initial dispatch requires separate read-only evidence token');
     const t=initialRequest(p,family,JSON.parse(readFileSync(request)));
-    const writer=guardedWriter(new GitHub(),reader,p,'stage',{ids:[family],purpose:'initial'});
+    const writer=guardedWriter(new GitHub(),reader,p,'stage',{ids:[family],purpose:'initial',initialAuthority});
     writer.command(['api','--method','POST',`repos/${t.repository}/actions/workflows/promote-wss.yml/dispatches`,'--input',resolve(request)]);
   }
 }

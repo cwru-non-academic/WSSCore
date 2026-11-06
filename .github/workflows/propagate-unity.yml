@@ -7,6 +7,8 @@ on:
 permissions:
   contents: read
   actions: read
+env:
+  WSS_CI_CHANNEL: ${{ github.event.workflow_run.head_branch }}
 concurrency:
   group: unity-producer-${{ github.event.workflow_run.id }}
   cancel-in-progress: false
@@ -17,8 +19,8 @@ jobs:
       github.repository == 'cwru-non-academic/WSSCore' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'dev' &&
-      github.event.workflow_run.head_repository.full_name == 'cwru-non-academic/WSSCore'
+      (github.event.workflow_run.head_branch == 'dev') &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,29 +30,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Validate completed producer, exact artifact and destination readiness
+      - name: Validate canonical producer, family readiness and correlated attempt
         id: prepare
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./tools/ci/prepare-unity-handoff.ps1 -EventPath $env:GITHUB_EVENT_PATH -WorkRoot "$env:RUNNER_TEMP/unity-handoff"
+        run: node tools/ci/dev-propagation.mjs initial unity "$RUNNER_TEMP/unity-handoff"
       - name: Check frozen workflow trees before write credentials
         if: steps.prepare.outputs.dispatch_needed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: node tools/ci/workflow-freeze.mjs check-initial unity '${{ github.event.workflow_run.id }}'
-      - name: Require existing App configuration only when dispatch is needed
+      - name: Create existing App token for this integration only
         if: steps.prepare.outputs.dispatch_needed == 'true'
-        shell: pwsh
-        env:
-          APP_ID: ${{ vars.WSS_GITHUB_APP_ID }}
-          APP_KEY: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
-        run: |
-          if (!$env:APP_ID -or !$env:APP_KEY) { throw 'WSSCore cannot access its existing WSS_GITHUB_APP_ID / WSS_GITHUB_APP_PRIVATE_KEY configuration. No credentials were created.' }
-      - name: Mint existing App token for Unity wrapper dispatch only
-        if: steps.prepare.outputs.dispatch_needed == 'true'
+        id: token
         uses: actions/create-github-app-token@v2
-        id: dispatch
         with:
           app-id: ${{ vars.WSS_GITHUB_APP_ID }}
           private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
@@ -59,14 +52,10 @@ jobs:
           permission-actions: write
       - name: Dispatch once; inspect uncertain outcomes before retry
         if: steps.prepare.outputs.dispatch_needed == 'true'
-        shell: pwsh
         env:
-          GH_TOKEN: ${{ steps.dispatch.outputs.token }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
           WSS_WORKFLOW_READ_TOKEN: ${{ github.token }}
-        run: |
-          node tools/ci/workflow-freeze.mjs dispatch-initial unity '${{ github.event.workflow_run.id }}' "$env:RUNNER_TEMP/unity-handoff/dispatch.json"
-          if ($LASTEXITCODE -ne 0) { throw 'Unity handoff failed or is uncertain. Inspect the correlated run before retrying; verify the existing App installation has Unity wrapper Actions-write access.' }
-          'Unity wrapper dispatch accepted. Candidate validation and dependency PR publication run separately; human merges remain required.' >> $env:GITHUB_STEP_SUMMARY
+        run: node tools/ci/workflow-freeze.mjs dispatch-initial unity '${{ github.event.workflow_run.id }}' "$RUNNER_TEMP/unity-handoff/dispatch.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,8 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {renderChannelWorkflow} from '../ci/channel-workflows.mjs';
+import {renderChannelWorkflow,renderInitialWorkflow} from '../ci/channel-workflows.mjs';
+import {readFileSync} from 'node:fs';
+import {INITIAL_HANDOFF_PROFILES} from '../ci/dev-propagation.mjs';
 import {publicationControls} from '../ci/channel-controls.mjs';
 const activation=main=>({schema:'wss-ci-channel-activation/v1',dev:true,main});
+test('initial workflows have one implementation, closed scopes, explicit channels and activation filters',()=>{
+  for(const enabled of [false,true])for(const [family,profile] of Object.entries(INITIAL_HANDOFF_PROFILES)){
+    const r=renderInitialWorkflow(family,{activation:activation(enabled)});
+    assert.equal(r.path,`.github/workflows/propagate-${family}.yml`);
+    assert.ok(r.text.includes(`branches: [${enabled?'dev, main':'dev'}]`));
+    assert.ok(r.text.includes('WSS_CI_CHANNEL: ${{ github.event.workflow_run.head_branch }}'));
+    assert.ok(r.text.includes(`node tools/ci/dev-propagation.mjs initial ${family}`));
+    assert.ok(r.text.includes(`repositories: ${profile.repository.split('/')[1]}`));
+    assert.equal(r.text.match(/permission-actions: write/g).length,1);
+    assert.ok(r.text.indexOf('check-initial')<r.text.indexOf('actions/create-github-app-token'));
+    assert.ok(r.text.includes('WSS_WORKFLOW_READ_TOKEN: ${{ github.token }}'));
+    assert.ok(r.text.includes('ref: ${{ github.sha }}'));
+    assert.doesNotMatch(r.text,/gh api|prepare-python-handoff|prepare-unity-handoff/);
+    if(!enabled)assert.doesNotMatch(r.text,/head_branch == 'main'/);
+  }
+  assert.throws(()=>renderInitialWorkflow('csharp'));assert.throws(()=>renderInitialWorkflow('other'));
+});
+test('Common CI runs for every actual producer and generated controller entrypoint',()=>{
+  const text=readFileSync(new URL('../../.github/workflows/shared-ci.yml',import.meta.url),'utf8');
+  for(const file of ['propagate-python','propagate-unity','propagate-matlab','dev-propagation','main-propagation','dev-release','main-release','artifacts'])
+    assert.equal(text.split(`'.github/workflows/${file}.yml'`).length-1,2,`Both PR and push must cover ${file}`);
+});
 test('main bootstrap exposes only read-only manual verification, never scheduled writes',()=>{
   for(const operation of ['propagation','acceptance']){
     const r=renderChannelWorkflow(operation,'main',{activation:activation(false)});
