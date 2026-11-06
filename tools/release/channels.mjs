@@ -19,6 +19,11 @@ export function channelContext(value) {
     stageArtifact:stable?'wss-main-propagation-plan':'wss-dev-propagation-plan'});
 }
 export function targetForChannel(target,value) {const context=channelContext(value);return {...target,branch:context.branch};}
+export function integrationConfiguration(family) {
+  const paths={csharp:'.github/universal-bootstrap.json',unity:'.github/unity-ci.json',python:'.github/python-ci.json',matlab:'.github/matlab-ci.json'};
+  if(!Object.hasOwn(paths,family))throw Error('Unknown integration configuration role');
+  return paths[family];
+}
 export function releaseFingerprint(value,run,planId) {
   const c=channelContext(value);
   if(!/^[1-9][0-9]*$/.test(run)||!/^[a-f0-9]{64}$/.test(planId))throw Error('Fingerprint requires exact producer and frozen plan identities');

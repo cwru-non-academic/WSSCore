@@ -15,7 +15,7 @@ const rehash=p=>{if(p.manifest)p.manifest_sha256=digest(p.manifest);else p.polic
 function fixture(){
   const manifest=JSON.parse(readFileSync(new URL('./targets.main.json',import.meta.url)));
   const policy=JSON.parse(readFileSync(new URL('../ci/dev-propagation.json',import.meta.url)));
-  policy.channel='main';policy.workflow_snapshot_policy=MAIN_SNAPSHOT_POLICY;
+  policy.schema=channelContext('main').stageSchema;policy.channel='main';policy.workflow_snapshot_policy=MAIN_SNAPSHOT_POLICY;
   const candidate={repository:CORE,commit:sha(1),run_id:'11',artifact_id:'12',archive:'WSS-Universal-ci.zip',sha256:'a'.repeat(64)};
   const heads=new Map(),trees=new Map();
   manifest.targets.forEach((t,i)=>{for(const [branch,n] of [['main',100+i],['dev',200+i]]){heads.set(`${t.repository}:${branch}`,sha(n));trees.set(`${t.repository}:${sha(n)}`,sha(300+i));}});
@@ -23,7 +23,7 @@ function fixture(){
     get:path=>{if(path.includes('targets.main.json'))return json(manifest);if(path.includes('main-propagation.json'))return json(policy);throw Error('Unexpected immutable policy '+path);},
     object:(repo,source,path)=>{assert.equal(path,'.github/workflows');assert.ok(trees.has(`${repo}:${source}`));return {type:'tree',sha:trees.get(`${repo}:${source}`)};}};
   const acceptance=rehash({schema:channelContext('main').planSchema,channel:'main',candidate,manifest:structuredClone(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:g.head(t.repository,'main'),trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,sha(9)]))}]))});
-  const stage=rehash({schema:'wss-main-propagation-plan/v1',candidate,policy:structuredClone(policy),receivers:Object.fromEntries(policy.libraries.map(t=>[t.id,{heads:{main:g.head(t.repository,'main'),dev:g.head(t.repository,'dev')},trusted:{main:{},dev:{}}}]))});
+  const stage=rehash({schema:'wss-main-propagation-plan/v1',channel:'main',candidate,policy:structuredClone(policy),receivers:Object.fromEntries(policy.libraries.map(t=>[t.id,{heads:{main:g.head(t.repository,'main'),dev:g.head(t.repository,'dev')},trusted:{main:{},dev:{}}}]))});
   return {g,manifest,policy,acceptance,stage,heads,trees};
 }
 test('main target policy is the exact shared definition with closed channel overlays',()=>{

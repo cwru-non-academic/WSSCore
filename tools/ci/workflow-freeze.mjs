@@ -96,10 +96,23 @@ export function freezeWorkflowPair(g,acceptance,stage) {
   requireThat(acceptance.channel==='main'&&stage.policy.channel==='main'&&same(acceptance.candidate,stage.candidate),'Paired freeze requires one exact main candidate');
   const observations=new Map();
   const a=freezeWorkflows(g,acceptance,'acceptance',{observations});
-  const s=freezeWorkflows(g,stage,'stage',{observations});
-  assertWorkflows(g,a,'acceptance');assertWorkflows(g,s,'stage');
+  const {plan_id,...stageBody}=stage;
+  const linked={...stageBody,acceptance_plan_id:a.plan_id};
+  const s=freezeWorkflows(g,{...linked,plan_id:digest(linked)},'stage',{observations});
+  assertWorkflowPair(g,a,s);
   for(const o of observations.values())requireThat(g.head(o.repository,o.branch)===o.source_sha,'Workflow source moved between paired plan freezes');
   return {acceptance:a,stage:s};
+}
+export function assertWorkflowPair(g,acceptance,stage) {
+  requireThat(acceptance.channel==='main'&&stage.policy.channel==='main'&&same(acceptance.candidate,stage.candidate)&&stage.acceptance_plan_id===acceptance.plan_id,'Main stage is not bound to its exact acceptance plan');
+  assertWorkflows(g,acceptance,'acceptance',{live:false});assertWorkflows(g,stage,'stage',{live:false});
+  const physical=new Map();
+  for(const a of Object.values(acceptance.workflow_snapshots.targets))physical.set(`${a.repository}:${a.branch}`,a);
+  for(const s of Object.values(stage.workflow_snapshots.targets)){
+    const a=physical.get(`${s.repository}:${s.branch}`);
+    requireThat(a&&a.source_sha===s.source_sha&&a.tree_sha===s.tree_sha,'Main stage and acceptance froze different physical source bindings');
+  }
+  return true;
 }
 export function assertWorkflows(g,p,kind,{ids,live=true}={}) {
   if(!snapshotRequirement(g,p,kind))return false;
@@ -146,9 +159,12 @@ export function receiverAuthorization(g,producerId,repository,{loadFrozenPlan=lo
 
 // Preserve the existing publisher/dispatchers. The only additional write client
 // checks run at their command boundary, using a separate read-only credential.
-export function guardedWriter(writer,reader,p,kind,{ids,purpose}={}) {
+export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,acceptedHeads}={}) {
   requireThat(['initial','proof','stage','publication'].includes(purpose),'Unknown guarded write purpose');
   const c=context(p,kind);
+  if(c.channel==='main'&&purpose==='initial')requireThat(ids?.length===1,'Initial main mutation requires one exact family scope');
+  if(c.channel==='main'&&['stage','proof'].includes(purpose))requireThat(ids?.length===1&&sha(executionSource),'Main mutation requires its exact journaled execution source');
+  if(c.channel==='main'&&purpose==='publication')requireThat(acceptedHeads&&same(Object.keys(acceptedHeads).sort(),p.manifest.targets.map(t=>t.id).sort())&&Object.values(acceptedHeads).every(sha),'Main publication requires all exact accepted merge heads');
   const allowed=new Set();
   if(purpose==='initial'||purpose==='stage')for(const t of p.policy.libraries.filter(t=>!ids||ids.includes(t.id))) {
     for(const name of purpose==='initial'?['promote-wss.yml']:[t.normal,t.fanout])allowed.add(`repos/${t.repository}/actions/workflows/${name}/dispatches`);
@@ -194,6 +210,14 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose}={}) {
           }
         }
         assertWorkflows(reader,p,kind,{ids});
+        if(c.channel==='main') {
+          if(purpose==='publication')for(const t of p.manifest.targets)requireThat(reader.head(t.repository,c.branch)===acceptedHeads[t.id],'Accepted main target moved at publication boundary');
+          else {
+            const target=kind==='stage'?p.policy.libraries.find(t=>t.id===ids[0]):p.manifest.targets.find(t=>t.id===ids[0]);
+            const expected=purpose==='initial'?p.receivers[target.id].heads.main:executionSource;
+            requireThat(reader.head(target.repository,'main')===expected,'Main execution source moved at mutation boundary');
+          }
+        }
       }
       return target.command(args);
     };
@@ -228,10 +252,14 @@ async function main() {
   let p;
   if(process.env.GITHUB_EVENT_NAME==='push') {
     p=initialProducerPlan(validatePlan(JSON.parse(readFileSync(source))),family,process.env);
+    if(p.policy.channel==='main') {
+      requireThat(process.env.WSS_ACCEPTANCE_PLAN,'Initial main handoff requires its paired local acceptance plan');
+      assertWorkflowPair(reader,JSON.parse(readFileSync(process.env.WSS_ACCEPTANCE_PLAN)),p);
+    }
   } else {
     requireThat(process.env.GITHUB_EVENT_NAME==='workflow_run'&&process.env.GITHUB_REPOSITORY===CORE&&process.env.GITHUB_REF==='refs/heads/main'&&
       process.env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/propagate-${family}.yml@refs/heads/main`,'Initial handoff requires registered trusted main workflow');
-    p=loadStage(reader,source);
+    p=loadStage(reader,source,{channel:channelContext(process.env.WSS_CI_CHANNEL||'dev').channel});
   }
   assertWorkflows(reader,p,'stage',{ids:[family]});
   if(command==='dispatch-initial') {

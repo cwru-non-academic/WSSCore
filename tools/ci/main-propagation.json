@@ -1,0 +1,87 @@
+{
+  "schema": "wss-main-stage/v1",
+  "channel": "main",
+  "workflow_snapshot_policy": "wss-workflow-snapshots/v2",
+  "libraries": [
+    {
+      "id": "csharp",
+      "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "record": "lib/wss-candidate.json",
+      "normal": "wss-compatibility.yml",
+      "fanout": "dispatch-cli-promotion.yml",
+      "jobs": [
+        "Integration behavioral tests",
+        "Integration compatibility (Windows)",
+        "Integration compatibility (Ubuntu)",
+        "Integration compatibility (macOS)"
+      ],
+      "applications": [
+        "cwru-non-academic/CLI_CSharp_WSS_Application"
+      ]
+    },
+    {
+      "id": "unity",
+      "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "record": ".github/unity-candidate.json",
+      "normal": "unity-compatibility.yml",
+      "fanout": "dispatch-unity-promotion.yml",
+      "jobs": [
+        "Integration behavioral tests",
+        "Integration compatibility (Windows)",
+        "Integration compatibility (Ubuntu)",
+        "Integration compatibility (macOS)"
+      ],
+      "applications": [
+        "cwru-non-academic/GUI_Unity_WSS_Application"
+      ]
+    },
+    {
+      "id": "python",
+      "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "record": ".github/python-candidate.json",
+      "normal": "wss-compatibility.yml",
+      "fanout": "dispatch-cli-promotion.yml",
+      "jobs": [
+        "Resolve committed sources",
+        "Integration behavioral tests",
+        "Integration compatibility (Windows)",
+        "Integration compatibility (Ubuntu)",
+        "Integration compatibility (macOS)",
+        "Promotion safety contracts"
+      ],
+      "applications": [
+        "cwru-non-academic/CLI_Python_WSS_Application",
+        "cwru-non-academic/ROS_Python_WSS_Application"
+      ]
+    },
+    {
+      "id": "matlab",
+      "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "record": ".github/matlab-candidate.json",
+      "normal": "wss-compatibility.yml",
+      "fanout": "dispatch-cli-promotion.yml",
+      "jobs": [
+        "Integration behavioral tests",
+        "Integration compatibility (Windows)",
+        "Integration compatibility (Ubuntu)",
+        "Integration compatibility (macOS)"
+      ],
+      "applications": [
+        "cwru-non-academic/CLI_Matlab_WSS_Application"
+      ],
+      "native_evidence_guard": {
+        "path": ".github/scripts/Complete-MatlabPreflight.ps1",
+        "sha": "6a704b447b312e16fea750a96a534715ac565899"
+      },
+      "promotion_contract_test": {
+        "path": ".github/scripts/tests/Test-MatlabPromotion.ps1",
+        "sha": "11d5d06257122aaf5d37548eea3b8f62e8294bf7"
+      },
+      "merge_evidence_guard": {
+        "path": ".github/scripts/MatlabPromotion.ps1",
+        "sha": "975d11902af5bb4143f0728c26a259804ae9e061"
+      }
+    }
+  ],
+  "application_fanout": "per-integration"
+}
