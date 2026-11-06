@@ -8,6 +8,32 @@ Start with [Build](#build), [One universal distribution](#one-universal-distribu
 and [C# and Unity consumption](#c-and-unity-consumption). The complete build,
 platform, test and automation reference is retained below in expandable sections.
 
+## Configuration snapshots and host reset
+
+`WssConfigurationSnapshot` stages validated JSON without creating or backfilling
+files. Its values and startup paths are immutable; installing it or constructing
+a replacement stack does not reread configuration files. Hosts retain the
+snapshot across their existing stop/cleanup/reconstruction path, including
+transports that cannot reconnect after disconnection.
+
+`ReloadDefaults()` stages all three original startup-default files.
+`Reload(directory)` stages all three standard filenames there.
+**`Reload(explicitParameterFile)` overrides only calibration; Core and model
+use their original startup-default paths, not the file's sibling directory.**
+`ReloadCore()` stages the active Core file while retaining applied
+calibration/model values and paths. Paths remain anchored across working-directory
+changes and reconstruction.
+
+Compare detached snapshots with `HasSameCore`. Any effective Core value change
+requires the host's reset path; `ApplyWithoutRestart` rejects such a change before
+mutation. For unchanged Core it synchronizes publication with stimulation and
+background frame capture. `BuildAndInitialize` creates the requested layers from
+the validated values; callers must tick the returned stack to finish initialization.
+Core does not replace the host's transport-specific cleanup lifecycle.
+
+Cleanup failures from `Dispose()` are reported and permit explicit retry. A failed restart must not replay
+the old stimulation buffers.
+
 ## Architecture
 
 All seven WSS managed libraries target **.NET Standard 2.0**:

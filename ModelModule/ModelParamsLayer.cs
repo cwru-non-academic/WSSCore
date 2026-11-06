@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using Newtonsoft.Json.Linq;
 using Wss.CalibrationModule;
 using Wss.CoreModule;
 namespace Wss.ModelModule
@@ -14,6 +16,30 @@ namespace Wss.ModelModule
     {
         private readonly IStimParamsCore _inner;          // params + core underneath
         private readonly ModelConfigController _modelCfg;  // model settings (mode + constants)
+        private readonly Func<float> _elapsedSeconds;
+        private float _timeOrigin;
+
+        private JObject _appliedCore;
+        internal StimParamsLayer Calibration => _inner as StimParamsLayer;
+
+        internal void InitializeInstalledConfiguration()
+        {
+            lock (_inner.GetCoreConfigController().OperationGate)
+                InitializeSession(() => Calibration.InitializeInstalledConfiguration(), _appliedCore);
+        }
+
+        internal void InstallSnapshot(ConfigurationBundle snapshot)
+        {
+            var core = _inner.GetCoreConfigController();
+            lock (core.ConfigurationGate)
+            {
+                core.ApplySnapshot(snapshot.CorePath, snapshot.CoreValues);
+                _inner.GetStimParamsConfigController().ApplySnapshot(snapshot.ParamsPath, snapshot.Params, snapshot.CoreValues.maxWSS);
+                _modelCfg.ApplySnapshot(snapshot.ModelPath, snapshot.Model);
+                Calibration.RefreshChannels();
+                _appliedCore = (JObject)snapshot.Core.DeepClone();
+            }
+        }
 
         // model math state
         private bool _validMode;
@@ -31,9 +57,23 @@ namespace Wss.ModelModule
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="inner"/> is null.</exception>
         /// <exception cref="ArgumentException">Thrown when <paramref name="modelPathOrDir"/> is null or whitespace.</exception>
         public ModelParamsLayer(IStimParamsCore inner, string modelPathOrDir)
+            : this(inner, modelPathOrDir, null)
         {
-            _inner    = inner ?? throw new ArgumentNullException(nameof(inner));
-            _modelCfg = new ModelConfigController(modelPathOrDir); 
+        }
+
+        // Instance-specific test clock; public callers retain the production stopwatch and min-dt rule.
+        internal ModelParamsLayer(IStimParamsCore inner, string modelPathOrDir, Func<float> elapsedSeconds)
+            : this(inner, modelPathOrDir, null, elapsedSeconds) { }
+
+        internal ModelParamsLayer(IStimParamsCore inner, WssConfigurationSnapshot snapshot)
+            : this(inner, snapshot.ModelPath, snapshot.CreateModelController(), null) { }
+
+        private ModelParamsLayer(IStimParamsCore inner, string modelPathOrDir, ModelConfigController configuration, Func<float> elapsedSeconds)
+        {
+            _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+            _modelCfg = configuration ?? new ModelConfigController(modelPathOrDir);
+            _modelCfg.UseGate(inner.GetCoreConfigController().ConfigurationGate);
+            _elapsedSeconds = elapsedSeconds;
         }
 
         // ===== IModelParamsCore (extras) =====
@@ -48,7 +88,8 @@ namespace Wss.ModelModule
         /// <inheritdoc/>
         public void StimWithMode(int ch, float magnitudeIn)
         {
-            _inner.StimulateNormalized(ch, CalculateMagnitude(ch, magnitudeIn));
+            lock (_inner.GetCoreConfigController().OperationGate)
+                _inner.StimulateNormalized(ch, CalculateMagnitude(ch, magnitudeIn));
         }
 
         /// <inheritdoc/>
@@ -62,9 +103,72 @@ namespace Wss.ModelModule
         /// <inheritdoc/>
         public void SaveParamsJson() => _inner.SaveParamsJson();
         /// <inheritdoc/>
-        public void LoadParamsJson() => _inner.LoadParamsJson();
+        public void LoadParamsJson() => ReloadBundle(null, false, false);
         /// <inheritdoc/>
-        public void LoadParamsJson(string path) => _inner.LoadParamsJson(path);
+        public void LoadParamsJson(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("Invalid configuration path.", nameof(path));
+            ReloadBundle(path, false, false);
+        }
+
+        private void ReloadBundle(string path, bool activePaths, bool forceRestart)
+        {
+            var calibration = _inner as StimParamsLayer;
+            var core = calibration?.ConcreteCore;
+            if (core == null)
+            {
+                // Preserve compatibility with alternate IStimParamsCore implementations.
+                if (forceRestart) Initialize();
+                else if (path == null) _inner.LoadParamsJson(); else _inner.LoadParamsJson(path);
+                return;
+            }
+            var coreConfig = _inner.GetCoreConfigController();
+            var parameters = _inner.GetStimParamsConfigController();
+            lock (coreConfig.OperationGate)
+            {
+                string corePath = activePaths ? coreConfig._configPath : coreConfig.StartupPath;
+                string paramsPath = activePaths ? parameters.ActivePath : parameters.StartupPath;
+                string modelPath = activePaths ? _modelCfg.ActivePath : _modelCfg.StartupPath;
+                if (path != null)
+                {
+                    paramsPath = ConfigurationBundle.Resolve(path, "stimParams.json");
+                    if (Directory.Exists(path) || path.EndsWith(Path.DirectorySeparatorChar.ToString()) || path.EndsWith(Path.AltDirectorySeparatorChar.ToString()))
+                    {
+                        corePath = ConfigurationBundle.Resolve(path, "stimConfig.json");
+                        modelPath = ConfigurationBundle.Resolve(path, "modelConfig.json");
+                    }
+                    // A file overrides parameters only; the other two retain startup defaults.
+                }
+                var snapshot = ConfigurationBundle.Read(corePath, paramsPath, modelPath);
+                var current = _appliedCore == null ? null : (JObject)_appliedCore.DeepClone();
+                if (current != null)
+                {
+                    var values = coreConfig.CopyValues();
+                    ConfigurationBundle.NormalizeAddresses(values);
+                    foreach (var property in JObject.FromObject(values).Properties()) current[property.Name] = property.Value.DeepClone();
+                }
+                bool restart = forceRestart || current == null || !JToken.DeepEquals(current, snapshot.Core);
+                if (restart) _inner.Shutdown();
+                try
+                {
+                    if (restart)
+                    {
+                        InstallSnapshot(snapshot);
+                        InitializeInstalledConfiguration();
+                    }
+                    else core.PublishConfiguration(() => InstallSnapshot(snapshot));
+                    _appliedCore = (JObject)snapshot.Core.DeepClone();
+                }
+                catch (Exception error)
+                {
+                    // Validated paths/snapshots remain selected for an explicit retry.
+                    // Do not restore old nonzero output after a restart failure.
+                    try { _inner.Shutdown(); }
+                    catch (Exception cleanupError) { error.Data["Wss.ModelInitialization.ShutdownException"] = cleanupError; }
+                    throw;
+                }
+            }
+        }
         /// <inheritdoc/>
         public StimParamsConfigController GetStimParamsConfigController() => _inner.GetStimParamsConfigController();
 
@@ -135,10 +239,51 @@ namespace Wss.ModelModule
 
         // ===== IStimulationCore (lifecycle/core → delegate) =====
         /// <inheritdoc/>
+        /// <remarks>
+        /// A successful synchronous initialization starts a new model-history session. Reloads that do not restart
+        /// Core preserve history. Direct initialization rejects a device count that differs from parameter capacity.
+        /// Core owns shutdown and configuration loading during initialization. A failed attempt shuts down
+        /// the inner session and retains prior model history. If cleanup fails, that exception is attached
+        /// to the original error's Data under Wss.ModelInitialization.ShutdownException.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">The loaded topology differs from the parameter controller capacity.</exception>
         public void Initialize()
         {
-            _inner.Initialize();
-            EnsureModelArrays(); // lazy arrays stand up after core init
+            lock (_inner.GetCoreConfigController().OperationGate)
+                InitializeSession(_inner.Initialize);
+        }
+
+        private void InitializeSession(Action initialize, JObject installedCore = null)
+        {
+            try
+            {
+                initialize();
+                ValidateTopology();
+                var applied = installedCore ?? JObject.FromObject(_inner.GetCoreConfigController().CopyValues());
+                ResetModelArrays();
+                _appliedCore = applied;
+            }
+            catch (Exception error)
+            {
+                try { _inner.Shutdown(); }
+                catch (Exception cleanupError)
+                {
+                    error.Data["Wss.ModelInitialization.ShutdownException"] = cleanupError;
+                }
+                throw;
+            }
+        }
+
+        private void ValidateTopology()
+        {
+            var parameters = _inner.GetStimParamsConfigController();
+            int devices = _inner.GetCoreConfigController().MaxWss;
+            if (devices < 1 || (long)devices * parameters.PerWss != parameters.TotalChannels)
+            {
+                throw new InvalidOperationException(
+                    $"Configured device count {devices} does not match the parameter controller capacity " +
+                    $"of {parameters.TotalChannels} channels. Construct a new complete stimulation stack after changing device count.");
+            }
         }
 
         /// <inheritdoc/>
@@ -148,7 +293,10 @@ namespace Wss.ModelModule
         }
 
         /// <inheritdoc/>
-        public void Shutdown() => _inner.Shutdown();
+        public void Shutdown()
+        {
+            lock (_inner.GetCoreConfigController().OperationGate) _inner.Shutdown();
+        }
         /// <inheritdoc/>
         public bool Started() => _inner.Started();
         /// <inheritdoc/>
@@ -162,7 +310,11 @@ namespace Wss.ModelModule
         /// <inheritdoc/>
         public void StopStim(WssTarget t) => _inner.StopStim(t);
         /// <inheritdoc/>
-        public void LoadConfigFile() => _inner.LoadConfigFile();
+        public void LoadConfigFile()
+        {
+            if (Calibration?.ConcreteCore == null) _inner.LoadConfigFile();
+            else ReloadBundle(null, true, true);
+        }
         /// <inheritdoc/>
         public CoreConfigController GetCoreConfigController() => _inner.GetCoreConfigController();
         /// <inheritdoc/>
@@ -175,22 +327,38 @@ namespace Wss.ModelModule
         /// Starts the internal stopwatch on first use and initializes per-channel state.
         /// </summary>
         /// <remarks>
-        /// Channel count is derived from <see cref="CoreConfigController.MaxWss"/> on the inner core.
+        /// Channel count is derived from the active parameter controller's total channel capacity.
         /// Arrays hold last magnitude, derivative estimate, and previous timestamps per channel.
         /// </remarks>
         private void EnsureModelArrays()
         {
-            if (_timer == null) { _timer = new Stopwatch(); _timer.Start(); }
-            int n = _inner.GetCoreConfigController().MaxWss;
-            if (_currentMag != null && _currentMag.Length == n) return;
+            if (_currentMag == null) ResetModelArrays();
+        }
 
-            _prevMagnitude = new float[n];
-            _currentMag = new float[n];
-            _d_dt = new float[n];
-            _tPrev = new float[n];
+        private float ElapsedSeconds => _elapsedSeconds == null
+            ? _timer.ElapsedMilliseconds / 1000.0f
+            : _elapsedSeconds() - _timeOrigin;
 
-            float now = _timer.ElapsedMilliseconds / 1000.0f;
-            for (int i = 0; i < n; i++) { _prevMagnitude[i] = 0f; _tPrev[i] = now; }
+        private void ResetModelArrays()
+        {
+            // Prepare without mutating live history: a failed allocation/clock read must not partially reset it.
+            var timer = Stopwatch.StartNew();
+            float origin = _elapsedSeconds == null ? 0f : _elapsedSeconds();
+            int n = _inner.GetStimParamsConfigController().TotalChannels;
+
+            var previous = new float[n];
+            var current = new float[n];
+            var derivative = new float[n];
+            var previousTime = new float[n];
+
+            float now = _elapsedSeconds == null ? timer.ElapsedMilliseconds / 1000.0f : _elapsedSeconds() - origin;
+            for (int i = 0; i < n; i++) previousTime[i] = now;
+            _timer = timer;
+            _timeOrigin = origin;
+            _prevMagnitude = previous;
+            _currentMag = current;
+            _d_dt = derivative;
+            _tPrev = previousTime;
         }
 
         /// <summary>
@@ -217,9 +385,10 @@ namespace Wss.ModelModule
         /// </returns>
         /// <remarks>
         /// Updates per-channel caches: current magnitude, previous magnitude, derivative estimate, and last timestamp (seconds).
-        /// PD mode uses keys: <c>PDModeDerivative</c>, <c>PDModeProportional</c>, <c>PDModeOffset</c>.  
-        /// P mode uses keys: <c>PModeProportional</c>, <c>PModeOffset</c>.  
-        /// Missing constants fall back to defaults used in code.
+        /// PD mode uses <c>constants.PDModeDerivative</c>, <c>constants.PDModeProportional</c>,
+        /// and <c>constants.PDModeOffset</c>. P mode uses <c>constants.PModeProportional</c>
+        /// and <c>constants.PModeOffset</c>. Failed nested lookups use the existing built-in defaults;
+        /// top-level constant keys are ignored. Reloads preserve per-channel model history.
         /// </remarks>
         private float CalculateMagnitude(int channel1, float magnitude01)
         {
@@ -229,7 +398,7 @@ namespace Wss.ModelModule
 
             // time + derivative bookkeeping
             _currentMag[idx] = Clamp01(magnitude01);
-            float tNow = _timer.ElapsedMilliseconds / 1000.0f;
+            float tNow = ElapsedSeconds;
             // Avoid MathF for netstandard2.0: compute with double and cast back
             float dt = (float)Math.Max(1e-5, (double)tNow - _tPrev[idx]);
             _d_dt[idx] = (_currentMag[idx] - _prevMagnitude[idx]) / dt;
@@ -238,7 +407,7 @@ namespace Wss.ModelModule
 
             // controllerSystem;
             string mode = _modelCfg.GetCalibMode();
-            float GetConst(string key, float fb) => _modelCfg.TryGetModelParam(key, out float v) ? v : fb;
+            float GetConst(string key, float fb) => _modelCfg.TryGetModelParam("constants." + key, out float v) ? v : fb;
 
             float y =
                 mode == "PD"

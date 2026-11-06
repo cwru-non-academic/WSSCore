@@ -10,13 +10,16 @@ namespace Wss.ModelModule
     /// </summary>
     public sealed class ModelConfig : DictConfigBase
     {
+        internal ModelConfig(string path, JObject snapshot) : base(path, snapshot, true) { }
         /// <summary>
         /// Initializes a model configuration backed by the JSON file at <paramref name="path"/>.
         /// Creates the file with defaults when missing.
         /// </summary>
         /// <param name="path">Destination file path.</param>
         public ModelConfig(string path)
-        : base(path, defaults: new JObject
+            : base(path, CreateDefaults()) { }
+
+        internal static JObject CreateDefaults() => new JObject
         {
             ["calib"] = new JObject
             {
@@ -30,8 +33,7 @@ namespace Wss.ModelModule
                 ["PDModeDerivative"]   = 0.2,
                 ["PDModeOffset"]       = 0.0
             }
-        })
-        { }
+        };
 
 
         /// <summary>

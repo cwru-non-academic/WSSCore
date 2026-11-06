@@ -9,11 +9,17 @@ namespace Wss.CoreModule
     public abstract class DictConfigBase
     {
         /// <summary>Synchronization gate for JSON reads/writes.</summary>
-        protected readonly object _sync = new object();
+        protected object _sync = new object();
         /// <summary>Root JSON object for this configuration.</summary>
         protected JObject _root;
         /// <summary>Resolved file path used for persistence.</summary>
-        public string Path { get; }
+        public string Path { get; private set; }
+        internal void UseGate(object gate) { _sync = gate; }
+        internal JObject CopyRoot() { lock (_sync) return (JObject)_root.DeepClone(); }
+        internal void ApplySnapshot(string path, JObject root)
+        {
+            lock (_sync) { Path = path; _root = root; }
+        }
 
         /// <summary>
         /// Initializes the configuration by loading a JSON file (or writing defaults when missing).
@@ -24,6 +30,11 @@ namespace Wss.CoreModule
         {
             Path = path;
             _root = JsonReader.LoadJObject(path, defaults);
+        }
+        internal DictConfigBase(string path, JObject snapshot, bool alreadyValidated)
+        {
+            Path = path;
+            _root = (JObject)snapshot.DeepClone();
         }
 
         /// <summary>Persists the current JSON content to <see cref="Path"/>.</summary>
