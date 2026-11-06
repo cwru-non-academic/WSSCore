@@ -275,8 +275,10 @@ controller skip suppresses only the native probe, never managed dependency check
 Serial smoke checks do not establish hardware communication. See the authoritative
 [CI/test catalog](#tests-and-ci-reference) for commands,
 coverage, placement rules and job-summary/TRX visibility.
-`Publish — Universal ZIP` requires all testing/packaging jobs and reuses the validated
-ZIP/checksum without rebuilding, restaging, or rezipping. PRs do not publish.
+Optional publication uses `dev-release.yml` after all nine required acceptance
+receipts pass. It requires the explicit release switch and reviewed historical-tag
+guard, and reuses the accepted ZIP/checksum without rebuilding, restaging, or rezipping.
+PRs do not publish.
 
 </details>
 
@@ -886,11 +888,13 @@ for the macOS native input and builds its remaining inputs
 and does not wait on BLE. All component consumer jobs need packaging; each BLE job
 contains both source functional tests and extracted-artifact consumers, without
 changing the projects' reference boundaries. macOS has Core/Serial consumers and BLE consumers on arm64 and x86_64.
-`Publish — Universal ZIP` requires every testing/packaging job, including every matrix
-entry. Only successful pushed `v*` tags publish the already-tested ZIP/checksum;
-verification, exact asset count, existing-tag safety and prerelease rules remain in
-place. There is no rebuilding, repackaging, or separate platform distribution. PRs
-and manual dispatch never publish. Manual diagnostics are not release-gate substitutes.
+The separate `dev-release.yml` publisher requires every producer testing/packaging
+job, all nine downstream acceptance receipts, `WSS_DEV_RELEASE_ENABLED=true` and
+the reviewed historical-tag guard. It reuses the accepted ZIP/checksum with exact
+asset, existing-tag and prerelease checks. There is no rebuilding, repackaging or
+separate platform distribution. PRs do not publish. Manual verification observes
+evidence only; publication remains behind its own explicit controls. Manual
+diagnostics are not release-gate substitutes.
 
 ### Adding or Organizing Tests
 
@@ -981,9 +985,12 @@ using read-only access. Then invoke the existing approval, source, candidate and
 application validators for the returned actual integration merge; never substitute
 a dispatch or preparation commit for that merge.
 
-The Core coordinator waits for all four human-reviewed dependency merges, requests
-fresh normal CI at their committed dev SHAs, and authorizes all application routes
-only after every required job passes. A durable intent is uploaded before any
+For policies declaring `application_fanout: per-integration`, the Core coordinator
+checks each family's human-reviewed dependency merge and fresh normal CI at its
+actual committed dev SHA, then authorizes only that family's linked applications.
+It does not wait for the other integrations to advance that family. Older frozen
+policies retain their original all-integration barrier. Final acceptance still
+requires all applicable nine targets. A durable intent is uploaded before any
 dispatch. Existing pending/successful correlated runs are reused; a failed,
 ambiguous, expired or uncertain attempt requires inspected recovery. No merge,
 rollback, release or tag is performed. Manual `mode: verify` reads evidence only
@@ -999,7 +1006,7 @@ its installation. Finish these external prerequisites before merging Core dev.
 Dev propagation is separate from the disabled beta/stable release policy.
 
 
-#The MATLAB native evidence validator is pinned in the dev policy to the reviewed
+The MATLAB native evidence validator is pinned in the dev policy to the reviewed
 R2026b update-aware implementation. A receiver validator change requires a fresh
 canonical dev push and frozen plan; do not overwrite an old plan or replay its
 failed promotions with changed validation code. Merge the receiver fix on both
@@ -1016,8 +1023,8 @@ The default-branch completion handlers in
 [`propagate-unity.yml`](.github/workflows/propagate-unity.yml) accept only a
 successful canonical `artifacts.yml` push to dev. PRs, manual producers, tags,
 failures and forks are ineligible. Each handler independently verifies the exact
-producer commit/run, all fourteen required producer jobs (including both macOS
-BLE consumers), the unique unexpired artifact, archive checksum and immutable
+producer commit/run, all seventeen required producer jobs (including both macOS
+BLE consumers and all three BLE aggregate jobs), the unique unexpired artifact, archive checksum and immutable
 commit/run/artifact/archive/SHA-256 tuple. The payload is neither rebuilt nor run
 by the handoff preparation.
 
@@ -1240,31 +1247,6 @@ must move forward, and a changed Core source must descend from the installed
 source. Missing, contradictory or divergent ancestry blocks the whole handoff.
 The C# receiver retains its own final checks; this diagnostic cannot authorize a
 stale candidate or replace an installed provenance record.
-
-The bounded recovery design requires a separately versioned equivalence receipt;
-it is not enabled by the current v1 policy. Its proposed evidence must bind:
-
-- The new six-field candidate identity and frozen plan, downloaded ZIP checksum,
-  exact allowed inventory and reviewed projection; projected bytes must match both
-  the installed commit and a prior actual human-reviewed bot dependency merge.
-- That prior merge's PR, candidate and immutable commit, plus verified ancestry to
-  the current receiver head. Preserved provenance must match the anchor unchanged.
-- Complete production/test source equivalence outside narrowly reviewed metadata
-  changes. Changed tooling must independently match the current frozen trust
-  snapshot; ignoring a tooling path is not evidence that its replacement is trusted.
-- Fresh preflights for the new candidate and current frozen sources, successful
-  normal committed-state CI, all platform/architecture proofs, and each actual
-  application parent gitlink. Equal payload bytes cannot substitute one wrapper
-  commit for another parent SHA.
-- Durable correlated intents, the same four-integration barrier, and immediate
-  pre-write checks of current heads/tooling/proofs. Missing, expired, ambiguous,
-  failed or uncertain evidence must stop rather than replay a dispatch.
-
-This requires coordinated Core and receiver/fanout/receipt changes before use;
-the existing primitives alone are insufficient. A byte-identical candidate must
-currently stop for inspected recovery. Do not alter build bytes, overwrite old
-provenance, create an empty dependency PR or reuse a stale frozen plan to advance
-the barrier. This proposed recovery does not authorize release publication.
 
 <details>
 <summary>Historical identifiers retained pending documentation review</summary>
