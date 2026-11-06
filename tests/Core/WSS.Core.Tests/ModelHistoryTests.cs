@@ -12,6 +12,60 @@ namespace WSS.Core.Tests
     [TestFixture]
     public sealed class ModelHistoryTests
     {
+        [TestCase("P", "PModeProportional", 0.25f, 16)]
+        [TestCase("P", "PModeOffset", 0.25f, 32)]
+        [TestCase("PD", "PDModeProportional", 0.5f, 32)]
+        [TestCase("PD", "PDModeDerivative", 0.5f, 32)]
+        [TestCase("PD", "PDModeOffset", 0.25f, 32)]
+        public void ChangingEveryNestedConstantChangesOutputThroughReloadAndPublicSetter(
+            string mode, string key, float value, int expected)
+        {
+            using var fixture = new Fixture(1);
+            var json = ConstantFixture(mode);
+            File.WriteAllText(fixture.ModelPath, json.ToString());
+            fixture.Model.GetModelConfigController().LoadModelJson();
+            fixture.Model.Initialize();
+            fixture.Time = 1;
+            Assert.That(fixture.Sample(2, 0.5f), Is.Zero);
+            json["constants"][key] = value;
+            json[key] = 99f; // Conflicting top-level values must never override nested constants.
+            File.WriteAllText(fixture.ModelPath, json.ToString());
+            fixture.Model.GetModelConfigController().LoadModelJson();
+            Assert.That(fixture.Sample(3, 0.5f), Is.EqualTo(expected));
+            fixture.Model.GetModelConfigController().SetModelParam("constants." + key, value * 2);
+            Assert.That(fixture.Sample(1, 0.5f), Is.EqualTo(expected * 2));
+        }
+
+        [TestCase("P", "PModeProportional", 64)]
+        [TestCase("P", "PModeOffset", 0)]
+        [TestCase("PD", "PDModeProportional", 32)]
+        [TestCase("PD", "PDModeDerivative", 13)]
+        [TestCase("PD", "PDModeOffset", 0)]
+        public void FailedNestedLookupUsesBuiltInDefaultAndIgnoresRootOverrides(string mode, string key, int expected)
+        {
+            foreach (string kind in new[] { "missing", "unconvertible", "zero" })
+            {
+                using var fixture = new Fixture(1);
+                var json = ConstantFixture(mode);
+                ((JObject)json["constants"]).Remove(key);
+                json[key] = 99f;
+                if (kind == "unconvertible") json["constants"][key] = new JObject { ["invalid"] = 1 };
+                if (kind == "zero") json["constants"][key] = 0f;
+                File.WriteAllText(fixture.ModelPath, json.ToString());
+                fixture.Model.GetModelConfigController().LoadModelJson();
+                fixture.Model.Initialize();
+                fixture.Time = 1;
+                Assert.That(fixture.Sample(2, 0.5f), Is.EqualTo(kind == "zero" ? 0 : expected), key + "/" + kind);
+            }
+        }
+
+        private static JObject ConstantFixture(string mode) => new JObject
+        {
+            ["calib"] = new JObject { ["mode"] = mode },
+            ["constants"] = new JObject { ["PModeProportional"] = 0f, ["PModeOffset"] = 0f,
+                ["PDModeProportional"] = 0f, ["PDModeDerivative"] = 0f, ["PDModeOffset"] = 0f }
+        };
+
         [TestCase(1, 3), TestCase(2, 6), TestCase(3, 9)]
         public void LastSupportedChannelHasModelHistory(int devices, int channel)
         {
@@ -151,6 +205,7 @@ namespace WSS.Core.Tests
             internal float Time;
             internal string CorePath => Path.Combine(_directory, "stimConfig.json");
             internal string ParamsPath => Path.Combine(_directory, "stimParams.json");
+            internal string ModelPath => Path.Combine(_directory, "modelConfig.json");
             internal ModelParamsLayer Model { get; }
 
             internal Fixture(int devices)

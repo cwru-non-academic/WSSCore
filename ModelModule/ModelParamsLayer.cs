@@ -257,9 +257,10 @@ namespace Wss.ModelModule
         /// </returns>
         /// <remarks>
         /// Updates per-channel caches: current magnitude, previous magnitude, derivative estimate, and last timestamp (seconds).
-        /// PD mode uses keys: <c>PDModeDerivative</c>, <c>PDModeProportional</c>, <c>PDModeOffset</c>.  
-        /// P mode uses keys: <c>PModeProportional</c>, <c>PModeOffset</c>.  
-        /// Missing constants fall back to defaults used in code.
+        /// PD mode uses <c>constants.PDModeDerivative</c>, <c>constants.PDModeProportional</c>,
+        /// and <c>constants.PDModeOffset</c>. P mode uses <c>constants.PModeProportional</c>
+        /// and <c>constants.PModeOffset</c>. Failed nested lookups use the existing built-in defaults;
+        /// top-level constant keys are ignored. Reloads preserve per-channel model history.
         /// </remarks>
         private float CalculateMagnitude(int channel1, float magnitude01)
         {
@@ -278,7 +279,7 @@ namespace Wss.ModelModule
 
             // controllerSystem;
             string mode = _modelCfg.GetCalibMode();
-            float GetConst(string key, float fb) => _modelCfg.TryGetModelParam(key, out float v) ? v : fb;
+            float GetConst(string key, float fb) => _modelCfg.TryGetModelParam("constants." + key, out float v) ? v : fb;
 
             float y =
                 mode == "PD"

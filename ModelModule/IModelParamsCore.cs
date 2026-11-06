@@ -38,14 +38,14 @@ namespace Wss.ModelModule
         /// </summary>
         /// <returns>The active <see cref="ModelConfigController"/> instance.</returns>
         /// <remarks>
-        /// Use this to query constants like <c>PModeProportional</c> or to persist model settings.
+        /// Use dotted keys such as <c>constants.PModeProportional</c> to query or persist model settings.
+        /// Modeled stimulation reads only nested constants; top-level overrides are ignored.
         /// </remarks>
         /// <example>
         /// <code>
         /// var mc = model.GetModelConfigController();
-        /// float kp = mc.GetConstant("PModeProportional");
-        /// mc.SetConstant("PDModeDerivative", 0.15f);
-        /// mc.SaveJson();
+        /// float kp = mc.GetModelParam&lt;float&gt;("constants.PModeProportional");
+        /// mc.SetModelParam("constants.PDModeDerivative", 0.15f);
         /// </code>
         /// </example>
         ModelConfigController GetModelConfigController();
