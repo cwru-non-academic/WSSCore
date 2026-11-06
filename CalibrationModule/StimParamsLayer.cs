@@ -16,6 +16,13 @@ namespace Wss.CalibrationModule
         private readonly IAdvancedEventProgrammer _advanced; // optional ADVANCED capability
         private int _totalChannels;
         private float[] _lastAmp;
+        internal WssStimulationCore ConcreteCore => _core as WssStimulationCore;
+        internal void InitializeInstalledConfiguration() => InitializeLayer(false);
+        internal void RefreshChannels()
+        {
+            _totalChannels = _ctrl.TotalChannels;
+            _lastAmp = new float[_totalChannels];
+        }
 
         private enum ChannelValueKind { Min, Max, Default }
 
@@ -26,12 +33,18 @@ namespace Wss.CalibrationModule
         /// <param name="pathOrDir">Params file path or directory.</param>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="core"/> is null.</exception>
         /// <exception cref="ArgumentException">Thrown when <paramref name="pathOrDir"/> is null or whitespace.</exception>
-        public StimParamsLayer(IStimulationCore core, string pathOrDir)
+        public StimParamsLayer(IStimulationCore core, string pathOrDir) : this(core, pathOrDir, null) { }
+
+        internal StimParamsLayer(IStimulationCore core, WssConfigurationSnapshot snapshot)
+            : this(core, snapshot.ParamsPath, snapshot.CreateParamsController()) { }
+
+        private StimParamsLayer(IStimulationCore core, string pathOrDir, StimParamsConfigController configuration)
         {
             _core = core ?? throw new ArgumentNullException(nameof(core));
 
             int maxWss = _core.GetCoreConfigController().MaxWss;
-            _ctrl = new StimParamsConfigController(pathOrDir, maxWss);
+            _ctrl = configuration ?? new StimParamsConfigController(pathOrDir, maxWss);
+            _ctrl.UseGate(_core.GetCoreConfigController().ConfigurationGate);
             _basic = _core as IBasicStimulation;
             _advanced = _core as IAdvancedEventProgrammer;
 
@@ -44,6 +57,11 @@ namespace Wss.CalibrationModule
 
         /// <inheritdoc/>
         public void StimulateNormalized(int channel, float normalizedValue)
+        {
+            lock (_core.GetCoreConfigController().OperationGate) StimulateNormalizedCore(channel, normalizedValue);
+        }
+
+        private void StimulateNormalizedCore(int channel, float normalizedValue)
         {
             if (channel < 1 || channel > _totalChannels)
                 throw new ArgumentOutOfRangeException(nameof(channel), $"Channel must be 1..{_totalChannels}.");
@@ -301,8 +319,13 @@ namespace Wss.CalibrationModule
         /// <inheritdoc cref="IStimulationCore.Initialize"/>
         public void Initialize()
         {
-            _core.Initialize();
-            _ctrl.LoadParamsJson(); // load params after core init
+            InitializeLayer(true);
+        }
+
+        private void InitializeLayer(bool readFromDisk)
+        {
+            if (readFromDisk) _core.Initialize(); else ConcreteCore.InitializeInstalledConfiguration();
+            if (readFromDisk) _ctrl.LoadParamsJson();
             int maxWss = _core.GetCoreConfigController().MaxWss;
             _totalChannels = _ctrl.PerWss * Math.Max(1, maxWss);
             _lastAmp = new float[_totalChannels];

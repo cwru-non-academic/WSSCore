@@ -26,6 +26,13 @@ namespace Wss.CoreModule
         private WssClient _wss;
         private bool _resumeStreamingAfter;
         private bool _disposed;
+        private bool _disposeRequested;
+        private volatile bool _shuttingDown;
+        private long _connectionGeneration;
+        internal void InitializeInstalledConfiguration()
+        {
+            lock (_coreConfig.OperationGate) InitializeCore(false);
+        }
 
         // ---- runtime state ----
         private CoreState _state = CoreState.Disconnected;
@@ -36,6 +43,7 @@ namespace Wss.CoreModule
         private int _maxWSS = 1;
         private readonly SemaphoreSlim _setupGate = new(1, 1);
         private readonly object _streamGate = new object();
+        internal void PublishConfiguration(Action publish) { lock (_streamGate) publish(); }
         private int _streamStopsInProgress;
 
         // ---- background tasks ----
@@ -90,6 +98,12 @@ namespace Wss.CoreModule
         /// Call <see cref="Shutdown"/> to stop streaming/disconnect without disposing the transport.
         /// </remarks>
         public WssStimulationCore(ITransport transport, WssStimulationCoreOptions options)
+            : this(transport, options, (CoreConfigController)null) { }
+
+        internal WssStimulationCore(ITransport transport, WssStimulationCoreOptions options, WssConfigurationSnapshot snapshot)
+            : this(transport, options, snapshot.CreateCoreController()) { }
+
+        private WssStimulationCore(ITransport transport, WssStimulationCoreOptions options, CoreConfigController configuration)
         {
             if (options == null) throw new ArgumentNullException(nameof(options));
             _transport = transport ?? throw new ArgumentNullException(nameof(transport));
@@ -97,7 +111,7 @@ namespace Wss.CoreModule
             if (options.MaxSetupTries < 1) throw new ArgumentOutOfRangeException(nameof(WssStimulationCoreOptions.MaxSetupTries), "Max setup tries must be at least 1.");
 
             _jsonPath = options.ConfigPath;
-            _coreConfig = new CoreConfigController(_jsonPath);
+            _coreConfig = configuration ?? new CoreConfigController(_jsonPath);
             _maxSetupTries = options.MaxSetupTries;
             _defaultIPI = options.DefaultIpi;
             _defaultAmp = options.DefaultAmp;
@@ -112,15 +126,22 @@ namespace Wss.CoreModule
         /// <exception cref="ObjectDisposedException">Thrown when the core has been disposed.</exception>
         public void Initialize()
         {
-            if (_disposed)
+            lock (_coreConfig.OperationGate) InitializeCore();
+        }
+
+        private void InitializeCore(bool readFromDisk = true)
+        {
+            if (_disposed || _disposeRequested)
                 throw new ObjectDisposedException(nameof(WssStimulationCore));
 
             if (_state != CoreState.Disconnected) Shutdown();
 
+            _shuttingDown = false;
+
             _currentSetupTries = 0;
 
             // (re)load app config
-            _coreConfig.LoadJson();
+            if (readFromDisk) _coreConfig.LoadJson();
             _maxWSS = _coreConfig.MaxWss;
             _unitSettings.Clear();
 
@@ -143,6 +164,11 @@ namespace Wss.CoreModule
 
         /// <inheritdoc/>
         public void Tick()
+        {
+            lock (_coreConfig.OperationGate) TickCore();
+        }
+
+        private void TickCore()
         {
             switch (_state)
             {
@@ -239,10 +265,37 @@ namespace Wss.CoreModule
         /// <inheritdoc/>
         public void Shutdown()
         {
+            lock (_coreConfig.OperationGate) ShutdownCore();
+        }
+
+        private void ShutdownCore()
+        {
+            Task setup;
+            _setupGate.Wait();
+            try
+            {
+                _shuttingDown = true;
+                Interlocked.Increment(ref _connectionGeneration);
+                setup = _setupRunner;
+            }
+            finally { _setupGate.Release(); }
             StopStreamingInternal().GetAwaiter().GetResult();
+            // The setup worker is independent of Tick and may still be inside
+            // a transport call. Keep its client alive until that call completes,
+            // then let the worker observe shutdown before submitting another step.
+            if (setup != null)
+            {
+                try { setup.GetAwaiter().GetResult(); }
+                catch (Exception ex) { Log.Warn("Setup ended during shutdown: " + ex.Message); }
+            }
+            _setupRunner = null;
+            _steps.Clear();
+            _cursor.Clear();
+            _resumeStreamingAfter = false;
+            _streamStopsInProgress = 0;
             if (_wss != null)
             {
-                try { _wss.ZeroOutStim(); } catch { }
+                try { _wss.ZeroOutStim().GetAwaiter().GetResult(); } catch { }
                 SafeDisconnect();
                 try { _wss.Dispose(); } catch { }
             }
@@ -255,18 +308,28 @@ namespace Wss.CoreModule
         /// <summary>
         /// Reloads the stimulation JSON configuration from disk into memory.
         /// </summary>
-        public void LoadConfigFile() => _coreConfig.LoadJson();
+        public void LoadConfigFile() => Initialize();
 
         /// <inheritdoc/>
         /// <remarks>
         /// Calls <see cref="Shutdown"/> and then disposes the transport instance provided at construction time.
         /// Safe to call multiple times.
         /// </remarks>
+        /// <exception cref="InvalidOperationException">Cleanup failed. The caller may explicitly retry disposal.</exception>
         public void Dispose()
         {
+            lock (_coreConfig.OperationGate) DisposeCore();
+        }
+
+        private void DisposeCore()
+        {
             if (_disposed) return;
-            Shutdown();
-            try { _transport.Dispose(); } catch { }
+            _disposeRequested = true;
+            Exception failure = null;
+            try { Shutdown(); } catch (Exception ex) { failure = ex; }
+            try { _transport.Dispose(); }
+            catch (Exception ex) { failure = failure == null ? ex : new AggregateException(failure, ex); }
+            if (failure != null) throw new InvalidOperationException("WSS cleanup failed; disposal may be retried.", failure);
             _disposed = true;
         }
         #endregion
@@ -283,9 +346,14 @@ namespace Wss.CoreModule
         /// <inheritdoc/>
         public void StimulateAnalog(int channel, int PW, float amp, int IPI)
         {
+            lock (_coreConfig.OperationGate)
+            lock (_streamGate)
+            {
+            if (_disposed || _disposeRequested) throw new ObjectDisposedException(nameof(WssStimulationCore));
             if (channel <= 0 || channel > _maxWSS * 3) return;
 
             Volatile.Write(ref _channelStimulation[channel - 1], new ChannelStimulation(amp, PW, IPI));
+            }
         }
 
         /// <inheritdoc/>
@@ -811,7 +879,8 @@ namespace Wss.CoreModule
                     int baseIdx = wIdx * 3;
 
                     var target = IntToWssTarget(w);
-                    var request = CaptureStreamChange(baseIdx, amp => AmpTo255Convention(amp, target));
+                    StreamChangeRequest request;
+                    lock (_streamGate) request = CaptureStreamChange(baseIdx, amp => AmpTo255Convention(amp, target));
                     var desiredIpis = request.InterPulseIntervals;
 
                     // Per-channel change memory, gated by per-WSS cooldown
@@ -823,7 +892,7 @@ namespace Wss.CoreModule
                     if (anyChanged)
                     {
                         // Send one WSS-level IPI update (array API). This is the only time we send.
-                        _ = _wss.StreamChange(request, target);
+                        await _wss.StreamChange(request, target, tk).ConfigureAwait(false);
 
                         // Update per-channel last-sent memory and start per-WSS cooldown
                         _lastIpiSentPerCh[baseIdx + 0] = desiredIpis[0];
@@ -834,7 +903,7 @@ namespace Wss.CoreModule
                     {
                         // Do not send any IPI during cooldown or if nothing changed
                         request.InterPulseIntervals = null;
-                        _ = _wss.StreamChange(request, target);
+                        await _wss.StreamChange(request, target, tk).ConfigureAwait(false);
                     }
 
                     await Task.Delay(_delayMsBetweenPackets, tk);
@@ -926,11 +995,13 @@ namespace Wss.CoreModule
             bool resumeStreaming,
             params Func<Task<string>>[] newSteps)
         {
+            long generation = Interlocked.Read(ref _connectionGeneration);
             bool stopActiveStream = false;
 
             await _setupGate.WaitAsync();
             try
             {
+                if (_shuttingDown || generation != Interlocked.Read(ref _connectionGeneration)) return;
                 if (!_steps.ContainsKey(t)) { _steps[t] = new List<Func<Task<string>>>(); _cursor[t] = 0; }
                 _steps[t].AddRange(newSteps);
 
@@ -962,6 +1033,7 @@ namespace Wss.CoreModule
             await _setupGate.WaitAsync();
             try
             {
+                if (_shuttingDown || generation != Interlocked.Read(ref _connectionGeneration)) return;
                 _streamStopsInProgress--;
                 if (_streamStopsInProgress == 0)
                     EnsureSetupRunner();
@@ -990,8 +1062,10 @@ namespace Wss.CoreModule
 
                     for (int i = _cursor[t]; i < list.Count; i++)
                     {
+                        if (_shuttingDown) return;
                         _cursor[t] = i; // resume point
                         var res = await list[i](); // throws on timeout/IO; returns "Error: ..." on device error
+                        if (_shuttingDown) return;
                         if (res.StartsWith("Error:", StringComparison.OrdinalIgnoreCase))
                             throw new InvalidOperationException($"{t} step#{i} failed: {res}");
                     }
@@ -1001,7 +1075,7 @@ namespace Wss.CoreModule
                 await _setupGate.WaitAsync();
                 try
                 {
-                    if (_streamStopsInProgress == 0 && SetupQueueEmpty())
+                    if (!_shuttingDown && _streamStopsInProgress == 0 && SetupQueueEmpty())
                     {
                         if (_resumeStreamingAfter) { StartStreamingInternal(); _resumeStreamingAfter = false; }
                     }

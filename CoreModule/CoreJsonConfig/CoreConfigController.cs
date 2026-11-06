@@ -11,6 +11,24 @@ namespace Wss.CoreModule
     public sealed class CoreConfigController : ICoreConfig
     {
         private readonly object _sync = new object();
+        internal object ConfigurationGate => _sync;
+        internal object OperationGate { get; } = new object();
+        internal string StartupPath { get; private set; }
+        internal CoreConfigController(string path, CoreConfig snapshot, string startupPath)
+        {
+            _configPath = path;
+            StartupPath = startupPath;
+            _config = snapshot;
+            _jsonLoaded = true;
+        }
+        internal void ApplySnapshot(string path, CoreConfig values)
+        {
+            lock (_sync) { _configPath = path; _config = values; }
+        }
+        internal CoreConfig CopyValues()
+        {
+            lock (_sync) return Newtonsoft.Json.Linq.JObject.FromObject(_config).ToObject<CoreConfig>();
+        }
         private CoreConfig _config;
         private bool _jsonLoaded;
 
@@ -44,6 +62,8 @@ namespace Wss.CoreModule
             {
                 _configPath = path;
             }
+            _configPath = Path.GetFullPath(_configPath);
+            StartupPath = _configPath;
             _config = JsonReader.LoadObject(_configPath, new CoreConfig());
             Volatile.Write(ref _jsonLoaded, true);
         }
@@ -229,6 +249,12 @@ namespace Wss.CoreModule
         }
 
         private static readonly byte DefaultBroadcastTarget = 0x8F;
+        internal static void NormalizeAddresses(CoreConfig config)
+        {
+            config.broadcastTarget = FormatHexByte(TryParseHexByte(config.broadcastTarget, out byte parsed) ? parsed : DefaultBroadcastTarget);
+            NormalizeWssTargets(config.wssTargets, out var normalized);
+            config.wssTargets = normalized;
+        }
 
         private static byte[] NormalizeWssTargets(string[] values, out string[] normalizedStrings)
         {
