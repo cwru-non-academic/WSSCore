@@ -7,6 +7,8 @@ on:
 permissions:
   contents: read
   actions: read
+env:
+  WSS_CI_CHANNEL: ${{ github.event.workflow_run.head_branch }}
 concurrency:
   group: matlab-producer-${{ github.event.workflow_run.id }}
   cancel-in-progress: false
@@ -17,6 +19,7 @@ jobs:
       github.repository == 'cwru-non-academic/WSSCore' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.head_branch == 'dev') &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -27,17 +30,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Validate canonical candidate, readiness and correlated attempt
+      - name: Validate canonical producer, family readiness and correlated attempt
         id: prepare
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node tools/ci/dev-propagation.mjs matlab "$RUNNER_TEMP/matlab-handoff"
+        run: node tools/ci/dev-propagation.mjs initial matlab "$RUNNER_TEMP/matlab-handoff"
       - name: Check frozen workflow trees before write credentials
         if: steps.prepare.outputs.dispatch_needed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: node tools/ci/workflow-freeze.mjs check-initial matlab '${{ github.event.workflow_run.id }}'
-      - name: Create existing App MATLAB dispatch token
+      - name: Create existing App token for this integration only
         if: steps.prepare.outputs.dispatch_needed == 'true'
         id: token
         uses: actions/create-github-app-token@v2
@@ -47,9 +50,18 @@ jobs:
           owner: cwru-non-academic
           repositories: Matlab_WSS_Integration_Lib
           permission-actions: write
-      - name: Dispatch verified MATLAB candidate once
+      - name: Dispatch once; inspect uncertain outcomes before retry
         if: steps.prepare.outputs.dispatch_needed == 'true'
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           WSS_WORKFLOW_READ_TOKEN: ${{ github.token }}
         run: node tools/ci/workflow-freeze.mjs dispatch-initial matlab '${{ github.event.workflow_run.id }}' "$RUNNER_TEMP/matlab-handoff/dispatch.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: matlab-handoff-record
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/matlab-handoff/candidate.json
+            ${{ runner.temp }}/matlab-handoff/dispatch.json

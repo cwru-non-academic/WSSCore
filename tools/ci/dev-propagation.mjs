@@ -1,7 +1,8 @@
 import {isEntrypoint} from '../release/entrypoint.mjs';
-import {readFileSync,writeFileSync,mkdirSync,appendFileSync} from 'node:fs';
-import {join} from 'node:path';
-import {pathToFileURL} from 'node:url';
+import {readFileSync,writeFileSync,mkdirSync,appendFileSync,realpathSync,existsSync} from 'node:fs';
+import {join,resolve,dirname,isAbsolute} from 'node:path';
+import {pathToFileURL,fileURLToPath} from 'node:url';
+import {execFileSync} from 'node:child_process';
 import {GitHub,archive,loadPlan} from '../release/github.mjs';
 import {findNormalRuns} from '../release/normal-ci.mjs';
 import {CORE,CORE_JOBS,candidate,canonical,digest,jobs,requireThat} from '../release/verify.mjs';
@@ -11,6 +12,109 @@ import {channelActivation,controllerContext} from './channel-controls.mjs';
 
 const same=(a,b)=>canonical(a)===canonical(b);
 const stageContext=p=>channelContext(p.policy.channel);
+const coreRoot=resolve(fileURLToPath(new URL('../..',import.meta.url)));
+const sha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
+const decimal=value=>/^[1-9][0-9]*$/.test(String(value??''));
+function initialProfile(repository,fanout,applications,{devBaseline=false,nativeMatlab=false}={}) {
+  const destinations=[{repository,workflows:['promote-wss.yml','wss-preflight.yml',fanout]},...applications];
+  return Object.freeze({repository,fanout,devBaseline,nativeMatlab,
+    applications:Object.freeze(applications.map(t=>t.repository)),
+    destinations:Object.freeze(destinations.map(t=>Object.freeze({repository:t.repository,workflows:Object.freeze([...t.workflows])})))});
+}
+// One closed mapping supplies preparation, readiness and generated token scopes.
+export const INITIAL_HANDOFF_PROFILES=Object.freeze({
+  python:initialProfile('cwru-non-academic/Python_WSS_Integration_Lib','dispatch-cli-promotion.yml',[
+    {repository:'cwru-non-academic/CLI_Python_WSS_Application',workflows:['promote-integration.yml','wss-preflight.yml']},
+    {repository:'cwru-non-academic/ROS_Python_WSS_Application',workflows:['promote-integration.yml','wss-preflight.yml','ros-ci.yml']}
+  ],{devBaseline:true}),
+  unity:initialProfile('cwru-non-academic/Unity_WSS_Integration_Lib','dispatch-unity-promotion.yml',[
+    {repository:'cwru-non-academic/GUI_Unity_WSS_Application',workflows:['promote-integration.yml','wss-preflight.yml']}
+  ]),
+  matlab:initialProfile('cwru-non-academic/Matlab_WSS_Integration_Lib','dispatch-cli-promotion.yml',[
+    {repository:'cwru-non-academic/CLI_Matlab_WSS_Application',workflows:['promote-integration.yml','wss-preflight.yml']}
+  ],{nativeMatlab:true})
+});
+export function initialHandoffProfile(family) {
+  requireThat(Object.hasOwn(INITIAL_HANDOFF_PROFILES,family),'Unknown initial completion family');
+  return INITIAL_HANDOFF_PROFILES[family];
+}
+export function assertInitialCompletionAuthority(g,family,env=process.env) {
+  initialHandoffProfile(family);
+  requireThat(['dev','main'].includes(env.WSS_CI_CHANNEL),'Initial handoff requires an explicit closed channel');
+  const context=channelContext(env.WSS_CI_CHANNEL);
+  const activation=channelActivation(JSON.parse(readFileSync(new URL('./channel-activation.json',import.meta.url))));
+  requireThat(activation[context.channel]===true,'Initial handoff channel is not activated');
+  requireThat(env.GITHUB_ACTIONS==='true'&&env.GITHUB_REPOSITORY===CORE&&env.GITHUB_EVENT_NAME==='workflow_run'&&
+    env.GITHUB_REF==='refs/heads/main'&&env.GITHUB_WORKFLOW_REF===CORE+'/.github/workflows/propagate-'+family+'.yml@refs/heads/main'&&
+    sha(env.GITHUB_SHA)&&env.GITHUB_WORKFLOW_SHA===env.GITHUB_SHA&&decimal(env.GITHUB_RUN_ID)&&decimal(env.GITHUB_RUN_ATTEMPT),
+    'Initial completion requires its exact registered trusted-main workflow');
+  requireThat(env.GITHUB_WORKSPACE&&realpathSync(env.GITHUB_WORKSPACE)===realpathSync(coreRoot),'Initial handoff source root differs');
+  const head=execFileSync('git',['-C',coreRoot,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+  const dirty=execFileSync('git',['-C',coreRoot,'status','--porcelain','--untracked-files=normal'],{encoding:'utf8'});
+  requireThat(head===env.GITHUB_SHA&&!dirty.trim(),'Initial handoff requires its exact clean workflow source');
+  requireThat(g.head(CORE,'main')===head,'Trusted Core main moved before initial handoff');
+  return context;
+}
+function initialReadiness(g,profile,context) {
+  for(const destination of profile.destinations) {
+    const metadata=g.get('repos/'+destination.repository);
+    requireThat(metadata.full_name===destination.repository&&metadata.default_branch==='main','Initial destination requires its canonical default main');
+    const main=g.head(destination.repository,'main');
+    requireThat(sha(main),'Initial destination main baseline is invalid');
+    const tree=g.get('repos/'+destination.repository+'/git/trees/'+main+'?recursive=1');
+    requireThat(tree.truncated===false&&Array.isArray(tree.tree),'Initial destination tree is incomplete');
+    for(const file of destination.workflows) {
+      const path='.github/workflows/'+file;
+      const entries=tree.tree.filter(t=>t.path===path);
+      requireThat(entries.length===1&&entries[0].type==='blob'&&['100644','100755'].includes(entries[0].mode),'Initial destination workflow is unavailable: '+destination.repository+'/'+file);
+      registered(g,destination.repository,file);
+    }
+    for(const branch of new Set([context.branch,...(profile.devBaseline?['dev']:[])]))
+      requireThat(sha(g.head(destination.repository,branch)),'Published initial destination baseline is required: '+destination.repository+'/'+branch);
+  }
+  if(profile.nativeMatlab)for(const destination of profile.destinations)matlabReady(g,destination.repository);
+}
+export function inspectInitialHandoff(g,p,family,context,env=process.env) {
+  const profile=initialHandoffProfile(family);
+  const target=p.policy.libraries.find(t=>t.id===family);
+  requireThat(target&&target.repository===profile.repository&&target.fanout===profile.fanout&&same([...target.applications].sort(),[...profile.applications].sort()),'Initial family policy differs from closed profile');
+  requireThat(p.candidate.archive==='WSS-Universal-ci.zip','Initial producer must supply the canonical CI archive');
+  initialReadiness(g,profile,context);
+  assertWorkflows(g,p,'stage',{ids:[family]});
+  const workflow=registered(g,profile.repository,'promote-wss.yml');
+  requireThat(decimal(workflow.id),'Initial destination workflow identity is invalid');
+  const expectedSource=p.receivers[family].heads[context.branch];
+  const title='Promote universal WSS / wss-'+p.candidate.run_id+'-'+p.candidate.artifact_id;
+  const runs=g.pages('repos/'+profile.repository+'/actions/workflows/promote-wss.yml/runs?event=workflow_dispatch','workflow_runs').filter(r=>r.display_title===title);
+  requireThat(runs.length<=1,'Ambiguous correlated initial promotion');
+  if(runs.length) {
+    const r=runs[0];
+    requireThat(decimal(r.id)&&r.repository?.full_name===profile.repository&&r.head_repository?.full_name===profile.repository&&
+      r.path==='.github/workflows/promote-wss.yml'&&String(r.workflow_id)===String(workflow.id)&&r.event==='workflow_dispatch'&&
+      r.head_branch===context.branch&&r.head_sha===expectedSource&&Number.isSafeInteger(r.run_attempt)&&r.run_attempt>=1,'Correlated initial promotion source/workflow differs');
+    requireThat(r.status!=='completed'||r.conclusion==='success','Prior correlated initial promotion failed; inspect before recovery');
+  } else {
+    requireThat(String(env.GITHUB_RUN_ATTEMPT)==='1','No correlated promotion after an earlier attempt; inspect uncertain dispatch before retry');
+    requireThat(g.head(profile.repository,context.branch)===expectedSource,'Initial destination source moved before preparation');
+  }
+  return {dispatch_needed:runs.length===0,producer_run_id:p.candidate.run_id,source_sha:expectedSource,channel:context.channel};
+}
+export function prepareInitialHandoff(g,family,directory,env=process.env) {
+  const context=assertInitialCompletionAuthority(g,family,env);
+  requireThat(env.GITHUB_EVENT_PATH,'Initial handoff requires the runner event');
+  const event=JSON.parse(readFileSync(env.GITHUB_EVENT_PATH,'utf8')),source=event.workflow_run;
+  requireThat(source&&decimal(source.id)&&source.head_branch===context.branch,'Initial event channel/run differs');
+  const p=loadStage(g,String(source.id),{channel:context.channel,initialEvent:source});
+  const result=inspectInitialHandoff(g,p,family,context,env);
+  requireThat(typeof directory==='string'&&isAbsolute(directory)&&env.RUNNER_TEMP&&isAbsolute(env.RUNNER_TEMP),'Initial output requires an absolute runner-temp directory');
+  const output=resolve(directory),temporary=realpathSync(env.RUNNER_TEMP);
+  requireThat(realpathSync(dirname(output))===temporary&&!existsSync(output),'Initial output must be a new direct runner-temp child');
+  assertInitialCompletionAuthority(g,family,env);
+  mkdirSync(output);
+  writeFileSync(join(output,'candidate.json'),canonical(p.candidate)+'\n');
+  writeFileSync(join(output,'dispatch.json'),canonical({ref:context.branch,inputs:{candidate_json:canonical(p.candidate)}})+'\n');
+  return result;
+}
 function json(g,repo,ref,path) {
   const f=g.get(`repos/${repo}/contents/${path}?ref=${ref}`);
   requireThat(f.type==='file' && f.encoding==='base64','Expected immutable JSON file');
@@ -19,6 +123,7 @@ function json(g,repo,ref,path) {
 function registered(g,repo,file) {
   const w=g.get(`repos/${repo}/actions/workflows/${file}`);
   requireThat(w.path===`.github/workflows/${file}` && w.state==='active',`Register ${repo}/${file} on its default branch first`);
+  return w;
 }
 export function policy(m) {
   const context=channelContext(m.channel);
@@ -94,14 +199,22 @@ export function validatePlan(p) {
   requireThat(same(Object.keys(p.receivers).sort(),p.policy.libraries.map(t=>t.id).sort()),'Missing integration snapshots');
   return p;
 }
-export function loadStage(g,id,{channel='dev'}={}) {
+export function loadStage(g,id,{channel='dev',initialEvent}={}) {
   requireThat(/^[1-9][0-9]*$/.test(id),'Invalid producer run ID');
   const context=channelContext(channel);
   const p=validatePlan(JSON.parse(g.download(CORE,id,context.stageArtifact,['plan.json'])['plan.json']));
   const c=p.candidate,r=g.run(CORE,id);
   requireThat(p.policy.channel===context.channel && c.run_id===id && r.repository?.full_name===CORE && r.head_repository?.full_name===CORE && r.path==='.github/workflows/artifacts.yml' && r.event==='push' && r.head_branch===context.branch && r.head_sha===c.commit && r.status==='completed' && r.conclusion==='success' && g.head(CORE,context.branch)===c.commit,'Stale or unsuccessful canonical channel producer');
+  if(initialEvent) {
+    const workflow=registered(g,CORE,'artifacts.yml');
+    requireThat(String(r.id)===id&&String(initialEvent.id)===id&&initialEvent.head_sha===c.commit&&initialEvent.head_branch===context.branch&&
+      initialEvent.event==='push'&&initialEvent.conclusion==='success'&&initialEvent.head_repository?.full_name===CORE&&
+      decimal(workflow.id)&&String(r.workflow_id)===String(workflow.id)&&
+      Number.isSafeInteger(r.run_attempt)&&r.run_attempt>=1&&initialEvent.run_attempt===r.run_attempt,'Initial event/registered producer identity differs');
+  }
   jobs(g.jobs(CORE,r),CORE_JOBS);
-  archive(g,c);
+  const sourceArchive=archive(g,c);
+  if(initialEvent)requireThat(String(sourceArchive.artifact.workflow_run?.id)===id&&sourceArchive.artifact.workflow_run?.head_sha===c.commit,'Initial archive producer source differs');
   requireThat(same(json(g,CORE,c.commit,context.stagePolicy),p.policy),'Plan policy is not the reviewed producer policy');
   assertWorkflows(g,p,'stage',{live:false});
   if(context.channel==='main')assertWorkflowPair(g,loadPlan(g,id),p);
@@ -291,15 +404,10 @@ async function main() {
   } else if(command==='verify-barrier') {
     requireThat(args.length===3,'verify-barrier requires producer run ID, barrier run ID and attempt');
     console.log(canonical(verifyBarrier(g,args[0],args[1],Number(args[2]),process.env.GITHUB_REPOSITORY,{channel:context.channel})));
-  } else if(command==='matlab') {
-    const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH)),id=String(event.workflow_run?.id),p=loadStage(g,id,{channel:context.channel}),t=p.policy.libraries.find(t=>t.id==='matlab');
-    matlabReady(g,t.repository);for(const app of t.applications) matlabReady(g,app);
-    registered(g,t.repository,'promote-wss.yml');
-    const runs=g.pages(`repos/${t.repository}/actions/workflows/promote-wss.yml/runs?event=workflow_dispatch`,'workflow_runs').filter(r=>r.display_title===`Promote universal WSS / wss-${id}-${p.candidate.artifact_id}`);
-    requireThat(runs.length<=1,'Ambiguous MATLAB promotion');
-    if(runs.length) requireThat(runs[0].status!=='completed' || runs[0].conclusion==='success','Prior MATLAB promotion failed; inspect recovery');
-    mkdirSync(args[0],{recursive:true});writeFileSync(join(args[0],'dispatch.json'),JSON.stringify({ref:context.branch,inputs:{candidate_json:canonical(p.candidate)}}));
-    appendFileSync(process.env.GITHUB_OUTPUT,`dispatch_needed=${runs.length===0}\n`);
-  } else throw new Error('Expected freeze, prepare, dispatch, verify-barrier or matlab');
+  } else if(command==='initial'||command==='matlab') {
+    requireThat(args.length===(command==='initial'?2:1),'Expected initial family directory');
+    const result=prepareInitialHandoff(g,command==='matlab'?'matlab':args[0],args.at(-1));
+    appendFileSync(process.env.GITHUB_OUTPUT,Object.entries(result).map(([key,value])=>`${key}=${value}\n`).join(''));
+  } else throw new Error('Expected freeze, prepare, dispatch, verify-barrier or initial');
 }
 if(isEntrypoint(import.meta.url)) main().catch(e=>{console.error(e.message);process.exitCode=1;});
