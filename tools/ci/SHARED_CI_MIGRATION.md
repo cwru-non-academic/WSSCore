@@ -21,7 +21,7 @@ these sources, not separate implementations in each product language.
 | Correlated preflight requests and exact-run waiting | Python integration `preflight.mjs`, `Preflight.ps1` |
 | Integration-only coordinator notification | Python integration `notify-family.mjs`, `notify-core-stage.yml` |
 
-Integrations receive 27 managed files and applications receive 25; notifier files
+Integrations receive 30 managed files and applications receive 28; notifier files
 are scoped to integrations. Preserve receiver runtime tests, projection/importer
 rules, native evidence interpretation, explicit executable pins, job names and
 application gitlinks. The shared source does not replace language-specific proof.

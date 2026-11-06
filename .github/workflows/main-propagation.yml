@@ -1,0 +1,144 @@
+name: Reconcile staged main propagation
+run-name: Reconcile main integrations and applications / ${{ inputs.producer_run_id || github.event.workflow_run.id || 'current-main' }}
+on:
+  workflow_dispatch:
+    inputs:
+      producer_run_id:
+        description: Exact canonical main push run; empty selects current main
+        type: string
+      mode:
+        description: Verify observes only; reconcile may dispatch committed CI and application fanout
+        type: choice
+        options: [verify, reconcile]
+        default: verify
+env:
+  WSS_CI_CHANNEL: main
+  WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
+  WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
+
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: wss-main-integration-stage
+  cancel-in-progress: false
+jobs:
+  prepare:
+    name: Prepare verified main propagation stage
+    if: >-
+      github.repository == 'cwru-non-academic/WSSCore' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    outputs:
+      producer_run_id: ${{ steps.stage.outputs.producer_run_id }}
+      artifact_name: ${{ steps.stage.outputs.artifact_name }}
+      actions: ${{ steps.stage.outputs.actions }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Create read-only cross-repository evidence token
+        id: evidence-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: |
+            WSSCore
+            CSharp_WSS_Integration_Lib
+            CLI_CSharp_WSS_Application
+            Unity_WSS_Integration_Lib
+            GUI_Unity_WSS_Application
+            Python_WSS_Integration_Lib
+            CLI_Python_WSS_Application
+            ROS_Python_WSS_Application
+            Matlab_WSS_Integration_Lib
+            CLI_Matlab_WSS_Application
+          permission-contents: read
+          permission-actions: read
+          permission-pull-requests: read
+      - name: Verify canonical candidate and all integration merges
+        id: stage
+        env:
+          GH_TOKEN: ${{ steps.evidence-token.outputs.token }}
+          PRODUCER_RUN: ${{ inputs.producer_run_id }}
+        run: node tools/ci/dev-propagation.mjs prepare "$PRODUCER_RUN" "$RUNNER_TEMP/main-stage"
+      - name: Retain dispatch intent before any write token or POST
+        if: false
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.stage.outputs.artifact_name }}
+          path: ${{ runner.temp }}/main-stage/intent.json
+          if-no-files-found: error
+      - name: Retain all-integration authorization
+        if: steps.stage.outputs.barrier == 'true' && (false)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wss-integration-barrier-${{ steps.stage.outputs.producer_run_id }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/main-stage/barrier.json
+          if-no-files-found: error
+  dispatch:
+    name: Reconcile committed CI or authorized application promotion
+    needs: prepare
+    if: >-
+      false && needs.prepare.outputs.actions != '0' &&
+      (false)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.artifact_name }}
+          path: ${{ runner.temp }}/main-stage
+      - name: Create read-only cross-repository evidence token
+        id: evidence-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: |
+            WSSCore
+            CSharp_WSS_Integration_Lib
+            CLI_CSharp_WSS_Application
+            Unity_WSS_Integration_Lib
+            GUI_Unity_WSS_Application
+            Python_WSS_Integration_Lib
+            CLI_Python_WSS_Application
+            ROS_Python_WSS_Application
+            Matlab_WSS_Integration_Lib
+            CLI_Matlab_WSS_Application
+          permission-contents: read
+          permission-actions: read
+          permission-pull-requests: read
+      - name: Create existing App Actions token after read-only validation
+        id: dispatch-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: |
+            CSharp_WSS_Integration_Lib
+            Unity_WSS_Integration_Lib
+            Python_WSS_Integration_Lib
+            Matlab_WSS_Integration_Lib
+          permission-actions: write
+      - name: Recheck saved intent and dispatch once
+        env:
+          GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
+          WSS_JOURNAL_READ_TOKEN: ${{ steps.evidence-token.outputs.token }}
+        run: node tools/ci/dev-propagation.mjs dispatch "$RUNNER_TEMP/main-stage/intent.json"

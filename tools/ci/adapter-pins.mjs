@@ -4,9 +4,11 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {isEntrypoint} from '../release/entrypoint.mjs';
 import {GitHub} from '../release/github.mjs';
 import {CORE,canonical,requireThat} from '../release/verify.mjs';
 import {sourceBytes} from './sync-tooling.mjs';
+import {integrationConfiguration} from '../release/channels.mjs';
 const fullSha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
 const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const git=(root,...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8'}).trim();
@@ -80,7 +82,7 @@ export function verifyWorkflowPins({repository,profiles,lock,files,roles=pinRole
     heads??=['dev','main'].map(branch=>g.head(parent,branch));
     for(const head of heads){
       requireThat(fullSha(head),'Invalid current integration source');
-      for(const path of ['.github/scripts',`.github/${profile.family}-ci.json`,...(pin.workflow?['.github/workflows',pin.workflow]:[])])
+      for(const path of ['.github/scripts',integrationConfiguration(profile.family),'.github/dev-propagation.json','.github/main-propagation.json',...(pin.workflow?['.github/workflows',pin.workflow]:[])])
         requireThat(object(parent,pin.sha,path)===object(parent,head,path),`Pinned integration tooling differs from current verified dev/main: ${pin.file} / ${path}`);
     }
   }
@@ -100,7 +102,7 @@ export function refreshWorkflowPins({repository,profiles,lock,files,adapter,adap
   }));
 }
 
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+if(isEntrypoint(import.meta.url)){
   const [operation,name,target,workspace,adapter]=process.argv.slice(2);
   requireThat(['check','refresh'].includes(operation)&&/^[A-Za-z0-9_]+$/.test(name||'')&&target,'Usage: adapter-pins.mjs check|refresh <repository> <checkout> [workspace] [verified-adapter-sha]');
   const profiles=JSON.parse(sourceBytes({origin:'integration',path:'.github/scripts/wss-ci/receipt-targets.json'},workspace?resolve(workspace):undefined));

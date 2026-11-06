@@ -504,7 +504,9 @@ jobs:
   propagate-universal:
     name: Start routine downstream validation
     needs: [core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, ble-consumer-summary, package-universal, serial-tests, core-consumers]
-    if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/dev' && github.repository == 'cwru-non-academic/WSSCore' }}
+    if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && github.repository == 'cwru-non-academic/WSSCore' }}
+    env:
+      WSS_CI_CHANNEL: ${{ github.ref_name }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -534,37 +536,53 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Freeze integration-first dev propagation and require deployed receiver hooks
+      - name: Select closed channel and Core-owned publication control
+        id: channel
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import {channelContext} from "./tools/release/channels.mjs";
+            import {channelActivation,publicationControls} from "./tools/ci/channel-controls.mjs";
+            const c=channelContext(process.env.WSS_CI_CHANNEL);
+            const a=channelActivation(JSON.parse(fs.readFileSync("tools/ci/channel-activation.json")));
+            if(!a[c.channel])throw Error("Producer channel is not activated");
+            fs.appendFileSync(process.env.GITHUB_ENV,`WSS_ACCEPTANCE_PLAN=${process.env.RUNNER_TEMP}/release-plan/plan.json\n`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT,`stage_artifact=${c.stageArtifact}\npublication_variable=${publicationControls()[c.channel]}\n`);
+          '
+      - name: Freeze exact candidate and channel plans before any downstream writes
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT_ID: ${{ needs.package-universal.outputs.artifact-id }}
           SHA256: ${{ steps.candidate.outputs.sha256 }}
+          WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
+          PUBLICATION_ENABLED: ${{ vars[steps.channel.outputs.publication_variable] }}
         run: |
           $ErrorActionPreference = 'Stop'
-          @{ repository='cwru-non-academic/WSSCore'; commit=$env:GITHUB_SHA; run_id=$env:GITHUB_RUN_ID; artifact_id=$env:ARTIFACT_ID; archive='WSS-Universal-ci.zip'; sha256=$env:SHA256 } | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP/dev-candidate.json"
-          node tools/ci/dev-propagation.mjs freeze "$env:RUNNER_TEMP/dev-candidate.json" "$env:RUNNER_TEMP/dev-propagation-plan"
-          if ($LASTEXITCODE -ne 0) { throw 'Deploy staged receiver hooks, Core main workflows and reviewed MATLAB activation before the canonical dev handoff.' }
+          . ./tools/ci/shared/Channel.ps1
+          $context=Get-WssCiChannelContext
+          $controls=Get-Content tools/ci/publication-controls.json -Raw|ConvertFrom-Json
+          $publicationVariable=$controls.($context.channel)
+          if($publicationVariable -cnotin @('WSS_DEV_RELEASE_ENABLED','WSS_MAIN_RELEASE_ENABLED') -or $env:PUBLICATION_ENABLED -cnotin @('','true','false')){throw 'Invalid explicit publication control.'}
+          [Environment]::SetEnvironmentVariable($publicationVariable,$env:PUBLICATION_ENABLED,'Process')
+          @{repository='cwru-non-academic/WSSCore';commit=$env:GITHUB_SHA;run_id=$env:GITHUB_RUN_ID;artifact_id=$env:ARTIFACT_ID;archive='WSS-Universal-ci.zip';sha256=$env:SHA256}|ConvertTo-Json|Set-Content "$env:RUNNER_TEMP/candidate.json"
+          if($context.channel -ceq 'main'){
+            if($env:WSS_DEV_ACCEPTANCE_ENABLED -cne 'true'){throw 'Main campaign requires both frozen acceptance and stage plans.'}
+            node tools/release/cli.mjs freeze-campaign "$env:RUNNER_TEMP/candidate.json" $context.targetPolicy "$env:RUNNER_TEMP/release-plan" "$env:RUNNER_TEMP/propagation-plan"
+            if($LASTEXITCODE -ne 0){throw 'Atomic paired main freeze failed; no handoff.'}
+          }else{
+            node tools/ci/dev-propagation.mjs freeze "$env:RUNNER_TEMP/candidate.json" "$env:RUNNER_TEMP/propagation-plan"
+            if($LASTEXITCODE -ne 0){throw 'Canonical dev stage freeze failed; no handoff.'}
+            if($env:WSS_DEV_ACCEPTANCE_ENABLED -ceq 'true'){
+              node tools/release/cli.mjs freeze "$env:RUNNER_TEMP/candidate.json" $context.targetPolicy "$env:RUNNER_TEMP/release-plan"
+              if($LASTEXITCODE -ne 0){throw 'Required receiver receipt tooling is unavailable; no handoff.'}
+            }
+          }
       - uses: actions/upload-artifact@v4
         with:
-          name: wss-dev-propagation-plan
-          path: ${{ runner.temp }}/dev-propagation-plan/plan.json
+          name: ${{ steps.channel.outputs.stage_artifact }}
+          path: ${{ runner.temp }}/propagation-plan/plan.json
           if-no-files-found: error
-      - name: Freeze the reviewed all-target dev acceptance plan
-        if: vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
-          PRODUCER_SHA: ${{ github.sha }}
-          PRODUCER_RUN: ${{ github.run_id }}
-          ARTIFACT_ID: ${{ needs.package-universal.outputs.artifact-id }}
-          SHA256: ${{ steps.candidate.outputs.sha256 }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          @{ repository='cwru-non-academic/WSSCore'; commit=$env:PRODUCER_SHA; run_id=$env:PRODUCER_RUN; artifact_id=$env:ARTIFACT_ID; archive='WSS-Universal-ci.zip'; sha256=$env:SHA256 } | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP/candidate.json"
-          node tools/release/cli.mjs freeze "$env:RUNNER_TEMP/candidate.json" tools/release/targets.dev.json "$env:RUNNER_TEMP/release-plan"
-          if ($LASTEXITCODE -ne 0) { throw 'Required receiver receipt tooling is unavailable; no all-clear plan or handoff.' }
       - uses: actions/upload-artifact@v4
         if: vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true'
         with:
@@ -591,7 +609,7 @@ jobs:
           GH_TOKEN: ${{ steps.projection-token.outputs.token }}
         run: >-
           node tools/ci/classify-projections.mjs
-          '${{ runner.temp }}/dev-propagation-plan/plan.json'
+          '${{ runner.temp }}/propagation-plan/plan.json'
           '${{ runner.temp }}/release-input/WSS-Universal-ci.zip'
           '${{ runner.temp }}/projection-classification/report.json'
       - name: Retain projection classification including blocked targets
@@ -604,7 +622,7 @@ jobs:
       - name: Check frozen workflow trees before write credentials
         env:
           GH_TOKEN: ${{ steps.projection-token.outputs.token }}
-        run: node tools/ci/workflow-freeze.mjs check-initial csharp '${{ runner.temp }}/dev-propagation-plan/plan.json'
+        run: node tools/ci/workflow-freeze.mjs check-initial csharp '${{ runner.temp }}/propagation-plan/plan.json'
       - name: Create Integration dispatch-only App token
         id: integration-token
         uses: actions/create-github-app-token@v2
@@ -626,17 +644,17 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $body = @{
-            ref = 'dev'
+            ref = $env:WSS_CI_CHANNEL
             inputs = @{
               wss_run_id = $env:PRODUCER_RUN; wss_commit = $env:PRODUCER_SHA
               wss_artifact_id = $env:ARTIFACT_ID; wss_sha256 = $env:SHA256
               correlation_id = "wss-$env:PRODUCER_RUN-$env:ARTIFACT_ID"
             }
           } | ConvertTo-Json -Depth 4 -Compress
-          $head = gh api repos/cwru-non-academic/WSSCore/branches/dev --jq .commit.sha
-          if ($LASTEXITCODE -ne 0 -or $head.Trim() -cne $env:PRODUCER_SHA) { throw 'Core dev moved before Integration dispatch; no stale candidate handoff.' }
+          $head = gh api "repos/cwru-non-academic/WSSCore/branches/$env:WSS_CI_CHANNEL" --jq .commit.sha
+          if ($LASTEXITCODE -ne 0 -or $head.Trim() -cne $env:PRODUCER_SHA) { throw 'Core channel moved before Integration dispatch; no stale candidate handoff.' }
           $requestPath=Join-Path $env:RUNNER_TEMP 'csharp-handoff.json'
           [IO.File]::WriteAllText($requestPath,$body,[Text.UTF8Encoding]::new($false))
-          node tools/ci/workflow-freeze.mjs dispatch-initial csharp "$env:RUNNER_TEMP/dev-propagation-plan/plan.json" $requestPath
+          node tools/ci/workflow-freeze.mjs dispatch-initial csharp "$env:RUNNER_TEMP/propagation-plan/plan.json" $requestPath
           if ($LASTEXITCODE -ne 0) { throw 'Routine handoff failed: verify App installation, Integration Actions-write permission, and the deployed dev workflow.' }
           "Automatic candidate: commit $env:PRODUCER_SHA; run $env:PRODUCER_RUN; artifact $env:ARTIFACT_ID; WSS-Universal-ci.zip; SHA-256 $env:SHA256. Integration waits for this producer run to complete successfully." >> $env:GITHUB_STEP_SUMMARY

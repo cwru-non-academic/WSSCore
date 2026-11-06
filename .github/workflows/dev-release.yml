@@ -14,6 +14,16 @@ on:
         description: Exact canonical dev push run; empty selects the unique current-dev run
         required: false
         type: string
+      mode:
+        description: Verify is read-only; reconcile may dispatch proof and use the existing publication gate
+        type: choice
+        options: [verify, reconcile]
+        default: reconcile
+
+env:
+  WSS_CI_CHANNEL: dev
+  WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
+  WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
 
 permissions:
   contents: read
@@ -42,7 +52,7 @@ jobs:
       # workflow_run is privileged: executable code always comes from main, never the candidate.
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -75,18 +85,21 @@ jobs:
           REQUESTED_RUN: ${{ inputs.producer_run_id || github.event.workflow_run.id }}
         run: node tools/release/select-producer.mjs
       - name: Prepare read-only reconciliation intents
+        if: (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
         id: reconciliation
         env:
           GH_TOKEN: ${{ steps.evidence-token.outputs.token }}
           WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
         run: node tools/release/cli.mjs prepare-dispatches '${{ steps.producer.outputs.run_id }}' '${{ runner.temp }}/dispatch-intent'
       - name: Retain dispatch intent before any cross-repository request
+        if: (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.reconciliation.outputs.artifact_name }}
           path: ${{ runner.temp }}/dispatch-intent/intent.json
           if-no-files-found: error
       - name: Create receipt reconciliation Actions token
+        if: (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
         id: receipt-token
         uses: actions/create-github-app-token@v2
         with:
@@ -105,6 +118,7 @@ jobs:
             CLI_Matlab_WSS_Application
           permission-actions: write
       - name: Reconcile existing merges with fresh normal CI and read-only receipts
+        if: (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
         env:
           GH_TOKEN: ${{ steps.receipt-token.outputs.token }}
           WSS_JOURNAL_READ_TOKEN: ${{ steps.evidence-token.outputs.token }}
@@ -125,7 +139,7 @@ jobs:
     name: Publish exact accepted beta bytes only when explicitly enabled
     needs: reconcile
     if: >-
-      needs.reconcile.result == 'success' &&
+      true && ((github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')) && needs.reconcile.result == 'success' &&
       vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true' &&
       vars.WSS_DEV_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
@@ -135,7 +149,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:

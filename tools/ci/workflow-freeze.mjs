@@ -1,35 +1,61 @@
 // Core coordinator extension. Receiver-owned target profiles remain unchanged.
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {pathToFileURL} from 'node:url';
-import {GitHub} from '../release/github.mjs';
-import {candidate,canonical,CORE,digest,requireThat} from '../release/verify.mjs';
+import {GitHub,loadPlan} from '../release/github.mjs';
+import {candidate,canonical,CORE,CORE_JOBS,digest,jobs,requireThat} from '../release/verify.mjs';
+import {channelContext,releaseFingerprint} from '../release/channels.mjs';
+import {isEntrypoint} from '../release/entrypoint.mjs';
 
 export const SNAPSHOT_POLICY='wss-workflow-snapshots/v1';
+export const MAIN_SNAPSHOT_POLICY='wss-workflow-snapshots/v2';
 const PATH='.github/workflows';
 const same=(a,b)=>canonical(a)===canonical(b);
 const sha=x=>typeof x==='string'&&/^[a-f0-9]{40}$/.test(x);
 const definition=(p,kind)=>kind==='stage'?p.policy:p.manifest;
-const policyPath=kind=>kind==='stage'?'tools/ci/dev-propagation.json':'tools/release/targets.dev.json';
+const context=(p,kind)=>channelContext(definition(p,kind).channel);
+const policyPath=(p,kind)=>kind==='stage'?context(p,kind).stagePolicy:context(p,kind).targetPolicy;
 
 // Always consult the producer's immutable policy, even if the envelope omits
 // the new flag. Rehashing an omitted requirement must never select legacy mode.
 export function snapshotRequirement(g,p,kind) {
   requireThat(['stage','acceptance'].includes(kind),'Unknown workflow snapshot operation');
   candidate(p.candidate);
-  requireThat(g.head(CORE)===p.candidate.commit,'Core moved before workflow snapshot verification');
-  const file=g.get(`repos/${CORE}/contents/${policyPath(kind)}?ref=${p.candidate.commit}`);
+  const c=context(p,kind);
+  requireThat(g.head(CORE,c.branch)===p.candidate.commit,'Core moved before workflow snapshot verification');
+  const file=g.get(`repos/${CORE}/contents/${policyPath(p,kind)}?ref=${p.candidate.commit}`);
   requireThat(file?.type==='file'&&file.encoding==='base64','Immutable producer workflow policy unavailable');
   const reviewed=JSON.parse(Buffer.from(file.content,'base64').toString('utf8'));
   requireThat(same(reviewed,definition(p,kind)),'Workflow snapshot policy differs from immutable producer policy');
   const required=reviewed.workflow_snapshot_policy;
-  requireThat(required===undefined||required===SNAPSHOT_POLICY,'Unknown workflow snapshot policy');
+  requireThat(c.channel==='main'?required===MAIN_SNAPSHOT_POLICY:required===undefined||required===SNAPSHOT_POLICY,'Unknown or missing producer-bound workflow snapshot policy');
   if(required===undefined)requireThat(!Object.hasOwn(p,'workflow_snapshots'),'Unexpected workflow snapshot extension in legacy plan');
-  return required===SNAPSHOT_POLICY;
+  return required!==undefined;
 }
 function entries(p,kind) {
   const out={};
-  const add=(id,repository,branch,source)=>{out[`${id}:${branch}`]={repository,branch,source};};
+  const c=context(p,kind);
+  const add=(id,repository,branch,source,role)=>{
+    const key=`${id}:${role||branch}`;
+    requireThat(!Object.hasOwn(out,key),'Duplicate workflow snapshot role');
+    out[key]={id,repository,branch,source,...(role?{role}:{})};
+  };
+  if(c.channel==='main') {
+    if(kind==='stage')for(const t of p.policy.libraries) {
+      const h=p.receivers[t.id].heads;
+      add(t.id,t.repository,'main',h.main,'accepted-baseline');
+      add(t.id,t.repository,'main',h.main,'execution-authority');
+      add(t.id,t.repository,'dev',h.dev,'counterpart');
+    }
+    else for(const t of p.manifest.targets) {
+      const source=p.target_snapshots[t.id].head_sha;
+      add(t.id,t.repository,'main',source,'accepted-baseline');
+      if(t.kind==='payload') {
+        add(t.id,t.repository,'main',source,'execution-authority');
+        add(t.id,t.repository,'dev',null,'counterpart');
+      }
+    }
+    return out;
+  }
   if(kind==='stage') {
     for(const t of p.policy.libraries)for(const branch of ['dev','main'])add(t.id,t.repository,branch,p.receivers[t.id].heads[branch]);
   } else {
@@ -46,29 +72,64 @@ function tree(g,repository,ref) {
   requireThat(o?.type==='tree'&&sha(o.sha),'Workflow snapshot must identify a complete Git directory tree');
   return o.sha;
 }
-export function freezeWorkflows(g,p,kind) {
+export function freezeWorkflows(g,p,kind,{observations=new Map()}={}) {
   if(!snapshotRequirement(g,p,kind))return p;
+  const main=context(p,kind).channel==='main';
   const targets=Object.fromEntries(Object.entries(entries(p,kind)).map(([key,t])=>{
-    const source_sha=t.source||g.head(t.repository,t.branch);
-    return [key,{repository:t.repository,branch:t.branch,source_sha,tree_sha:tree(g,t.repository,source_sha)}];
+    const physical=`${t.repository}:${t.branch}`;
+    let observed=observations.get(physical);
+    if(!observed) {
+      const source_sha=main?g.head(t.repository,t.branch):t.source||g.head(t.repository,t.branch);
+      observed={repository:t.repository,branch:t.branch,source_sha,tree_sha:tree(g,t.repository,source_sha)};
+      observations.set(physical,observed);
+    }
+    if(main)requireThat(!t.source||t.source===observed.source_sha,'Same-branch workflow source moved during freeze');
+    return [key,{...observed,...(t.role?{role:t.role}:{})}];
   }));
-  requireThat(g.head(CORE)===p.candidate.commit,'Core moved while freezing workflow snapshots');
+  if(main)for(const a of observations.values())requireThat(g.head(a.repository,a.branch)===a.source_sha,'Workflow source moved while freezing snapshots');
+  requireThat(g.head(CORE,context(p,kind).branch)===p.candidate.commit,'Core moved while freezing workflow snapshots');
   const {plan_id,...body}=p;
-  const extended={...body,workflow_snapshots:{schema:SNAPSHOT_POLICY,targets}};
+  const extended={...body,workflow_snapshots:{schema:main?MAIN_SNAPSHOT_POLICY:SNAPSHOT_POLICY,targets}};
   return {...extended,plan_id:digest(extended)};
+}
+export function freezeWorkflowPair(g,acceptance,stage) {
+  requireThat(acceptance.channel==='main'&&stage.policy.channel==='main'&&same(acceptance.candidate,stage.candidate),'Paired freeze requires one exact main candidate');
+  const observations=new Map();
+  const a=freezeWorkflows(g,acceptance,'acceptance',{observations});
+  const {plan_id,...stageBody}=stage;
+  const linked={...stageBody,acceptance_plan_id:a.plan_id};
+  const s=freezeWorkflows(g,{...linked,plan_id:digest(linked)},'stage',{observations});
+  assertWorkflowPair(g,a,s);
+  for(const o of observations.values())requireThat(g.head(o.repository,o.branch)===o.source_sha,'Workflow source moved between paired plan freezes');
+  return {acceptance:a,stage:s};
+}
+export function assertWorkflowPair(g,acceptance,stage) {
+  requireThat(acceptance.channel==='main'&&stage.policy.channel==='main'&&same(acceptance.candidate,stage.candidate)&&stage.acceptance_plan_id===acceptance.plan_id,'Main stage is not bound to its exact acceptance plan');
+  assertWorkflows(g,acceptance,'acceptance',{live:false});assertWorkflows(g,stage,'stage',{live:false});
+  const physical=new Map();
+  for(const a of Object.values(acceptance.workflow_snapshots.targets))physical.set(`${a.repository}:${a.branch}`,a);
+  for(const s of Object.values(stage.workflow_snapshots.targets)){
+    const a=physical.get(`${s.repository}:${s.branch}`);
+    requireThat(a&&a.source_sha===s.source_sha&&a.tree_sha===s.tree_sha,'Main stage and acceptance froze different physical source bindings');
+  }
+  return true;
 }
 export function assertWorkflows(g,p,kind,{ids,live=true}={}) {
   if(!snapshotRequirement(g,p,kind))return false;
   const {plan_id,...body}=p;
   requireThat(plan_id===digest(body),'Workflow snapshot plan digest mismatch');
-  const expected=entries(p,kind),actual=p.workflow_snapshots;
-  requireThat(actual?.schema===SNAPSHOT_POLICY&&same(Object.keys(actual).sort(),['schema','targets'])&&
+  const expected=entries(p,kind),actual=p.workflow_snapshots,main=context(p,kind).channel==='main';
+  requireThat(actual?.schema===(main?MAIN_SNAPSHOT_POLICY:SNAPSHOT_POLICY)&&same(Object.keys(actual).sort(),['schema','targets'])&&
     same(Object.keys(actual.targets||{}).sort(),Object.keys(expected).sort()),'Required workflow snapshots missing, unknown or incomplete');
-  requireThat(ids===undefined||Array.isArray(ids)&&ids.length>0&&new Set(ids).size===ids.length&&ids.every(id=>Object.keys(expected).some(k=>k===`${id}:dev`)),'Unknown workflow snapshot scope');
+  requireThat(ids===undefined||Array.isArray(ids)&&ids.length>0&&new Set(ids).size===ids.length&&ids.every(id=>Object.values(expected).some(t=>t.id===id)),'Unknown workflow snapshot scope');
+  const physical=new Map();
   for(const [key,t] of Object.entries(expected)) {
     const a=actual.targets[key];
-    requireThat(a&&same(Object.keys(a).sort(),['branch','repository','source_sha','tree_sha'])&&a.repository===t.repository&&a.branch===t.branch&&sha(a.source_sha)&&sha(a.tree_sha)&&(!t.source||a.source_sha===t.source),'Workflow snapshot binding mismatch');
-    if(!live||ids&&!ids.some(id=>key===`${id}:${t.branch}`))continue;
+    requireThat(a&&same(Object.keys(a).sort(),['branch','repository',...(main?['role']:[]),'source_sha','tree_sha'].sort())&&a.repository===t.repository&&a.branch===t.branch&&(!main||a.role===t.role)&&sha(a.source_sha)&&sha(a.tree_sha)&&(!t.source||a.source_sha===t.source),'Workflow snapshot binding mismatch');
+    const location=`${a.repository}:${a.branch}`,prior=physical.get(location);
+    if(main&&prior)requireThat(prior.source_sha===a.source_sha&&prior.tree_sha===a.tree_sha,'Conflicting same-branch workflow roles');
+    physical.set(location,a);
+    if(!live||ids&&!ids.includes(t.id))continue;
     requireThat(tree(g,a.repository,a.source_sha)===a.tree_sha,'Frozen workflow source/tree mismatch');
     const head=g.head(a.repository,a.branch);
     requireThat((head===a.source_sha?a.tree_sha:tree(g,a.repository,head))===a.tree_sha,`Workflow tree changed after freeze: ${key}`);
@@ -81,11 +142,29 @@ export function collectWithWorkflows(g,p,collect) {
   assertWorkflows(g,p,'acceptance');
   return accepted;
 }
+// Read-only receiver entrypoint, including direct manual dispatches. Keep the
+// full workflow guard Core-owned instead of reproducing its policy in adapters.
+export function receiverAuthorization(g,producerId,repository,{loadFrozenPlan=loadPlan}={}) {
+  requireThat(/^[1-9][0-9]*$/.test(producerId)&&/^cwru-non-academic\/[A-Za-z0-9_]+$/.test(repository),'Invalid receiver authorization identity');
+  const p=loadFrozenPlan(g,producerId);
+  requireThat(p.channel==='main'&&p.candidate.run_id===producerId,'Receiver authorization requires the exact main plan');
+  const matches=p.manifest.targets.filter(t=>t.repository===repository);
+  requireThat(matches.length===1,'Receiver is not a unique canonical main target');
+  const r=g.run(CORE,producerId);
+  requireThat(r.repository?.full_name===CORE&&r.head_repository?.full_name===CORE&&r.path==='.github/workflows/artifacts.yml'&&r.head_branch==='main'&&r.head_sha===p.candidate.commit&&r.event==='push'&&r.status==='completed'&&r.conclusion==='success','Receiver requires the completed canonical main producer');
+  jobs(g.jobs(CORE,r),CORE_JOBS);
+  assertWorkflows(g,p,'acceptance',{ids:[matches[0].id]});
+  return {schema:'wss-receiver-workflow-authorization/v1',channel:'main',plan_id:p.plan_id,target_id:matches[0].id,repository,candidate:p.candidate};
+}
 
 // Preserve the existing publisher/dispatchers. The only additional write client
 // checks run at their command boundary, using a separate read-only credential.
-export function guardedWriter(writer,reader,p,kind,{ids,purpose}={}) {
+export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,acceptedHeads}={}) {
   requireThat(['initial','proof','stage','publication'].includes(purpose),'Unknown guarded write purpose');
+  const c=context(p,kind);
+  if(c.channel==='main'&&purpose==='initial')requireThat(ids?.length===1,'Initial main mutation requires one exact family scope');
+  if(c.channel==='main'&&['stage','proof'].includes(purpose))requireThat(ids?.length===1&&sha(executionSource),'Main mutation requires its exact journaled execution source');
+  if(c.channel==='main'&&purpose==='publication')requireThat(acceptedHeads&&same(Object.keys(acceptedHeads).sort(),p.manifest.targets.map(t=>t.id).sort())&&Object.values(acceptedHeads).every(sha),'Main publication requires all exact accepted merge heads');
   const allowed=new Set();
   if(purpose==='initial'||purpose==='stage')for(const t of p.policy.libraries.filter(t=>!ids||ids.includes(t.id))) {
     for(const name of purpose==='initial'?['promote-wss.yml']:[t.normal,t.fanout])allowed.add(`repos/${t.repository}/actions/workflows/${name}/dispatches`);
@@ -100,10 +179,11 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose}={}) {
       if(!read) {
         if(purpose==='publication') {
           const at=name=>args.indexOf(name);
-          requireThat(args[0]==='release'&&args[1]==='create'&&args[2]===`dev-beta-${p.candidate.run_id}-${p.plan_id.slice(0,12)}`&&
-            at('--repo')>2&&args[at('--repo')+1]===CORE&&at('--target')>2&&args[at('--target')+1]===p.candidate.commit&&args.includes('--prerelease')&&
-            ['--repo','--target','--prerelease','--title','--notes'].every(flag=>args.filter(a=>a===flag).length===1)&&
-            args.filter(a=>a.startsWith('--')).every(a=>['--repo','--target','--prerelease','--title','--notes'].includes(a)),'Unsupported guarded publication mutation');
+          const flags=['--repo','--target',...(c.kind==='beta'?['--prerelease']:[]),'--title','--notes'];
+          requireThat(args[0]==='release'&&args[1]==='create'&&args[2]===releaseFingerprint(c.channel,p.candidate.run_id,p.plan_id)&&
+            at('--repo')>2&&args[at('--repo')+1]===CORE&&at('--target')>2&&args[at('--target')+1]===p.candidate.commit&&
+            flags.every(flag=>args.filter(a=>a===flag).length===1)&&
+            args.filter(a=>a.startsWith('--')).every(a=>flags.includes(a)),'Unsupported guarded publication mutation');
         } else {
           requireThat(args[0]==='api'&&args[1]==='--method'&&args[2]==='POST'&&allowed.has(args[3]),'Unsupported guarded dispatch mutation');
           if(purpose==='initial') {
@@ -120,16 +200,24 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose}={}) {
             }
             if(purpose==='proof') {
               const receipt=args[3].endsWith('/release-receipt.yml/dispatches');
-              requireThat(same(fields,receipt?{ref:'dev','inputs[producer_run_id]':p.candidate.run_id,'inputs[plan_id]':p.plan_id}:{ref:'dev'}),'Guarded proof inputs differ from frozen plan');
+              requireThat(same(fields,receipt?{ref:c.branch,'inputs[producer_run_id]':p.candidate.run_id,'inputs[plan_id]':p.plan_id}:{ref:c.branch}),'Guarded proof inputs differ from frozen plan');
             } else {
               const t=p.policy.libraries.find(t=>args[3].startsWith(`repos/${t.repository}/`));
               const normal=args[3].endsWith(`/${t.normal}/dispatches`);
-              requireThat(normal?same(fields,{ref:'dev'}):same(Object.keys(fields).sort(),['inputs[barrier_attempt]','inputs[barrier_run_id]','inputs[producer_run_id]','ref'])&&
-                fields.ref==='main'&&fields['inputs[producer_run_id]']===p.candidate.run_id&&/^[1-9][0-9]*$/.test(fields['inputs[barrier_run_id]'])&&/^[1-9][0-9]*$/.test(fields['inputs[barrier_attempt]']),'Guarded stage inputs differ from frozen authorization');
+              requireThat(normal?same(fields,{ref:c.branch}):same(Object.keys(fields).sort(),['inputs[barrier_attempt]','inputs[barrier_run_id]',...(c.channel==='main'?['inputs[channel]']:[]),'inputs[producer_run_id]','ref'].sort())&&
+                (c.channel!=='main'||fields['inputs[channel]']==='main')&&fields.ref==='main'&&fields['inputs[producer_run_id]']===p.candidate.run_id&&/^[1-9][0-9]*$/.test(fields['inputs[barrier_run_id]'])&&/^[1-9][0-9]*$/.test(fields['inputs[barrier_attempt]']),'Guarded stage inputs differ from frozen authorization');
             }
           }
         }
         assertWorkflows(reader,p,kind,{ids});
+        if(c.channel==='main') {
+          if(purpose==='publication')for(const t of p.manifest.targets)requireThat(reader.head(t.repository,c.branch)===acceptedHeads[t.id],'Accepted main target moved at publication boundary');
+          else {
+            const target=kind==='stage'?p.policy.libraries.find(t=>t.id===ids[0]):p.manifest.targets.find(t=>t.id===ids[0]);
+            const expected=purpose==='initial'?p.receivers[target.id].heads.main:executionSource;
+            requireThat(reader.head(target.repository,'main')===expected,'Main execution source moved at mutation boundary');
+          }
+        }
       }
       return target.command(args);
     };
@@ -141,28 +229,37 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose}={}) {
 export function initialRequest(p,family,body) {
   const t=p.policy.libraries.find(t=>t.id===family);
   requireThat(t&&['csharp','unity','python','matlab'].includes(family),'Unknown initial handoff family');
-  const c=p.candidate;
-  if(family==='csharp')requireThat(same(body,{ref:'dev',inputs:{wss_run_id:c.run_id,wss_commit:c.commit,wss_artifact_id:c.artifact_id,wss_sha256:c.sha256,correlation_id:`wss-${c.run_id}-${c.artifact_id}`}}),'Initial C# handoff differs from frozen candidate');
-  else requireThat(body?.ref==='dev'&&same(Object.keys(body).sort(),['inputs','ref'])&&same(Object.keys(body.inputs||{}),['candidate_json'])&&same(JSON.parse(body.inputs.candidate_json),c),'Initial handoff differs from frozen candidate');
+  const c=p.candidate,branch=context(p,'stage').branch;
+  if(family==='csharp')requireThat(same(body,{ref:branch,inputs:{wss_run_id:c.run_id,wss_commit:c.commit,wss_artifact_id:c.artifact_id,wss_sha256:c.sha256,correlation_id:`wss-${c.run_id}-${c.artifact_id}`}}),'Initial C# handoff differs from frozen candidate');
+  else requireThat(body?.ref===branch&&same(Object.keys(body).sort(),['inputs','ref'])&&same(Object.keys(body.inputs||{}),['candidate_json'])&&same(JSON.parse(body.inputs.candidate_json),c),'Initial handoff differs from frozen candidate');
   return t;
 }
 export function initialProducerPlan(p,family,env) {
-  requireThat(family==='csharp'&&env.GITHUB_ACTIONS==='true'&&env.GITHUB_EVENT_NAME==='push'&&env.GITHUB_REPOSITORY===CORE&&env.GITHUB_REF==='refs/heads/dev'&&env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/artifacts.yml@refs/heads/dev`,'Initial in-progress handoff requires canonical Core dev producer');
+  const c=context(p,'stage');
+  requireThat(family==='csharp'&&env.GITHUB_ACTIONS==='true'&&env.GITHUB_EVENT_NAME==='push'&&env.GITHUB_REPOSITORY===CORE&&env.GITHUB_REF===c.ref&&env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/artifacts.yml@${c.ref}`,'Initial in-progress handoff requires canonical Core channel producer');
   requireThat(p.candidate.commit===env.GITHUB_SHA&&p.candidate.run_id===env.GITHUB_RUN_ID,'Initial handoff source/run mismatch');
   return p;
 }
 async function main() {
   const [command,family,source,request]=process.argv.slice(2);
-  requireThat(['check-initial','dispatch-initial'].includes(command)&&family&&source&&(command==='check-initial'?!request:Boolean(request)),'Expected check-initial family plan-or-run or dispatch-initial family plan-or-run request.json');
   const reader=new GitHub(process.env.WSS_WORKFLOW_READ_TOKEN||process.env.GH_TOKEN);
+  if(command==='check-receiver') {
+    requireThat(family&&source&&!request&&process.argv.length===5,'Expected check-receiver producer-run repository');
+    console.log(canonical(receiverAuthorization(reader,family,source)));return;
+  }
+  requireThat(['check-initial','dispatch-initial'].includes(command)&&family&&source&&(command==='check-initial'?!request:Boolean(request)),'Expected check-initial family plan-or-run or dispatch-initial family plan-or-run request.json');
   const {loadStage,validatePlan}=await import('./dev-propagation.mjs');
   let p;
   if(process.env.GITHUB_EVENT_NAME==='push') {
     p=initialProducerPlan(validatePlan(JSON.parse(readFileSync(source))),family,process.env);
+    if(p.policy.channel==='main') {
+      requireThat(process.env.WSS_ACCEPTANCE_PLAN,'Initial main handoff requires its paired local acceptance plan');
+      assertWorkflowPair(reader,JSON.parse(readFileSync(process.env.WSS_ACCEPTANCE_PLAN)),p);
+    }
   } else {
     requireThat(process.env.GITHUB_EVENT_NAME==='workflow_run'&&process.env.GITHUB_REPOSITORY===CORE&&process.env.GITHUB_REF==='refs/heads/main'&&
       process.env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/propagate-${family}.yml@refs/heads/main`,'Initial handoff requires registered trusted main workflow');
-    p=loadStage(reader,source);
+    p=loadStage(reader,source,{channel:channelContext(process.env.WSS_CI_CHANNEL||'dev').channel});
   }
   assertWorkflows(reader,p,'stage',{ids:[family]});
   if(command==='dispatch-initial') {
@@ -172,4 +269,4 @@ async function main() {
     writer.command(['api','--method','POST',`repos/${t.repository}/actions/workflows/promote-wss.yml/dispatches`,'--input',resolve(request)]);
   }
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(error=>{console.error(error.message);process.exitCode=1;});
+if(isEntrypoint(import.meta.url))main().catch(error=>{console.error(error.message);process.exitCode=1;});
