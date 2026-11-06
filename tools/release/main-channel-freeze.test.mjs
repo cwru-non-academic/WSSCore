@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {CORE,digest,plan} from './verify.mjs';
+import {readFileSync,mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {resolve,join} from 'node:path';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+import {CORE,CORE_JOBS,digest,plan} from './verify.mjs';
 import {channelContext,targetForChannel} from './channels.mjs';
-import {assertWorkflows,freezeWorkflows,freezeWorkflowPair,MAIN_SNAPSHOT_POLICY} from '../ci/workflow-freeze.mjs';
+import {assertWorkflows,freezeWorkflows,freezeWorkflowPair,receiverAuthorization,MAIN_SNAPSHOT_POLICY} from '../ci/workflow-freeze.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
 const json=x=>({type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(x)).toString('base64')});
@@ -65,4 +69,45 @@ test('family scope checks every authority role and rejects nested main worker dr
   f.heads.set(`${t.repository}:main`,sha(999));f.trees.set(`${t.repository}:${sha(999)}`,sha(998));
   assertWorkflows(f.g,p,'acceptance',{ids:['python-wrapper']});
   assert.throws(()=>assertWorkflows(f.g,p,'acceptance',{ids:['unity-wrapper']}),/Workflow tree changed/);
+});
+test('receiver authorization uses the same Core guard and completed canonical producer',()=>{
+  const f=fixture(),p=freezeWorkflows(f.g,f.acceptance,'acceptance'),repository=f.manifest.targets[0].repository;
+  const run={id:11,repository:{full_name:CORE},head_repository:{full_name:CORE},path:'.github/workflows/artifacts.yml',head_branch:'main',head_sha:p.candidate.commit,event:'push',status:'completed',conclusion:'success'};
+  f.g.run=()=>run;f.g.jobs=()=>CORE_JOBS.map(name=>({name,status:'completed',conclusion:'success'}));
+  const options={loadFrozenPlan:()=>p};
+  assert.equal(receiverAuthorization(f.g,'11',repository,options).target_id,'csharp-wrapper');
+  for(const patch of [{head_branch:'dev'},{event:'workflow_dispatch'},{status:'in_progress'},{conclusion:'failure'},{head_repository:{full_name:'fork/Core'}}]){
+    f.g.run=()=>({...run,...patch});assert.throws(()=>receiverAuthorization(f.g,'11',repository,options));
+  }
+});
+test('actual PowerShell receiver bridge executes locked Core CLI and rejects missing or invalid proof',()=>{
+  const f=fixture(),p=freezeWorkflows(f.g,f.acceptance,'acceptance'),root=mkdtempSync(join(tmpdir(),'wss receiver authorization '));
+  const core=resolve(fileURLToPath(new URL('../..',import.meta.url))),source=join(root,'target source');
+  const head=execFileSync('git',['-C',core,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+  const repository=p.manifest.targets[0].repository;
+  const producer={id:11,repository:{full_name:CORE},head_repository:{full_name:CORE},path:'.github/workflows/artifacts.yml',head_branch:'main',head_sha:p.candidate.commit,event:'push',status:'completed',conclusion:'success',run_attempt:1};
+  const preload=join(root,'read only API.mjs'),script=join(root,'actual bridge.ps1');
+  try{
+    mkdirSync(join(source,'.github/scripts'),{recursive:true});
+    writeFileSync(join(source,'.github/scripts/wss-ci.lock.json'),JSON.stringify({source_repository:CORE,source_commit:head}));
+    writeFileSync(preload,`import {GitHub} from ${JSON.stringify(pathToFileURL(join(core,'tools/release/github.mjs')).href)};
+const p=${JSON.stringify(p)},heads=${JSON.stringify(Object.fromEntries(f.heads))},trees=${JSON.stringify(Object.fromEntries(f.trees))},run=${JSON.stringify(producer)};
+if(process.argv[1]?.endsWith('workflow-freeze.mjs')&&process.env.WSS_BRIDGE_FAILURE==='process')process.exit(9);
+if(process.argv[1]?.endsWith('workflow-freeze.mjs')&&process.env.WSS_BRIDGE_FAILURE==='json'){process.stdout.write('{');process.exit(0);}
+GitHub.prototype.command=()=>{throw Error('Network and mutations forbidden in the bridge contract');};
+GitHub.prototype.download=()=>({'plan.json':Buffer.from(JSON.stringify(p))});
+GitHub.prototype.get=path=>{if(!path.includes('targets.main.json'))throw Error('Unexpected read');return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(p.manifest)).toString('base64')};};
+GitHub.prototype.run=()=>({...run,head_branch:process.env.WSS_BRIDGE_FAILURE==='channel'?'dev':'main'});
+GitHub.prototype.jobs=()=>${JSON.stringify(CORE_JOBS)}.map(name=>({name,status:'completed',conclusion:'success'}));
+GitHub.prototype.head=(repo,branch)=>repo===${JSON.stringify(CORE)}?p.candidate.commit:heads[repo+':'+branch];
+GitHub.prototype.object=(repo,ref,path)=>{if(path!=='.github/workflows')throw Error('Unexpected object');return {type:'tree',sha:trees[repo+':'+ref]};};
+`);
+    writeFileSync(script,`param([string]$Bridge)\n$ErrorActionPreference='Stop'\n. $Bridge\n$p=Assert-WssCiWorkflowAuthorization '11'\nif($p.target_id -cne 'csharp-wrapper'){throw 'Wrong actual bridge proof'}\n`);
+    const env={...process.env,NODE_OPTIONS:`--import=${pathToFileURL(preload).href}`,WSS_CI_CHANNEL:'main',WSS_TARGET_ROOT:source,WSS_CORE_TOOLS_ROOT:core,GITHUB_REPOSITORY:repository,GITHUB_ACTIONS:'true'};
+    const args=['-NoProfile','-NonInteractive','-File',script,join(core,'tools/ci/shared/Channel.ps1')];
+    execFileSync('pwsh',args,{env,stdio:'pipe'});
+    for(const mode of ['process','json','channel'])assert.throws(()=>execFileSync('pwsh',args,{env:{...env,WSS_BRIDGE_FAILURE:mode},stdio:'pipe'}));
+    writeFileSync(join(source,'.github/scripts/wss-ci.lock.json'),JSON.stringify({source_repository:CORE,source_commit:sha(999)}));
+    assert.throws(()=>execFileSync('pwsh',args,{env,stdio:'pipe'}));
+  }finally{rmSync(root,{recursive:true,force:true});}
 });

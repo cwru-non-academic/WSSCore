@@ -1,9 +1,9 @@
 // Core coordinator extension. Receiver-owned target profiles remain unchanged.
-import {readFileSync} from 'node:fs';
+import {readFileSync,existsSync,realpathSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {GitHub} from '../release/github.mjs';
-import {candidate,canonical,CORE,digest,requireThat} from '../release/verify.mjs';
+import {GitHub,loadPlan} from '../release/github.mjs';
+import {candidate,canonical,CORE,CORE_JOBS,digest,jobs,requireThat} from '../release/verify.mjs';
 import {channelContext,releaseFingerprint} from '../release/channels.mjs';
 
 export const SNAPSHOT_POLICY='wss-workflow-snapshots/v1';
@@ -129,11 +129,26 @@ export function collectWithWorkflows(g,p,collect) {
   assertWorkflows(g,p,'acceptance');
   return accepted;
 }
+// Read-only receiver entrypoint, including direct manual dispatches. Keep the
+// full workflow guard Core-owned instead of reproducing its policy in adapters.
+export function receiverAuthorization(g,producerId,repository,{loadFrozenPlan=loadPlan}={}) {
+  requireThat(/^[1-9][0-9]*$/.test(producerId)&&/^cwru-non-academic\/[A-Za-z0-9_]+$/.test(repository),'Invalid receiver authorization identity');
+  const p=loadFrozenPlan(g,producerId);
+  requireThat(p.channel==='main'&&p.candidate.run_id===producerId,'Receiver authorization requires the exact main plan');
+  const matches=p.manifest.targets.filter(t=>t.repository===repository);
+  requireThat(matches.length===1,'Receiver is not a unique canonical main target');
+  const r=g.run(CORE,producerId);
+  requireThat(r.repository?.full_name===CORE&&r.head_repository?.full_name===CORE&&r.path==='.github/workflows/artifacts.yml'&&r.head_branch==='main'&&r.head_sha===p.candidate.commit&&r.event==='push'&&r.status==='completed'&&r.conclusion==='success','Receiver requires the completed canonical main producer');
+  jobs(g.jobs(CORE,r),CORE_JOBS);
+  assertWorkflows(g,p,'acceptance',{ids:[matches[0].id]});
+  return {schema:'wss-receiver-workflow-authorization/v1',channel:'main',plan_id:p.plan_id,target_id:matches[0].id,repository,candidate:p.candidate};
+}
 
 // Preserve the existing publisher/dispatchers. The only additional write client
 // checks run at their command boundary, using a separate read-only credential.
 export function guardedWriter(writer,reader,p,kind,{ids,purpose}={}) {
   requireThat(['initial','proof','stage','publication'].includes(purpose),'Unknown guarded write purpose');
+  const c=context(p,kind);
   const allowed=new Set();
   if(purpose==='initial'||purpose==='stage')for(const t of p.policy.libraries.filter(t=>!ids||ids.includes(t.id))) {
     for(const name of purpose==='initial'?['promote-wss.yml']:[t.normal,t.fanout])allowed.add(`repos/${t.repository}/actions/workflows/${name}/dispatches`);
@@ -148,10 +163,11 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose}={}) {
       if(!read) {
         if(purpose==='publication') {
           const at=name=>args.indexOf(name);
-          requireThat(args[0]==='release'&&args[1]==='create'&&args[2]===`dev-beta-${p.candidate.run_id}-${p.plan_id.slice(0,12)}`&&
-            at('--repo')>2&&args[at('--repo')+1]===CORE&&at('--target')>2&&args[at('--target')+1]===p.candidate.commit&&args.includes('--prerelease')&&
-            ['--repo','--target','--prerelease','--title','--notes'].every(flag=>args.filter(a=>a===flag).length===1)&&
-            args.filter(a=>a.startsWith('--')).every(a=>['--repo','--target','--prerelease','--title','--notes'].includes(a)),'Unsupported guarded publication mutation');
+          const flags=['--repo','--target',...(c.kind==='beta'?['--prerelease']:[]),'--title','--notes'];
+          requireThat(args[0]==='release'&&args[1]==='create'&&args[2]===releaseFingerprint(c.channel,p.candidate.run_id,p.plan_id)&&
+            at('--repo')>2&&args[at('--repo')+1]===CORE&&at('--target')>2&&args[at('--target')+1]===p.candidate.commit&&
+            flags.every(flag=>args.filter(a=>a===flag).length===1)&&
+            args.filter(a=>a.startsWith('--')).every(a=>flags.includes(a)),'Unsupported guarded publication mutation');
         } else {
           requireThat(args[0]==='api'&&args[1]==='--method'&&args[2]==='POST'&&allowed.has(args[3]),'Unsupported guarded dispatch mutation');
           if(purpose==='initial') {
@@ -168,12 +184,12 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose}={}) {
             }
             if(purpose==='proof') {
               const receipt=args[3].endsWith('/release-receipt.yml/dispatches');
-              requireThat(same(fields,receipt?{ref:'dev','inputs[producer_run_id]':p.candidate.run_id,'inputs[plan_id]':p.plan_id}:{ref:'dev'}),'Guarded proof inputs differ from frozen plan');
+              requireThat(same(fields,receipt?{ref:c.branch,'inputs[producer_run_id]':p.candidate.run_id,'inputs[plan_id]':p.plan_id}:{ref:c.branch}),'Guarded proof inputs differ from frozen plan');
             } else {
               const t=p.policy.libraries.find(t=>args[3].startsWith(`repos/${t.repository}/`));
               const normal=args[3].endsWith(`/${t.normal}/dispatches`);
-              requireThat(normal?same(fields,{ref:'dev'}):same(Object.keys(fields).sort(),['inputs[barrier_attempt]','inputs[barrier_run_id]','inputs[producer_run_id]','ref'])&&
-                fields.ref==='main'&&fields['inputs[producer_run_id]']===p.candidate.run_id&&/^[1-9][0-9]*$/.test(fields['inputs[barrier_run_id]'])&&/^[1-9][0-9]*$/.test(fields['inputs[barrier_attempt]']),'Guarded stage inputs differ from frozen authorization');
+              requireThat(normal?same(fields,{ref:c.branch}):same(Object.keys(fields).sort(),['inputs[barrier_attempt]','inputs[barrier_run_id]',...(c.channel==='main'?['inputs[channel]']:[]),'inputs[producer_run_id]','ref'].sort())&&
+                (c.channel!=='main'||fields['inputs[channel]']==='main')&&fields.ref==='main'&&fields['inputs[producer_run_id]']===p.candidate.run_id&&/^[1-9][0-9]*$/.test(fields['inputs[barrier_run_id]'])&&/^[1-9][0-9]*$/.test(fields['inputs[barrier_attempt]']),'Guarded stage inputs differ from frozen authorization');
             }
           }
         }
@@ -189,20 +205,25 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose}={}) {
 export function initialRequest(p,family,body) {
   const t=p.policy.libraries.find(t=>t.id===family);
   requireThat(t&&['csharp','unity','python','matlab'].includes(family),'Unknown initial handoff family');
-  const c=p.candidate;
-  if(family==='csharp')requireThat(same(body,{ref:'dev',inputs:{wss_run_id:c.run_id,wss_commit:c.commit,wss_artifact_id:c.artifact_id,wss_sha256:c.sha256,correlation_id:`wss-${c.run_id}-${c.artifact_id}`}}),'Initial C# handoff differs from frozen candidate');
-  else requireThat(body?.ref==='dev'&&same(Object.keys(body).sort(),['inputs','ref'])&&same(Object.keys(body.inputs||{}),['candidate_json'])&&same(JSON.parse(body.inputs.candidate_json),c),'Initial handoff differs from frozen candidate');
+  const c=p.candidate,branch=context(p,'stage').branch;
+  if(family==='csharp')requireThat(same(body,{ref:branch,inputs:{wss_run_id:c.run_id,wss_commit:c.commit,wss_artifact_id:c.artifact_id,wss_sha256:c.sha256,correlation_id:`wss-${c.run_id}-${c.artifact_id}`}}),'Initial C# handoff differs from frozen candidate');
+  else requireThat(body?.ref===branch&&same(Object.keys(body).sort(),['inputs','ref'])&&same(Object.keys(body.inputs||{}),['candidate_json'])&&same(JSON.parse(body.inputs.candidate_json),c),'Initial handoff differs from frozen candidate');
   return t;
 }
 export function initialProducerPlan(p,family,env) {
-  requireThat(family==='csharp'&&env.GITHUB_ACTIONS==='true'&&env.GITHUB_EVENT_NAME==='push'&&env.GITHUB_REPOSITORY===CORE&&env.GITHUB_REF==='refs/heads/dev'&&env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/artifacts.yml@refs/heads/dev`,'Initial in-progress handoff requires canonical Core dev producer');
+  const c=context(p,'stage');
+  requireThat(family==='csharp'&&env.GITHUB_ACTIONS==='true'&&env.GITHUB_EVENT_NAME==='push'&&env.GITHUB_REPOSITORY===CORE&&env.GITHUB_REF===c.ref&&env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/artifacts.yml@${c.ref}`,'Initial in-progress handoff requires canonical Core channel producer');
   requireThat(p.candidate.commit===env.GITHUB_SHA&&p.candidate.run_id===env.GITHUB_RUN_ID,'Initial handoff source/run mismatch');
   return p;
 }
 async function main() {
   const [command,family,source,request]=process.argv.slice(2);
-  requireThat(['check-initial','dispatch-initial'].includes(command)&&family&&source&&(command==='check-initial'?!request:Boolean(request)),'Expected check-initial family plan-or-run or dispatch-initial family plan-or-run request.json');
   const reader=new GitHub(process.env.WSS_WORKFLOW_READ_TOKEN||process.env.GH_TOKEN);
+  if(command==='check-receiver') {
+    requireThat(family&&source&&!request&&process.argv.length===5,'Expected check-receiver producer-run repository');
+    console.log(canonical(receiverAuthorization(reader,family,source)));return;
+  }
+  requireThat(['check-initial','dispatch-initial'].includes(command)&&family&&source&&(command==='check-initial'?!request:Boolean(request)),'Expected check-initial family plan-or-run or dispatch-initial family plan-or-run request.json');
   const {loadStage,validatePlan}=await import('./dev-propagation.mjs');
   let p;
   if(process.env.GITHUB_EVENT_NAME==='push') {
@@ -220,4 +241,4 @@ async function main() {
     writer.command(['api','--method','POST',`repos/${t.repository}/actions/workflows/promote-wss.yml/dispatches`,'--input',resolve(request)]);
   }
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(error=>{console.error(error.message);process.exitCode=1;});
+if(process.argv[1]&&existsSync(process.argv[1])&&import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href)main().catch(error=>{console.error(error.message);process.exitCode=1;});
