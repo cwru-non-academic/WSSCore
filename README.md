@@ -1228,6 +1228,49 @@ match. Partial/mismatched releases block; assets are never overwritten or delete
 The release retains original candidate identity, acceptance merges, proof digests
 and plan/manifest IDs. ZIP bytes are downloaded and hashed again, never rebuilt.
 
+### Rerun receipt verification
+
+For `dev-release.yml` or `main-release.yml`, rerun **Verify fresh acceptance
+receipts** when checking whether the original candidate now has all required proof.
+Choose an acceptance workflow run, not the universal-build producer run.
+
+In GitHub:
+
+1. Open **Actions**, select the Dev or Main acceptance workflow, and open its run.
+2. In the run's jobs list, select **Verify fresh acceptance receipts**.
+3. Use that job's rerun menu. Select the individual job, rather than rerunning the
+   entire workflow or all failed jobs.
+
+With GitHub CLI, replace `RUN_ID` with that acceptance run's ID:
+
+```powershell
+gh run view RUN_ID --repo cwru-non-academic/WSSCore --json jobs --jq '.jobs[] | {name, databaseId}'
+gh run rerun RUN_ID --job VERIFY_JOB_DATABASE_ID --repo cwru-non-academic/WSSCore
+```
+
+Use the `databaseId` for **Verify fresh acceptance receipts** from the first
+command. It is a job ID, not `RUN_ID`, the producer ID, or a number copied from a
+browser job URL. Look it up again when selecting a job from a later attempt.
+
+The job retains reconciliation's original producer ID and reloads its immutable
+plan plus live receipt, merge and CI evidence using read-only cross-repository
+credentials. It does not select a newer producer when proof is missing. The
+upstream reconciliation execution is retained: this selected-job rerun does not
+dispatch normal CI or receipt workflows. GitHub also considers dependent jobs,
+but the publication guard blocks publication on reruns. Successful verification
+retains an attempt-specific acceptance artifact; it does not publish a release.
+
+Missing, expired, ambiguous or invalid proof leaves verification failed. Rerunning
+verification does not create receipts or launch their prerequisites. A changed
+candidate, branch head or frozen authority can also invalidate the original run;
+a rerun does not bypass those checks.
+
+Runs keep their original workflow revision. A run without the separate job cannot
+acquire it by rerunning. GitHub requires repository write access and permits
+reruns within 30 days of the original run; its other rerun limits still apply.
+See [GitHub job rerun instructions](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs)
+and the [CLI job-ID reference](https://cli.github.com/manual/gh_run_rerun).
+
 ### Historical tag guard
 
 Removing today's tag trigger cannot change historical workflow definitions. A new
