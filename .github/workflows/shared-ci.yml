@@ -48,6 +48,8 @@ jobs:
             Write-Output "$name=$display"
           }
       - run: node --test tools/release/*.test.mjs tools/ci/sync-tooling.test.mjs tools/ci/adapter-pins.test.mjs tools/ci/workflow-freeze-receiver.test.mjs
+      - name: Reject independently edited channel controller workflows
+        run: node tools/ci/channel-workflows.mjs check
       - shell: pwsh
         run: |
           Get-ChildItem tools/ci/shared -File -Filter '*.ps1' | ForEach-Object {

@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {allClear,bytesDigest,canonical,CORE,CORE_JOBS,digest,plan,TARGETS} from './verify.mjs';
 import {collect,freeze,GitHub,publish} from './github.mjs';
 import {tagPolicy} from './policy.mjs';
+import {channelContext,releaseFingerprint} from './channels.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
 const successful=names=>names.map(name=>({name,status:'completed',conclusion:'success'}));
@@ -13,17 +14,18 @@ function tagRule() {return{id:123,target:'tag',enforcement:'active',source_type:
 function run(repo,workflow,n,head,event='workflow_dispatch') {
   return {id:n,repository:{full_name:repo},head_repository:{full_name:repo},path:workflow,head_sha:head,head_branch:'dev',event,status:'completed',conclusion:'success',run_attempt:1};
 }
-function fixture() {
-  const manifest=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
+function fixture(channel='dev') {
+  const context=channelContext(channel);
+  const manifest=JSON.parse(readFileSync(new URL(`./targets.${channel}.json`,import.meta.url)));
   manifest.legacy_tag_guard={ruleset_id:'123',policy_sha256:digest(tagPolicy(tagRule()))};
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(Buffer.from('zip'))};
-  const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:sha(2),trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,sha(3)]))}]))};
+  const body={schema:context.planSchema,channel,candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:sha(2),trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,sha(3)]))}]))};
   const p={...body,plan_id:digest(body)};
   const e={producer:{run:run(CORE,'.github/workflows/artifacts.yml',1,sha(1),'push'),current_head:sha(1),jobs:successful(CORE_JOBS),artifact:{id:2,name:'universal-release-assets',expired:false,workflow_run:{id:1,head_sha:sha(1)}},archive_sha256:candidate.sha256},targets:{}};
   manifest.targets.forEach((t,i)=>{
     const merge=sha(10+i),head=sha(30+i),normal=100+i,emitter=200+i;
     const parents=Object.fromEntries(Object.keys(t.parents).map(id=>[id,sha(10+TARGETS.indexOf(id))]));
-    const r={schema:'wss-acceptance-receipt/v1',plan_id:p.plan_id,channel:'dev',target_id:t.id,candidate,mode:'merged-pr',
+    const r={schema:context.receiptSchema,plan_id:p.plan_id,channel,target_id:t.id,candidate,mode:'merged-pr',
       merge:{pr_number:String(i+1),sha:merge,head_sha:head},normal_ci:{run_id:String(normal),attempt:1},
       preflights:[{repository:t.repository,run_id:String(300+i),source_sha:sha(2),workflow:'.github/workflows/wss-preflight.yml'}],
       parents,emitter:{run_id:String(emitter),attempt:1,source_sha:merge,workflow:'.github/workflows/release-receipt.yml'},coverage:t.coverage};
@@ -34,6 +36,11 @@ function fixture() {
       preflights:[{run:run(t.repository,r.preflights[0].workflow,300+i,sha(2)),candidate}]};
     e.targets[t.id].receipt_sha256=bytesDigest(e.targets[t.id].receipt_bytes);
   });
+  e.producer.run.head_branch=channel;
+  for(const target of Object.values(e.targets)){
+    target.pr.base.ref=channel;target.normal_run.head_branch=channel;target.emitter_run.head_branch=channel;
+    for(const preflight of target.preflights)preflight.run.head_branch=channel;
+  }
   return {p,e};
 }
 function sync(e) {for(const t of Object.values(e.targets)){t.receipt_bytes=Buffer.from(JSON.stringify(t.receipt));t.receipt_sha256=bytesDigest(t.receipt_bytes);}}
@@ -43,6 +50,11 @@ test('all nine exact merged consumers generate an explicit beta acceptance recor
   assert.ok(r.targets['unity-gui'].coverage.includes('dotnet-harness-not-unity-editor'));
   assert.ok(r.targets['matlab-wrapper'].coverage.includes('packaged-macos-ble-load'));
   assert.equal(r.targets['matlab-cli'].parents['matlab-wrapper'],r.targets['matlab-wrapper'].merge.sha);
+});
+test('main requires all nine actual main merges and produces stable acceptance, not dev evidence',()=>{
+  const f=fixture('main'),accepted=allClear(f.p,f.e);
+  assert.equal(accepted.kind,'stable');assert.equal(accepted.channel,'main');assert.equal(accepted.schema,'wss-release-acceptance/v2');assert.equal(Object.keys(accepted.targets).length,9);
+  for(const mutate of [g=>g.e.producer.run.head_branch='dev',g=>g.e.targets['python-cli'].pr.base.ref='dev',g=>g.e.targets['csharp-cli'].normal_run.head_branch='dev',g=>g.e.targets['unity-gui'].emitter_run.head_branch='dev',g=>g.e.targets['matlab-wrapper'].preflights[0].run.head_branch='dev',g=>delete g.e.targets['python-ros']]){const g=fixture('main');mutate(g);assert.throws(()=>allClear(g.p,g.e));}
 });
 test('successful synthetic PR run cannot substitute for actual postmerge normal CI',()=>{
   const {p,e}=fixture();const n=e.targets['csharp-cli'];n.normal_run.event='pull_request';n.normal_run.head_sha=n.receipt.merge.head_sha;
@@ -118,7 +130,7 @@ test('publication never overwrites a tag without a matching complete release',()
 function collectorFixture(f) {
   const {p,e}=f,entries=()=>Object.values(e.targets),target=repo=>entries().find(t=>t.normal_run.repository.full_name===repo);
   return {
-    head:repo=>repo===CORE?e.producer.current_head:target(repo).current_head,
+    head:(repo,branch='dev')=>{assert.equal(branch,p.channel,'Collector must read the selected branch explicitly');return repo===CORE?e.producer.current_head:target(repo).current_head;},
     run:(repo,id)=>repo===CORE?e.producer.run:[...entries().flatMap(t=>[t.normal_run,t.emitter_run,...t.preflights.map(x=>x.run)])].find(r=>r.repository.full_name===repo&&String(r.id)===id),
     jobs:(repo,r)=>repo===CORE?e.producer.jobs:target(repo).normal_jobs,
     artifact:(repo,id)=>repo===CORE?e.producer.artifact:target(repo).artifact,
@@ -165,12 +177,12 @@ test('collector rejects a receipt selecting a different exact-head normal run',(
   };
   assert.throws(()=>collect(g,f.p),/different from receipt/);
 });
-for(const corrupt of [false,true]) test(`existing release ${corrupt?'rejects altered ZIP without a mutation':'replays as verified no-op without creating another release'}`,()=>{
-  const {p,e}=fixture(),tag=`dev-beta-${p.candidate.run_id}-${p.plan_id.slice(0,12)}`,record=allClear(p,e);
+for(const channel of ['dev','main'])for(const corrupt of [false,true]) test(`existing ${channel} release ${corrupt?'rejects altered ZIP without a mutation':'replays as verified no-op without creating another release'}`,()=>{
+  const {p,e}=fixture(channel),tag=releaseFingerprint(channel,p.candidate.run_id,p.plan_id),record=allClear(p,e);
   const files={[p.candidate.archive]:Buffer.from('zip'),'SHA256SUMS.txt':Buffer.from(`${p.candidate.sha256}  ${p.candidate.archive}\n`)};
   const expected={...files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical({...record,tag,legacy_tag_guard:p.manifest.legacy_tag_guard})+'\n')};
   let mutations=0;
-  const g={get:()=>tagRule(),pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/${tag}`,object:{type:'commit',sha:p.candidate.commit}}]:[{tag_name:tag,prerelease:true,draft:false,assets:Object.keys(expected).map(name=>({name}))}],command:args=>{
+  const g={get:()=>tagRule(),pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/${tag}`,object:{type:'commit',sha:p.candidate.commit}}]:[{tag_name:tag,prerelease:channel==='dev',draft:false,assets:Object.keys(expected).map(name=>({name}))}],command:args=>{
     if(args[0]==='release'&&args[1]==='download'){
       const directory=args[args.indexOf('--dir')+1];
       for(const [name,bytes]of Object.entries(expected))writeFileSync(join(directory,name),corrupt&&name===p.candidate.archive?Buffer.from('corrupt'):bytes);
@@ -198,15 +210,15 @@ test('verification mode does not ignore malformed tag protection configuration',
   assert.throws(()=>freeze({},p.manifest,p.candidate,{verificationOnly:true}),/unconfigured/);
 });
 
-test('publisher recollects cross-repository proof with its separate reader',()=>{
-  const f=fixture(),reader=collectorFixture(f),get=reader.get;
+for(const channel of ['dev','main'])test(`${channel} publisher recollects cross-repository proof with its separate reader`,()=>{
+  const f=fixture(channel),reader=collectorFixture(f),get=reader.get;
   reader.get=path=>path.includes('/rulesets/')?tagRule():get(path);
   const accepted=collect(reader,f.p),writes=[];
   const writer={pages:path=>{
     assert.ok(path.startsWith(`repos/${CORE}/`),'Core publication token must not read downstream evidence');
     return [];
   },command:args=>{
-    assert.deepEqual(args.slice(0,2),['release','create']);assert.ok(args.includes(CORE));writes.push(args);
+    assert.deepEqual(args.slice(0,2),['release','create']);assert.ok(args.includes(CORE));assert.equal(args.includes('--prerelease'),channel==='dev');assert.ok(args[2].startsWith(channel==='dev'?'dev-beta-':'main-stable-'));writes.push(args);
   }};
   const directory=mkdtempSync(join(tmpdir(),'wss-publication-boundary-'));
   try {

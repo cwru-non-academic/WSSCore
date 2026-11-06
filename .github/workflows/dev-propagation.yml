@@ -17,6 +17,11 @@ on:
         type: choice
         options: [verify, reconcile]
         default: verify
+env:
+  WSS_CI_CHANNEL: dev
+  WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
+  WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
+
 permissions:
   contents: read
   actions: read
@@ -72,14 +77,14 @@ jobs:
           PRODUCER_RUN: ${{ inputs.producer_run_id }}
         run: node tools/ci/dev-propagation.mjs prepare "$PRODUCER_RUN" "$RUNNER_TEMP/dev-stage"
       - name: Retain dispatch intent before any write token or POST
-        if: github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile'
+        if: (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.stage.outputs.artifact_name }}
           path: ${{ runner.temp }}/dev-stage/intent.json
           if-no-files-found: error
       - name: Retain all-integration authorization
-        if: steps.stage.outputs.barrier == 'true' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
+        if: steps.stage.outputs.barrier == 'true' && ((github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile'))
         uses: actions/upload-artifact@v4
         with:
           name: wss-integration-barrier-${{ steps.stage.outputs.producer_run_id }}-a${{ github.run_attempt }}
@@ -89,8 +94,8 @@ jobs:
     name: Reconcile committed CI or authorized application promotion
     needs: prepare
     if: >-
-      needs.prepare.outputs.actions != '0' &&
-      (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
+      true && needs.prepare.outputs.actions != '0' &&
+      ((github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

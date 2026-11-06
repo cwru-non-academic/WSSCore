@@ -1,0 +1,5 @@
+{
+  "schema": "wss-ci-channel-activation/v1",
+  "dev": true,
+  "main": false
+}

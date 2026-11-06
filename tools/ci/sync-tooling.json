@@ -15,8 +15,8 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "82e52b49af0224313231eaea50867bab1cd66e11",
-      "ref": "refs/heads/ci/tooling/82e52b49af0224313231eaea50867bab1cd66e11"
+      "commit": "5caa943d5472a4709e4eb77176650acbef52d8a4",
+      "ref": "refs/heads/ci/tooling/5caa943d5472a4709e4eb77176650acbef52d8a4"
     }
   },
   "files": {
@@ -139,6 +139,18 @@
     ".github/scripts/wss-ci/Preflight.ps1": {
       "origin": "integration",
       "path": ".github/scripts/wss-ci/Preflight.ps1"
+    },
+    ".github/scripts/wss-ci/channels.mjs": {
+      "origin": "core",
+      "path": "tools/release/channels.mjs"
+    },
+    ".github/scripts/wss-ci/Channel.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/Channel.ps1"
+    },
+    ".github/scripts/wss-ci/entrypoint.mjs": {
+      "origin": "core",
+      "path": "tools/release/entrypoint.mjs"
     }
   }
 }

@@ -13,7 +13,7 @@ test('copied source identity cannot hide stale executable integration or Core pi
   assert.throws(()=>verifyWorkflowPins({repository,profiles,lock,files:{'release-receipt.yml':files['release-receipt.yml'].replace(sha(1),sha(8))}},g),/Core workflow pin/);
 });
 test('execution config and default-main differences fail even when script copies match',()=>{
-  for(const path of ['.github/scripts','.github/python-ci.json']){
+  for(const path of ['.github/scripts','.github/python-ci.json','.github/dev-propagation.json','.github/main-propagation.json']){
     const changed={...g,object:(_r,ref,p)=>({sha:ref===sha(5)&&p===path?sha(8):sha(6)})};
     assert.throws(()=>verifyWorkflowPins({repository,profiles,lock,files},changed),/Pinned integration tooling/);
   }
@@ -45,6 +45,14 @@ test('C# runtime gitlink expressions and trusted branch checkouts stay distinct 
   const p={wrapper:{...profiles.wrapper,family:'csharp'},app:{...profiles.app,family:'csharp'}};
   const data={repository,profiles:p,lock,files:{'release-receipt.yml':`repository: ${parent}\nref: main\n`,'runtime.yml':`repository: ${parent}\nref: \${{ inputs.integration_sha }}\n`}};
   assert.equal(verifyWorkflowPins(data,{head:()=>{throw Error('Must not reinterpret runtime sources as tool pins');}}).references,0);
+});
+test('an immutable C# owner pin checks the real bootstrap config on BOTH branches',()=>{
+  const p={wrapper:{...profiles.wrapper,family:'csharp'},app:{...profiles.app,family:'csharp'}};
+  const data={repository,profiles:p,lock,files:{'promote-integration.yml':`repository: ${parent}\nref: ${sha(3)}\n`}};
+  const paths=[];
+  assert.equal(verifyWorkflowPins(data,{...g,object:(repo,ref,path)=>{paths.push(path);assert.notEqual(path,'.github/csharp-ci.json');return {sha:sha(6)};}}).references,1);
+  assert.ok(paths.includes('.github/universal-bootstrap.json'));
+  assert.throws(()=>verifyWorkflowPins(data,{...g,object:(repo,ref,path)=>({sha:ref===sha(5)&&path==='.github/universal-bootstrap.json'?sha(9):sha(6)})}),/Pinned integration tooling/);
 });
 test('Unity reusable workers must match the registered workflow blob as well as scripts and config',()=>{
   const p={wrapper:{...profiles.wrapper,family:'unity'},app:{...profiles.app,family:'unity'}};

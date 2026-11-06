@@ -1,10 +1,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,renameSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {expectedLock,check,sourceBytes} from './sync-tooling.mjs';
 
 test('synchronized consumer rejects code drift and a forged tooling lock',()=>{
@@ -25,6 +25,23 @@ test('synchronized consumer rejects code drift and a forged tooling lock',()=>{
     const lockPath=join(root,'.github/scripts/wss-ci.lock.json');
     writeFileSync(lockPath,JSON.stringify(lock));
     check(repository,root);
+    // Exercise only the registered output: no source checkout or untracked
+    // dependency can accidentally make the receiver import closure succeed.
+    assert.ok(lock.files['.github/scripts/wss-ci/channels.mjs']);
+    assert.ok(lock.files['.github/scripts/wss-ci/Channel.ps1']);
+    const module=name=>pathToFileURL(join(root,'.github/scripts/wss-ci',name)).href;
+    for(const name of ['channels.mjs','verify.mjs','github.mjs','receipt.mjs','promotion.mjs','staging.mjs','preflight.mjs'])
+      execFileSync(process.execPath,['--input-type=module','-e',`await import(${JSON.stringify(module(name))})`],{cwd:root,stdio:'pipe'});
+    assert.equal(execFileSync(process.execPath,['--input-type=module','-e',`await import(${JSON.stringify(module('verify.mjs'))})`,'wss-policy-assertion-only'],{cwd:root,encoding:'utf8'}),'','Importing through an assertion sentinel must not enter the channel CLI');
+    const bridgeTest=join(root,'channel invocation.ps1');
+    writeFileSync(bridgeTest,`param([string]$Bridge)\n$ErrorActionPreference='Stop'\n. $Bridge\nforeach($channel in @('dev','main')){if((Get-WssCiChannelContext $channel).channel -cne $channel){throw 'Wrong copied channel'}}\n`);
+    execFileSync('pwsh',['-NoProfile','-NonInteractive','-File',bridgeTest,join(root,'.github/scripts/wss-ci/Channel.ps1')],{cwd:root,stdio:'pipe'});
+    const channelPath=join(root,'.github/scripts/wss-ci/channels.mjs');
+    renameSync(channelPath,channelPath+'.missing');
+    assert.throws(()=>check(repository,root),/ENOENT|no such file|could not open/i);
+    assert.throws(()=>execFileSync(process.execPath,['--input-type=module','-e',`await import(${JSON.stringify(module('verify.mjs'))})`],{cwd:root,stdio:'pipe'}));
+    assert.throws(()=>execFileSync('pwsh',['-NoProfile','-NonInteractive','-File',bridgeTest,join(root,'.github/scripts/wss-ci/Channel.ps1')],{cwd:root,stdio:'pipe'}));
+    renameSync(channelPath+'.missing',channelPath);
     const path=join(root,'.github/scripts/wss-ci/verify.mjs'),original=readFileSync(path);
     writeFileSync(path,Buffer.concat([original,Buffer.from('\nthrow Error("drift");\n')]));
     assert.throws(()=>check(repository,root),/Shared CI drift/);
