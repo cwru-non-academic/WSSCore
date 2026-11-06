@@ -1,0 +1,67 @@
+name: Dispatch __WSS_LABEL__ WSS promotion
+on:
+  workflow_run:
+    workflows: [Build universal WSS release]
+    types: [completed]
+    branches: [__WSS_BRANCHES__]
+permissions:
+  contents: read
+  actions: read
+env:
+  WSS_CI_CHANNEL: ${{ github.event.workflow_run.head_branch }}
+concurrency:
+  group: __WSS_FAMILY__-producer-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    name: Dispatch __WSS_LABEL__ Integration promotion
+    if: >-
+      github.repository == 'cwru-non-academic/WSSCore' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      (__WSS_ENABLED_BRANCHES__) &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate canonical producer, family readiness and correlated attempt
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/dev-propagation.mjs initial __WSS_FAMILY__ "$RUNNER_TEMP/__WSS_FAMILY__-handoff"
+      - name: Check frozen workflow trees before write credentials
+        if: steps.prepare.outputs.dispatch_needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/workflow-freeze.mjs check-initial __WSS_FAMILY__ '${{ github.event.workflow_run.id }}'
+      - name: Create existing App token for this integration only
+        if: steps.prepare.outputs.dispatch_needed == 'true'
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: __WSS_REPOSITORY__
+          permission-actions: write
+      - name: Dispatch once; inspect uncertain outcomes before retry
+        if: steps.prepare.outputs.dispatch_needed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          WSS_WORKFLOW_READ_TOKEN: ${{ github.token }}
+        run: node tools/ci/workflow-freeze.mjs dispatch-initial __WSS_FAMILY__ '${{ github.event.workflow_run.id }}' "$RUNNER_TEMP/__WSS_FAMILY__-handoff/dispatch.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: __WSS_FAMILY__-handoff-record
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/__WSS_FAMILY__-handoff/candidate.json
+            ${{ runner.temp }}/__WSS_FAMILY__-handoff/dispatch.json
