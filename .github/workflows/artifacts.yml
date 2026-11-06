@@ -507,7 +507,6 @@ jobs:
     if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && github.repository == 'cwru-non-academic/WSSCore' }}
     env:
       WSS_CI_CHANNEL: ${{ github.ref_name }}
-      WSS_ACCEPTANCE_PLAN: ${{ runner.temp }}/release-plan/plan.json
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -547,6 +546,7 @@ jobs:
             const c=channelContext(process.env.WSS_CI_CHANNEL);
             const a=channelActivation(JSON.parse(fs.readFileSync("tools/ci/channel-activation.json")));
             if(!a[c.channel])throw Error("Producer channel is not activated");
+            fs.appendFileSync(process.env.GITHUB_ENV,`WSS_ACCEPTANCE_PLAN=${process.env.RUNNER_TEMP}/release-plan/plan.json\n`);
             fs.appendFileSync(process.env.GITHUB_OUTPUT,`stage_artifact=${c.stageArtifact}\npublication_variable=${publicationControls()[c.channel]}\n`);
           '
       - name: Freeze exact candidate and channel plans before any downstream writes
