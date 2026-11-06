@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [dev, main, net2_BLE]
   push:
-    branches: [dev]
+    branches: [dev, main]
   workflow_dispatch:
 
 permissions:
