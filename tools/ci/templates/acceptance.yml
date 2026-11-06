@@ -124,22 +124,69 @@ jobs:
           WSS_JOURNAL_READ_TOKEN: ${{ steps.evidence-token.outputs.token }}
           WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
         run: node tools/release/cli.mjs dispatch '${{ steps.producer.outputs.run_id }}' '${{ runner.temp }}/dispatch-intent/intent.json'
+
+  verify:
+    name: Verify fresh acceptance receipts
+    needs: reconcile
+    if: needs.reconcile.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Create read-only cross-repository evidence token
+        id: evidence-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: |
+            WSSCore
+            CSharp_WSS_Integration_Lib
+            CLI_CSharp_WSS_Application
+            Unity_WSS_Integration_Lib
+            GUI_Unity_WSS_Application
+            Python_WSS_Integration_Lib
+            CLI_Python_WSS_Application
+            ROS_Python_WSS_Application
+            Matlab_WSS_Integration_Lib
+            CLI_Matlab_WSS_Application
+          permission-contents: read
+          permission-actions: read
+          permission-pull-requests: read
+      - name: Require the original selected producer
+        env:
+          PRODUCER_RUN_ID: ${{ needs.reconcile.outputs.producer_run_id }}
+        run: |
+          if [[ ! "$PRODUCER_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo 'Missing or invalid original reconciliation producer output' >&2
+            exit 1
+          fi
       - name: Collect actual merge receipts and verify every required target
         env:
           GH_TOKEN: ${{ steps.evidence-token.outputs.token }}
-        run: node tools/release/cli.mjs verify '${{ steps.producer.outputs.run_id }}' '${{ runner.temp }}/accepted'
+          PRODUCER_RUN_ID: ${{ needs.reconcile.outputs.producer_run_id }}
+        run: node tools/release/cli.mjs verify "$PRODUCER_RUN_ID" '${{ runner.temp }}/accepted'
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: __WSS_CHANNEL__-release-acceptance-${{ steps.producer.outputs.run_id || github.run_id }}
+          name: __WSS_CHANNEL__-release-acceptance-${{ needs.reconcile.outputs.producer_run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/accepted/acceptance.json
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   publish:
     name: Publish exact accepted __WSS_KIND__ bytes only when explicitly enabled
-    needs: reconcile
+    needs: [reconcile, verify]
     if: >-
-      __WSS_ENABLED__ && (__WSS_RECONCILE__) && needs.reconcile.result == 'success' &&
+      __WSS_ENABLED__ && (__WSS_RECONCILE__) && github.run_attempt == 1 &&
+      needs.reconcile.result == 'success' && needs.verify.result == 'success' &&
       vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true' &&
       vars.__WSS_PUBLICATION_VARIABLE__ == 'true'
     runs-on: ubuntu-latest
