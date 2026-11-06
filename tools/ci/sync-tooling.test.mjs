@@ -32,6 +32,7 @@ test('synchronized consumer rejects code drift and a forged tooling lock',()=>{
     const module=name=>pathToFileURL(join(root,'.github/scripts/wss-ci',name)).href;
     for(const name of ['channels.mjs','verify.mjs','github.mjs','receipt.mjs','promotion.mjs','staging.mjs','preflight.mjs'])
       execFileSync(process.execPath,['--input-type=module','-e',`await import(${JSON.stringify(module(name))})`],{cwd:root,stdio:'pipe'});
+    assert.equal(execFileSync(process.execPath,['--input-type=module','-e',`await import(${JSON.stringify(module('verify.mjs'))})`,'wss-policy-assertion-only'],{cwd:root,encoding:'utf8'}),'','Importing through an assertion sentinel must not enter the channel CLI');
     const bridgeTest=join(root,'channel invocation.ps1');
     writeFileSync(bridgeTest,`param([string]$Bridge)\n$ErrorActionPreference='Stop'\n. $Bridge\nforeach($channel in @('dev','main')){if((Get-WssCiChannelContext $channel).channel -cne $channel){throw 'Wrong copied channel'}}\n`);
     execFileSync('pwsh',['-NoProfile','-NonInteractive','-File',bridgeTest,join(root,'.github/scripts/wss-ci/Channel.ps1')],{cwd:root,stdio:'pipe'});
