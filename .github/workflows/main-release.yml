@@ -2,6 +2,12 @@ name: Reconcile main acceptance and optional stable publication
 run-name: Reconcile main stable candidate ${{ inputs.producer_run_id || github.event.workflow_run.id || 'current-main' }}
 
 on:
+  workflow_run:
+    workflows: [Build universal WSS release]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '27 * * * *'
   workflow_dispatch:
     inputs:
       producer_run_id:
@@ -79,21 +85,21 @@ jobs:
           REQUESTED_RUN: ${{ inputs.producer_run_id || github.event.workflow_run.id }}
         run: node tools/release/select-producer.mjs
       - name: Prepare read-only reconciliation intents
-        if: false
+        if: (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
         id: reconciliation
         env:
           GH_TOKEN: ${{ steps.evidence-token.outputs.token }}
           WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
         run: node tools/release/cli.mjs prepare-dispatches '${{ steps.producer.outputs.run_id }}' '${{ runner.temp }}/dispatch-intent'
       - name: Retain dispatch intent before any cross-repository request
-        if: false
+        if: (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.reconciliation.outputs.artifact_name }}
           path: ${{ runner.temp }}/dispatch-intent/intent.json
           if-no-files-found: error
       - name: Create receipt reconciliation Actions token
-        if: false
+        if: (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
         id: receipt-token
         uses: actions/create-github-app-token@v2
         with:
@@ -112,7 +118,7 @@ jobs:
             CLI_Matlab_WSS_Application
           permission-actions: write
       - name: Reconcile existing merges with fresh normal CI and read-only receipts
-        if: false
+        if: (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
         env:
           GH_TOKEN: ${{ steps.receipt-token.outputs.token }}
           WSS_JOURNAL_READ_TOKEN: ${{ steps.evidence-token.outputs.token }}
@@ -133,7 +139,7 @@ jobs:
     name: Publish exact accepted stable bytes only when explicitly enabled
     needs: reconcile
     if: >-
-      false && (false) && needs.reconcile.result == 'success' &&
+      true && ((github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')) && needs.reconcile.result == 'success' &&
       vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true' &&
       vars.WSS_DEV_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest

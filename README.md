@@ -122,7 +122,7 @@ See [consumer integration requirements](#consumer-integration-reference).
 ## CI and releases
 
 `.github/workflows/artifacts.yml` runs for PRs targeting `dev`, `main`, or
-`net2_BLE`, manual dispatch, and ordinary dev pushes. `Core conformance` runs the
+`net2_BLE`, manual dispatch, and ordinary dev or main pushes. `Core conformance` runs the
 functional suite once on Linux. `Build and validate artifacts` builds its own inputs
 on `windows-2022` and validates one universal ZIP without functional suites.
 `Core consumer` and `Serial consumer` jobs run on Windows/Linux/macOS;
