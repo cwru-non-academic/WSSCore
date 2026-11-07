@@ -1,0 +1,73 @@
+name: Test variable snapshot readiness (not production)
+run-name: WSS local snapshot readiness ${{ github.ref_name }}
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  readiness:
+    name: Authenticate representative local snapshot
+    if: github.repository == 'cwru-non-academic/WSSCore' && github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Authenticate controller and closed immutable registry before App use
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --input-type=module -e "import {GitHub} from './tools/release/github.mjs'; import {readinessAuthority} from './tools/release/test-variable-snapshot-readiness.mjs'; readinessAuthority(new GitHub());"
+      - uses: actions/create-github-app-token@v2
+        id: snapshot
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: Python_WSS_Integration_Lib
+          permission-actions: write
+          permission-contents: read
+      - name: Prepare readiness-only intent
+        if: github.run_attempt == 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_READINESS_TOKEN: ${{ steps.snapshot.outputs.token }}
+        run: node tools/release/test-variable-snapshot-readiness.mjs prepare "$env:RUNNER_TEMP/readiness-intent"
+      - uses: actions/upload-artifact@v4
+        if: github.run_attempt == 1
+        with:
+          name: wss-readiness-variable-intent
+          path: ${{ runner.temp }}/readiness-intent/intent.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 90
+      - name: Authenticate durable intent and dispatch once
+        if: github.run_attempt == 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_READINESS_TOKEN: ${{ steps.snapshot.outputs.token }}
+        run: node tools/release/test-variable-snapshot-readiness.mjs dispatch "$env:RUNNER_TEMP/readiness-dispatch"
+      - name: Authenticate real local workflow and archive
+        if: github.run_attempt == 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_READINESS_TOKEN: ${{ steps.snapshot.outputs.token }}
+        run: node tools/release/test-variable-snapshot-readiness.mjs collect "$env:RUNNER_TEMP/readiness-report"
+      - uses: actions/upload-artifact@v4
+        if: github.run_attempt == 1
+        with:
+          name: wss-readiness-variable-report
+          path: ${{ runner.temp }}/readiness-report/report.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 90
+      - name: Independently reload readiness report (never production evidence)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_READINESS_TOKEN: ${{ steps.snapshot.outputs.token }}
+        run: node tools/release/test-variable-snapshot-readiness.mjs load "$env:RUNNER_TEMP/readiness-verified"
