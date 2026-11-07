@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {CORE,CORE_JOBS,bytesDigest,digest} from './verify.mjs';
 import {channelContext} from './channels.mjs';
-import {restartRequest,restartPath,prepareRestart,assertRestartEvidence,assertRequestChange,assertRestartPlans,checkRestartRunner,assertRestartSource} from './campaign-restart.mjs';
+import {restartRequest,restartPath,prepareRestart,assertRestartEvidence,assertRequestChange,assertRestartPlans,checkRestartRunner,assertRestartSource,assertPreparationBranch} from './campaign-restart.mjs';
 const sha=n=>String(n).padStart(40,'0');
 const rehash=p=>{const {plan_id,...body}=p;return {...body,plan_id:digest(body)};};
 const seal=r=>{const {request_id,...body}=r;return {...body,request_id:digest(body)};};
@@ -142,4 +142,20 @@ test('historical success can recover a failed request-only checkpoint without st
   state.current=[product,record];state.ancestry.status='diverged';assert.throws(()=>assertRestartSource(f.g,source,head),/ancestor/);
   state.ancestry.status='ahead';state.old=[product,record];state.current=[product,{...record,sha:sha(6)}];assert.throws(()=>assertRestartSource(f.g,source,head),/modified/);
   state.current=[product];assert.throws(()=>assertRestartSource(f.g,source,head),/removed/);
+});
+
+test('preparation is repeatable only on the exact source or its single existing request commit',()=>{
+  const path=restartPath(fixture().prepare()),base={expected:sha(1),head:sha(1),parent:sha(2),changes:[],path};
+  assertPreparationBranch(base);
+  assertPreparationBranch({...base,head:sha(3),parent:sha(1),changes:[`A\t${path}`]});
+  assert.throws(()=>assertPreparationBranch({...base,head:sha(3)}),/exact expected/);
+  assert.throws(()=>assertPreparationBranch({...base,head:sha(3),changes:[`A\t${path}`]}),/single existing/);
+  assert.throws(()=>assertPreparationBranch({...base,head:sha(3),parent:sha(1),changes:[`A\t${path}`,'M\tREADME.md']}));
+});
+test('exact receiver check is repeated after classification and before write credentials',()=>{
+  const workflow=readFileSync(new URL('../../.github/workflows/artifacts.yml',import.meta.url),'utf8');
+  const boundary=workflow.indexOf('Recheck requested receiver heads immediately before write credentials');
+  assert.ok(boundary>workflow.indexOf('Classify all frozen integration projections'));
+  assert.ok(boundary<workflow.indexOf('Create Integration dispatch-only App token'));
+  assert.match(workflow.slice(boundary,workflow.indexOf('Create Integration dispatch-only App token')),/campaign-restart-cli.mjs check-frozen/);
 });

@@ -697,6 +697,14 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.projection-token.outputs.token }}
         run: node tools/ci/workflow-freeze.mjs check-initial csharp '${{ runner.temp }}/propagation-plan/plan.json'
+      - name: Recheck requested receiver heads immediately before write credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
+        run: >-
+          node tools/release/campaign-restart-cli.mjs check-frozen
+          '${{ runner.temp }}/release-plan/plan.json'
+          '${{ runner.temp }}/propagation-plan/plan.json'
       - name: Create Integration dispatch-only App token
         id: integration-token
         uses: actions/create-github-app-token@v2

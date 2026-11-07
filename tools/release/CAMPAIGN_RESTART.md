@@ -78,7 +78,8 @@ revalidates the whole `event.before` to new-head range, requires the request's
 expected head to be the direct first parent, and requires the sole tree change
 to be the added request record. It checks live Core/receiver heads before
 freezing and checks the new paired plans against the requested receiver heads
-before uploading plans or acquiring downstream write credentials. Existing
+before uploading plans, then again after projection classification immediately
+before acquiring downstream write credentials. Existing
 workflow-tree and current-head guards remain active at the actual dispatch.
 
 ## Races, retries, and limits

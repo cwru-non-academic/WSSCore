@@ -145,3 +145,10 @@ export function checkRestartRunner(g,{env,event:e,git}) {
   requireThat(g.head(CORE,channel)===live,'Core moved while validating restart');
   return {request:r,head};
 }
+
+export function assertPreparationBranch({expected,head,parent,changes,path}) {
+  requireThat(sha(expected)&&sha(head),'Invalid preparation source');
+  requireThat(changes.length===0?head===expected:
+    changes.length===1&&changes[0]===`A\t${path}`&&parent===expected,
+    'Preparation branch must be the exact expected head or its single existing request commit');
+}
