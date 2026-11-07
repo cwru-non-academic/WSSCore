@@ -2,7 +2,7 @@
 // product campaign must reuse its authenticated lock instead of resolving latest.
 import {prepareCiContext,loadCiContext} from './ci-test-context-artifact.mjs';
 import {resolveTestSelection,verifyTestSelection} from './test-selection.mjs';
-import {readRepositoryTestVariables} from './repository-test-variables.mjs';
+import {normalizeEffectiveTestVariables} from '../release/local-test-variable-snapshot.mjs';
 import {readFileSync,writeFileSync,mkdirSync,appendFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isEntrypoint} from '../release/entrypoint.mjs';
@@ -64,10 +64,11 @@ if(isEntrypoint(import.meta.url)) {
   if(operation==='select'||operation==='load') {
     const raw=first==='-'?null:JSON.parse(readFileSync(first,'utf8').replace(/^\uFEFF/,''));
     const productCandidate=raw?(raw.candidate||raw):null;
-    // Read repository-only settings just like the producer; inherited org or
-    // environment variables must not silently choose a different test source.
-    const variables=()=>{requireThat(process.env.WSS_TEST_VARIABLE_READ_TOKEN,'Repository variable read token unavailable');return readRepositoryTestVariables(new GitHub(process.env.WSS_TEST_VARIABLE_READ_TOKEN),run.repository);};
-    const input={channel,targetId,policy,variables,run,productCandidate,mode:third||'committed'};
+    // Named effective vars are supplied by the reviewed repository-local resolver
+    // job, with no environment declaration. Missing opt-in is not an unset pin.
+    // Deferred callback preserves campaign and durable-context recovery without reread.
+    const variables=()=>{requireThat(process.env.WSS_LOCAL_TEST_VARIABLES_SCHEMA==='wss-effective-test-variables/v1','Reviewed local effective-variable capture is unavailable');return normalizeEffectiveTestVariables(process.env);};
+    const input={channel,targetId,policy,variables,run,productCandidate,mode:third||'committed',variableSemantics:'effective-org-repository/no-environment/v1'};
     const verify=value=>{requireThat(value.selection.channel===channel,'Durable CI channel mismatch');requireThat(value.scope!=='campaign'||productCandidate,'Durable campaign context requires the exact product candidate');return verifyCiTestBinding(value,policy,targetId,run,value.selection_id,g,{expectedCandidate:productCandidate||undefined});};
     requireThat(process.env.GITHUB_OUTPUT,'CI selection requires runner output context');
     if(operation==='select') {

@@ -1,7 +1,7 @@
 import {freezeCampaign} from './campaign-freeze.mjs';
 import {testSelectionPolicy} from './campaign-test-selection.mjs';
 import {prepareProducerTestSelection,loadProducerTestSelection} from './campaign-selection-artifact.mjs';
-import {readTestVariableSnapshots} from '../ci/repository-test-variables.mjs';
+import {collectCampaignVariableSnapshots} from './campaign-variable-snapshots.mjs';
 import {appendFileSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {GitHub,archive,collect,freeze,loadPlan,publish} from './github.mjs';
@@ -28,9 +28,8 @@ try {
     const c=JSON.parse(readFileSync(candidateFile)),m=JSON.parse(readFileSync(manifestFile)),context=channelContext(m.channel);
     requireThat(activation[context.channel]===true&&testSelectionPolicy(m),'Test selection policy must be explicitly activated by the producer');
     const policy=JSON.parse(readFileSync(new URL('../ci/'+context.channel+'-propagation.json',import.meta.url)));
-    const prepared=prepareProducerTestSelection(g,m,policy,c,{resolveSnapshots:targets=>{
-      requireThat(process.env.WSS_TEST_VARIABLE_READ_TOKEN,'Repository variable read token is unavailable; no unset-variable fallback');
-      return readTestVariableSnapshots(new GitHub(process.env.WSS_TEST_VARIABLE_READ_TOKEN),{targets});
+    const prepared=prepareProducerTestSelection(g,m,policy,c,{resolveGitHub:new GitHub(process.env.WSS_TEST_SNAPSHOT_READ_TOKEN),resolveSnapshots:targets=>{
+      return collectCampaignVariableSnapshots(g,c,m.channel,targets);
     }});
     if(prepared.created){mkdirSync(destination,{recursive:true});writeFileSync(join(destination,'selection.json'),JSON.stringify(prepared.document,null,2)+'\n',{flag:'wx'});}
     requireThat(process.env.GITHUB_OUTPUT,'Producer selection requires runner output context');

@@ -50,7 +50,7 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
       GitHub.prototype.command=function(){throw Error('Real network transport is forbidden by this test');};
     `);
     const script=fileURLToPath(new URL('./ci-test-selection.mjs',import.meta.url)),output=join(dir,'selection'),githubOutput=join(dir,'github-output');
-    const env={...process.env,GH_TOKEN:'',WSS_TEST_VARIABLE_READ_TOKEN:campaign?'':'read-only-test-token',WSS_CONSUMER_TEST_FIXTURE:dataPath,GITHUB_ACTIONS:'true',GITHUB_REPOSITORY:repository,GITHUB_SHA:productSha,GITHUB_RUN_ID:'99',GITHUB_RUN_ATTEMPT:'1',GITHUB_REF:campaign?'refs/heads/dev':'refs/pull/7/merge',GITHUB_BASE_REF:campaign?'':'dev',GITHUB_WORKFLOW_REF:`${repository}/.github/workflows/ci.yml@${campaign?'refs/heads/dev':'refs/pull/7/merge'}`,GITHUB_WORKFLOW_SHA:productSha,GITHUB_EVENT_NAME:campaign?'workflow_dispatch':'pull_request',GITHUB_OUTPUT:githubOutput,WSS_CI_CHANNEL:'dev'};
+    const env={...process.env,GH_TOKEN:'',WSS_LOCAL_TEST_VARIABLES_SCHEMA:campaign?'':'wss-effective-test-variables/v1',WSS_USE_PIN_TESTS:'false',WSS_CONSUMER_TEST_FIXTURE:dataPath,GITHUB_ACTIONS:'true',GITHUB_REPOSITORY:repository,GITHUB_SHA:productSha,GITHUB_RUN_ID:'99',GITHUB_RUN_ATTEMPT:'1',GITHUB_REF:campaign?'refs/heads/dev':'refs/pull/7/merge',GITHUB_BASE_REF:campaign?'':'dev',GITHUB_WORKFLOW_REF:`${repository}/.github/workflows/ci.yml@${campaign?'refs/heads/dev':'refs/pull/7/merge'}`,GITHUB_WORKFLOW_SHA:productSha,GITHUB_EVENT_NAME:campaign?'workflow_dispatch':'pull_request',GITHUB_OUTPUT:githubOutput,WSS_CI_CHANNEL:'dev'};
     const invoke=(args,extra={})=>execFileSync(process.execPath,['--import',pathToFileURL(stub).href,script,...args],{encoding:'utf8',env:{...env,...extra},stdio:['ignore','pipe','pipe']});
     const candidatePath=join(dir,'candidate.json');writeFileSync(candidatePath,JSON.stringify(candidate));
     assert.throws(()=>invoke(['select',targetId,campaign?candidatePath:'-',join(dir,'wrong-channel'),campaign?'candidate':'committed'],{WSS_CI_CHANNEL:'main'}),/actual target branch/);
@@ -59,7 +59,7 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
     writeFileSync(data.saved,readFileSync(join(output,'context.json')));
     const loaded=join(dir,'loaded');invoke(['load',targetId,campaign?candidatePath:'-',loaded,campaign?'candidate':'committed']);
     writeFileSync(dataPath,JSON.stringify({...data,testSha:'f'.repeat(40)}));
-    const retry=join(dir,'retry');invoke(['select',targetId,campaign?candidatePath:'-',retry,campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2',WSS_TEST_VARIABLE_READ_TOKEN:''});
+    const retry=join(dir,'retry');invoke(['select',targetId,campaign?candidatePath:'-',retry,campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2',WSS_LOCAL_TEST_VARIABLES_SCHEMA:'',WSS_USE_PIN_TESTS:'invalid'});
     writeFileSync(dataPath,JSON.stringify(data));
     assert.equal(JSON.parse(readFileSync(join(retry,'context.json'))).context.selection_id,JSON.parse(readFileSync(data.saved)).context.selection_id);
     const contextPath=join(loaded,'context.json'),context=JSON.parse(readFileSync(contextPath,'utf8'));
@@ -72,7 +72,7 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
     assert.throws(()=>invoke(['inspect',targetId,contextPath,rootsPath],{WSS_TEST_SELECTION_ID:'d'.repeat(64)}),/prerequisite output/);
     for(const fault of ['missing','duplicate','expired','late','artifact-run','artifact-head','workflow','attempt']) {
       writeFileSync(dataPath,JSON.stringify({...data,fault}));
-      assert.throws(()=>invoke(['select',targetId,campaign?candidatePath:'-',join(dir,`bad-${fault}`),campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2',WSS_TEST_VARIABLE_READ_TOKEN:''}),undefined,fault);
+      assert.throws(()=>invoke(['select',targetId,campaign?candidatePath:'-',join(dir,`bad-${fault}`),campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2',WSS_LOCAL_TEST_VARIABLES_SCHEMA:'',WSS_USE_PIN_TESTS:'invalid'}),undefined,fault);
     }
     writeFileSync(dataPath,JSON.stringify(data));
     const original=JSON.parse(readFileSync(data.saved));
@@ -90,6 +90,6 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
     writeFileSync(data.saved,JSON.stringify({...original,attempt:2}));
     assert.throws(()=>invoke(['select',targetId,campaign?candidatePath:'-',join(dir,'bad-creator'),campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2'}),/envelope/);
     writeFileSync(data.saved,JSON.stringify(original));
-    const calls=readFileSync(data.log,'utf8').trim().split('\n');assert.deepEqual(calls,campaign?['plan','plan','plan','plan','plan','plan']:['variables']);
+    const calls=campaign?readFileSync(data.log,'utf8').trim().split('\n'):[];assert.deepEqual(calls,campaign?['plan','plan','plan','plan','plan','plan']:[]);
   } finally {rmSync(dir,{recursive:true,force:true});}
 });

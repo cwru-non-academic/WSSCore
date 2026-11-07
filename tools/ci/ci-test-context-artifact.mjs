@@ -26,7 +26,7 @@ function existing(g,input,auth) {
   const created=Date.parse(a.created_at),start=Date.parse(first.run_started_at),end=Date.parse(first.updated_at);
   requireThat(Number.isFinite(created)&&Number.isFinite(start)&&created>=start&&(auth.attempt===1||(first.status==='completed'&&Number.isFinite(end)&&created<=end)),'CI context artifact was not published in first attempt');
   const document=JSON.parse(g.download(run.repository,run.run_id,name,['context.json'])['context.json']);
-  requireThat(document.schema==='wss-ci-test-context/v1'&&document.attempt===1&&same(document.identity,auth.identity)&&same(Object.keys(document).sort(),['attempt','context','identity','schema']),'CI context envelope/policy/run mismatch');
+  requireThat(['wss-ci-test-context/v1','wss-ci-test-context/v2'].includes(document.schema)&&document.attempt===1&&same(document.identity,auth.identity)&&same(Object.keys(document).sort(),document.schema==='wss-ci-test-context/v2'?['attempt','context','identity','schema','variable_semantics']:['attempt','context','identity','schema'])&&(document.schema!=='wss-ci-test-context/v2'||document.variable_semantics==='effective-org-repository/no-environment/v1'),'CI context envelope/policy/run mismatch');
   return {created:false,artifact_name:name,document,context:document.context};
 }
 // No token writes. The workflow uploads once with overwrite:false, then calls
@@ -36,7 +36,7 @@ export async function prepareCiContext(g,input,{env=process.env,select,verify}={
   if(saved){await verify(saved.context);return saved;}
   requireThat(auth.attempt===1,'Previous CI attempt has no durable test context; inspect recovery');
   const context=await select();
-  return {created:true,artifact_name:ciContextArtifact(input.targetId),context,document:{schema:'wss-ci-test-context/v1',attempt:1,identity:auth.identity,context}};
+  return {created:true,artifact_name:ciContextArtifact(input.targetId),context,document:{schema:input.variableSemantics?'wss-ci-test-context/v2':'wss-ci-test-context/v1',...(input.variableSemantics?{variable_semantics:input.variableSemantics}:{}),attempt:1,identity:auth.identity,context}};
 }
 export async function loadCiContext(g,input,{env=process.env,verify}={}) {
   const saved=existing(g,input,authority(g,input,env));

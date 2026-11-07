@@ -11,13 +11,15 @@ test('producer durably uploads the selection before independent paired freeze an
   assert.doesNotMatch(workflow.slice(persist,freeze),/overwrite:\s*true/);
   assert.ok(cli.indexOf('loadProducerTestSelection(g,m,stagePolicy,c)')<cli.indexOf('freezeCampaign(g,m,stagePolicy,c'));
 });
-test('variable token is read-only, narrowly scoped and absent on later attempts',()=>{
-  const start=workflow.indexOf('Read repository variables only'),end=workflow.indexOf('Prepare or reuse',start),block=workflow.slice(start,end);
+test('snapshot token uses existing Actions grant and durable intent precedes dispatch',()=>{
+  const start=workflow.indexOf('Create existing Actions-write snapshot dispatch token'),end=workflow.indexOf('Prepare or reuse',start),block=workflow.slice(start,end);
   assert.match(block,/test_selection_enabled == 'true' && github.run_attempt == 1/);
   assert.match(block,/repositories: \$\{\{ steps.channel.outputs.test_selection_repositories \}\}/);
-  assert.match(block,/permission-variables: read/);
-  assert.doesNotMatch(block,/permission-[a-z-]+: write/);
-  assert.match(cli,/Repository variable read token is unavailable; no unset-variable fallback/);
+  assert.match(block,/permission-actions: write/);
+  assert.match(block,/permission-contents: read/);
+  assert.doesNotMatch(workflow,/permission-variables:/);
+  assert.match(cli,/collectCampaignVariableSnapshots/);
+  assert.ok(workflow.indexOf('name: wss-test-variable-intents')<start);
 });
 test('legacy channel flow remains separate and selected campaigns require both plans',()=>{
   assert.match(workflow,/Main or selected-test campaign requires both frozen acceptance and stage plans/);

@@ -1,3 +1,4 @@
+import {createSnapshotRequest,SNAPSHOT_WORKFLOW} from './local-test-variable-snapshot.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -63,4 +64,20 @@ for(const [name,mutate] of Object.entries({
 });
 test('paired freeze cannot resolve an active policy from current variables implicitly',()=>{
   const f=fixture();assert.throws(()=>freezeCampaign({},f.m,f.policy,f.c,{verificationOnly:true}),/authenticated durable/);
+});
+
+for(const channel of ['dev','main'])test(`${channel} effective v2 captures persist and recover without settings/source reread`,()=>{
+ const f=fixture(channel),variables={},captures={};
+ for(const t of f.m.targets){
+  const request=createSnapshotRequest({schema:'wss-local-test-variable-request/v1',channel,producer:{repository:CORE,commit:f.c.commit,run_id:f.c.run_id,attempt:1},target:{id:t.id,repository:t.repository},source:{ref:`refs/heads/${channel}`,commit:sha(2),workflow:SNAPSHOT_WORKFLOW,workflow_blob:sha(3),actor_id:'123'},nonce:'a'.repeat(64)});
+  variables[t.id]={WSS_USE_PIN_TESTS:'false'};
+  captures[t.id]={request,settings:variables[t.id],binding:{request_id:request.request_id,run_id:'99',artifact_id:'100',archive_digest:'sha256:'+'b'.repeat(64),document_digest:'c'.repeat(64)}};
+ }
+ const prepared=prepareProducerTestSelection(f.g,f.m,f.policy,f.c,{env:f.env,resolveSnapshots:()=>({schema:'wss-authenticated-effective-variables/v1',variables,captures})});
+ assert.equal(prepared.document.schema,'wss-test-selection-artifact/v2');assert.equal(f.state.heads,1);
+ f.state.document=prepared.document;f.state.artifacts=[f.artifact];f.env.GITHUB_RUN_ATTEMPT='2';f.run.run_attempt=2;
+ const result=prepareProducerTestSelection(f.g,f.m,f.policy,f.c,{env:f.env,resolveSnapshots:()=>assert.fail('recaptured settings')});
+ assert.equal(result.created,false);assert.equal(result.selection.selection_id,prepared.selection.selection_id);assert.equal(f.state.heads,1);
+ f.state.document.captures[f.m.targets[0].id].binding.request_id='d'.repeat(64);
+ assert.throws(()=>loadProducerTestSelection(f.g,f.m,f.policy,f.c,{env:f.env}),/capture binding/);
 });

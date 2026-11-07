@@ -159,6 +159,18 @@
     ".github/scripts/wss-ci/entrypoint.mjs": {
       "origin": "core",
       "path": "tools/release/entrypoint.mjs"
+    },
+    ".github/scripts/wss-ci/local-test-variable-snapshot.mjs": {
+      "origin": "core",
+      "path": "tools/release/local-test-variable-snapshot.mjs"
+    },
+    ".github/scripts/wss-ci/capture-test-variables.mjs": {
+      "origin": "core",
+      "path": "tools/ci/shared/capture-test-variables.mjs"
+    },
+    ".github/workflows/test-variable-snapshot.yml": {
+      "origin": "core",
+      "path": "tools/ci/shared/test-variable-snapshot.yml"
     }
   }
 }

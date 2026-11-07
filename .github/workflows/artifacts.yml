@@ -584,23 +584,57 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_ENV,`WSS_ACCEPTANCE_PLAN=${process.env.RUNNER_TEMP}/release-plan/plan.json\n`);
             fs.appendFileSync(process.env.GITHUB_OUTPUT,`stage_artifact=${c.stageArtifact}\npublication_variable=${publicationControls()[c.channel]}\n`);
           '
-      - name: Read repository variables only for the first enabled campaign attempt
+      - name: Prepare immutable local variable requests
         if: steps.channel.outputs.test_selection_enabled == 'true' && github.run_attempt == 1
-        id: test-variable-token
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . ./tools/ci/shared/Channel.ps1
+          $context=Get-WssCiChannelContext
+          node tools/release/campaign-variable-snapshots.mjs prepare "$env:RUNNER_TEMP/candidate.json" $context.targetPolicy "$env:RUNNER_TEMP/test-variable-intents"
+          if($LASTEXITCODE -ne 0){throw 'Snapshot intent preparation failed'}
+      - name: Persist intents before snapshot dispatch
+        if: steps.channel.outputs.test_selection_enabled == 'true' && github.run_attempt == 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: wss-test-variable-intents
+          path: ${{ runner.temp }}/test-variable-intents/intents.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 90
+      - name: Create existing Actions-write snapshot dispatch token
+        if: steps.channel.outputs.test_selection_enabled == 'true' && github.run_attempt == 1
+        id: test-snapshot-token
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ vars.WSS_GITHUB_APP_ID }}
           private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
           owner: cwru-non-academic
           repositories: ${{ steps.channel.outputs.test_selection_repositories }}
-          permission-variables: read
+          permission-actions: write
+          permission-contents: read
+      - name: Dispatch local snapshots once and await immutable evidence
+        if: steps.channel.outputs.test_selection_enabled == 'true' && github.run_attempt == 1
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_TEST_SNAPSHOT_DISPATCH_TOKEN: ${{ steps.test-snapshot-token.outputs.token }}
+          WSS_TEST_SNAPSHOT_READ_TOKEN: ${{ steps.test-snapshot-token.outputs.token }}
+        run: |
+          . ./tools/ci/shared/Channel.ps1
+          $context=Get-WssCiChannelContext
+          node tools/release/campaign-variable-snapshots.mjs dispatch "$env:RUNNER_TEMP/candidate.json" $context.targetPolicy "$env:RUNNER_TEMP/test-variable-intents"
+          if($LASTEXITCODE -ne 0){throw 'Snapshot dispatch failed or uncertain; no retry'}
+          node tools/release/campaign-variable-snapshots.mjs wait "$env:RUNNER_TEMP/candidate.json" $context.targetPolicy "$env:RUNNER_TEMP/test-variable-intents"
+          if($LASTEXITCODE -ne 0){throw 'Snapshot collection failed; no handoff'}
       - name: Prepare or reuse the authenticated frozen test selection
         if: steps.channel.outputs.test_selection_enabled == 'true'
         id: test-selection
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          WSS_TEST_VARIABLE_READ_TOKEN: ${{ steps.test-variable-token.outputs.token }}
+          WSS_TEST_SNAPSHOT_READ_TOKEN: ${{ steps.test-snapshot-token.outputs.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           . ./tools/ci/shared/Channel.ps1
