@@ -6,17 +6,13 @@ import {freezeWorkflows,freezeWorkflowPair} from '../ci/workflow-freeze.mjs';
 import {canonical,requireThat} from './verify.mjs';
 import {testSelectionPolicy,selectionRequest,assertPairedTestSelection} from './campaign-test-selection.mjs';
 
-// resolveSnapshots is supplied by a controller with authenticated repository-var
-// access. No permissions are expanded and no failed read means "unset".
-export function freezeCampaign(g,manifest,policy,candidate,{selectionPath,resolveSnapshots,verificationOnly=false}={}) {
+// testSelection must come from loadProducerTestSelection after durable upload.
+// This entrypoint never resolves current settings or branch tips itself.
+export function freezeCampaign(g,manifest,policy,candidate,{testSelection,verificationOnly=false}={}) {
   requireThat(manifest.channel===policy.channel,'Campaign policies use different channels');
   const required=testSelectionPolicy(manifest);
   requireThat(canonical(required)===canonical(testSelectionPolicy(policy)),'Campaign policies must share one reviewed test source policy');
-  let testSelection;
-  if(required) {
-    requireThat(typeof selectionPath==='string'&&selectionPath.length>0,'Campaign selection needs a durable create-only lock path');
-    testSelection=resolveCampaignTestSelection(g,manifest,candidate,selectionPath,resolveSnapshots);
-  }
+  requireThat(!required||testSelection,'Load the authenticated durable test selection before paired freeze');
   // Selection is locked before either receiver snapshot or workflow freeze.
   const a=freeze(g,manifest,candidate,{verificationOnly,testSelection});
   const s=freezeStage(g,policy,candidate,{freeze:false,testSelection});

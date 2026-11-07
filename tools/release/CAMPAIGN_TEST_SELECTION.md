@@ -13,17 +13,25 @@ have exactly `id`, `repository`, `default_test_repository`, and
 manifest and staging family destinations. The repository identifies the owner
 of the executable test bundle, not the product source or merely its fixtures.
 
-`freezeCampaign` in `campaign-freeze.mjs` obtains one selection before freezing
-either plan. Its injected `resolveSnapshots(targets)` returns a complete map of
-target IDs to the three repository-variable values. A failed/unauthorized read
-must throw, never be represented as unset. No implicit cross-repository variable
-access or org/environment inheritance is supplied by this module.
+`prepareProducerTestSelection` in `campaign-selection-artifact.mjs` authenticates
+this exact running Core push producer, immutable policies, and runner attempt.
+It reuses the unique unexpired `wss-test-selection` artifact if present. Only a
+first attempt with no artifact may invoke the injected repository snapshot
+reader and resolve refs. API failures, expired/duplicate/corrupt artifacts, and
+absence on later attempts fail closed without reading variables or test refs.
 
-`selectionPath` is a create-only durable lock. Reuse checks campaign identity,
-policy, and digest without querying variables or moving refs. Controllers must
-persist and authenticate that lock across runner attempts before calling this
-API; a fresh runner path is not cross-run persistence. Never reconstruct a
-missing lock for an existing campaign from current variables or branch tips.
+Upload `result.document` as the sole `selection.json` file only when
+`result.created` is true. This versioned envelope binds the canonical producer,
+creating attempt 1, and full selection. Then independently call
+`loadProducerTestSelection` to authenticate and read the uploaded artifact.
+Pass its return value as `testSelection` into `freezeCampaign` before either
+plan freezes. `freezeCampaign` never resolves fresh variables or refs itself.
+No initial handoff may occur until durable upload and both freezes succeed.
+
+`resolveCampaignTestSelection` also offers create-only local lock reuse for
+library/offline callers. Local lock existence is not authenticated cross-run
+persistence and is not a substitute for the producer artifact flow above.
+
 Both plans embed the full `test_selection` and `test_selection_id`. New-policy
 plans missing either fail closed, including after their plan hash is recomputed.
 Paired freezes reject different policies or selection bytes. Immutable producer
@@ -60,9 +68,9 @@ receipt bytes, and publication guards remain mandatory.
 3. Verify a least-privilege repository-variable reader and connect it through
    `resolveSnapshots`; do not expand permissions implicitly or trust a caller's
    unverified snapshot file. The current CLI intentionally has no active reader.
-4. Add authenticated cross-attempt lock persistence/recovery and pass its path
-   into the paired freeze controller. First-run creation and retry recovery must
-   distinguish absence from an inaccessible or expired previous artifact.
+4. Wire producer prepare/upload/independent-load steps into the workflow and
+   pass the authenticated selection to the paired freeze controller. Never
+   overwrite or delete an existing selection artifact during retry recovery.
 5. Review identical policy allowlists in both producer policy files, exercise
    actual normal/preflight/receipt artifacts, then opt in. Do not activate policy
    merely because these dormant library contracts pass.
