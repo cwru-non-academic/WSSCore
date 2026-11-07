@@ -5,6 +5,7 @@ import {assertPairedTestSelection} from './campaign-test-selection.mjs';
 import {channelContext} from './channels.mjs';
 
 export const RESTART_DIRECTORY='tools/ci/campaign-restarts/';
+const RECORD_PATH=/^tools\/ci\/campaign-restarts\/(dev|main)\/[a-f0-9]{64}\.json$/;
 const same=(a,b)=>canonical(a)===canonical(b);
 const sha=x=>typeof x==='string'&&/^[a-f0-9]{40}$/.test(x);
 const hash=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
@@ -57,6 +58,7 @@ export function assertRestartSource(g,source,expectedHead) {
   const old=inventory(source),current=inventory(expectedHead);
   const product=rows=>rows.filter(x=>!x.path.startsWith(RESTART_DIRECTORY));
   requireThat(same(product(old),product(current)),'Historical predecessor changes product/tooling/policy source');
+  for(const entry of [...old,...current].filter(x=>x.path.startsWith(RESTART_DIRECTORY)))requireThat(RECORD_PATH.test(entry.path)&&entry.type==='blob'&&entry.mode==='100644','Historical restart namespace contains an invalid record path/mode');
   const prior=new Map(old.filter(x=>x.path.startsWith(RESTART_DIRECTORY)).map(x=>[x.path,x]));
   const now=new Map(current.filter(x=>x.path.startsWith(RESTART_DIRECTORY)).map(x=>[x.path,x]));
   for(const [path,entry] of prior)requireThat(same(now.get(path),entry),'Historical restart record was modified or removed');
@@ -107,9 +109,21 @@ export function assertRestartPlans(r,a,s) {
   for(const t of s.policy.libraries)requireThat(same(s.receivers[t.id]?.heads,r.receivers[t.repository]),'Stage snapshots differ from requested receivers');
 }
 
-function changed(git,base,head) {
-  return git('diff','--no-renames','--name-status',base,head).split('\n').filter(Boolean).map(line=>{const [status,path]=line.split('\t');return {status,path};});
+export function parseChangedPaths(output) {
+  if(output==='')return [];
+  const fields=output.split('\0');
+  requireThat(fields.pop()===''&&fields.length%2===0,'Malformed NUL-delimited Git change list');
+  const changes=[];
+  for(let i=0;i<fields.length;i+=2) {
+    requireThat(/^[A-Z]$/.test(fields[i])&&fields[i+1].length>0,'Unexpected Git change status/path');
+    changes.push({status:fields[i],path:fields[i+1]});
+  }
+  return changes;
 }
+function changed(git,base,head) {
+  return parseChangedPaths(git('diff','--no-renames','--name-status','-z',base,head));
+}
+
 export function checkRestartRunner(g,{env,event:e,git}) {
   requireThat(env.GITHUB_ACTIONS==='true'&&env.GITHUB_REPOSITORY===CORE,'Restart validation requires the canonical repository runner');
   let channel,base,head;
@@ -123,6 +137,7 @@ export function checkRestartRunner(g,{env,event:e,git}) {
     requireThat(/^[a-f0-9]{40}$/.test(base)&&!/^0+$/.test(base),'Push requires an existing exact before source');
   } else return null; // Noncanonical dispatch still cannot hand off.
   const changes=changed(git,base,head),allRecords=changes.filter(c=>c.path.startsWith(RESTART_DIRECTORY));
+  requireThat(allRecords.every(c=>RECORD_PATH.test(c.path)),'Restart namespace requires exact channel/digest record paths');
   requireThat(allRecords.every(c=>c.status==='A'),'Restart records are immutable; modification/deletion is forbidden');
   const records=allRecords.filter(c=>c.path.startsWith(`${RESTART_DIRECTORY}${channel}/`));
   for(const entry of allRecords.filter(c=>!records.includes(c))) {

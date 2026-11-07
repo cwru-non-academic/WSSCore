@@ -3,8 +3,8 @@ import {existsSync,mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {GitHub} from './github.mjs';
 import {canonical,requireThat} from './verify.mjs';
-import {prepareRestart,restartPath,assertRestartPlans,checkRestartRunner,assertPreparationBranch} from './campaign-restart.mjs';
-const git=(...args)=>execFileSync('git',args,{encoding:'utf8',maxBuffer:16*1024*1024}).trimEnd();
+import {prepareRestart,restartPath,assertRestartPlans,checkRestartRunner,assertPreparationBranch,parseChangedPaths} from './campaign-restart.mjs';
+const git=(...args)=>{const out=execFileSync('git',args,{encoding:'utf8',maxBuffer:16*1024*1024});return args.includes('-z')?out:out.trimEnd();};
 const json=path=>JSON.parse(readFileSync(path,'utf8'));
 
 try {
@@ -14,9 +14,9 @@ try {
 
     requireThat(!['dev','main','HEAD'].includes(git('rev-parse','--abbrev-ref','HEAD')),'Use a dedicated request branch, never a protected channel or detached HEAD');
     const r=prepareRestart(g,{channel:args[0],runId:args[1],expectedHead:args[2],reason:args[3]}),path=restartPath(r);
-    const changes=git('diff','--name-status',args[2],'HEAD').split('\n').filter(Boolean);
+    const changes=parseChangedPaths(git('diff','--no-renames','--name-status','-z',args[2],'HEAD')).map(x=>`${x.status}\t${x.path}`);
     assertPreparationBranch({expected:args[2],head:git('rev-parse','HEAD'),parent:git('rev-parse','HEAD^1'),changes,path});
-    const dirty=git('status','--porcelain','--untracked-files=all').split('\n').filter(Boolean);
+    const dirty=git('status','--porcelain=v1','-z','--untracked-files=all').split('\0').filter(Boolean);
     requireThat(dirty.every(line=>line.slice(3)===path),'Prepare restart on a clean dedicated branch');
     if(existsSync(path)) {
       requireThat(canonical(json(path))===canonical(r),'Existing request differs; never overwrite it');

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {CORE,CORE_JOBS,bytesDigest,digest} from './verify.mjs';
 import {channelContext} from './channels.mjs';
-import {restartRequest,restartPath,prepareRestart,assertRestartEvidence,assertRequestChange,assertRestartPlans,checkRestartRunner,assertRestartSource,assertPreparationBranch} from './campaign-restart.mjs';
+import {restartRequest,restartPath,prepareRestart,assertRestartEvidence,assertRequestChange,assertRestartPlans,checkRestartRunner,assertRestartSource,assertPreparationBranch,parseChangedPaths} from './campaign-restart.mjs';
 const sha=n=>String(n).padStart(40,'0');
 const rehash=p=>{const {plan_id,...body}=p;return {...body,plan_id:digest(body)};};
 const seal=r=>{const {request_id,...body}=r;return {...body,request_id:digest(body)};};
@@ -88,7 +88,7 @@ function runnerFixture(event='push') {
   const payload={before:base,pull_request:{base:{ref:'dev',sha:base,repo:{full_name:CORE}}}};
   const state={diff:`A\t${restartPath(r)}`,parent:base,record:r};
   f.state.core=event==='push'?head:base;
-  const git=(...args)=>{if(args[0]==='diff')return state.diff.replaceAll('\\t','\t');if(args[0]==='ls-tree')return '100644 blob '+sha(7)+'\t'+restartPath(r);if(args[0]==='show')return JSON.stringify(state.record);if(args[0]==='rev-parse')return state.parent;throw Error('Unexpected git '+args);};
+  const git=(...args)=>{if(args[0]==='diff')return state.rawChanges??(state.diff?state.diff.replaceAll('\\t','\t').split('\n').flatMap(line=>line.split('\t')).join('\0')+'\0':'');if(args[0]==='ls-tree')return '100644 blob '+sha(7)+'\t'+restartPath(r);if(args[0]==='show')return JSON.stringify(state.record);if(args[0]==='rev-parse')return state.parent;throw Error('Unexpected git '+args);};
   return {...f,r,env,payload,state,git,check:()=>checkRestartRunner(f.g,{env,event:payload,git})};
 }
 for(const event of ['push','pull_request'])test(`${event}: runner authenticates the exact new record and immutable source`,()=>{
@@ -158,4 +158,20 @@ test('exact receiver check is repeated after classification and before write cre
   assert.ok(boundary>workflow.indexOf('Classify all frozen integration projections'));
   assert.ok(boundary<workflow.indexOf('Create Integration dispatch-only App token'));
   assert.match(workflow.slice(boundary,workflow.indexOf('Create Integration dispatch-only App token')),/campaign-restart-cli.mjs check-frozen/);
+});
+
+test('NUL-delimited change parser preserves quoted and control-character paths',()=>{
+  for(const name of ['quoted"path','tab\tpath','newline\npath','nonascii-é']) {
+    const path=`tools/ci/campaign-restarts/dev/${name}.json`;
+    assert.deepEqual(parseChangedPaths(`A\0${path}\0`),[{status:'A',path}]);
+  }
+  assert.throws(()=>parseChangedPaths('A\tquoted-path\n'),/NUL-delimited/);
+  assert.throws(()=>parseChangedPaths('A\0'),/Malformed/);
+});
+test('malformed restart namespace paths fail closed before any API lookup',()=>{
+  for(const name of ['tab\tpath','newline\npath','é','"quoted"','../escape','a'.repeat(64)+'.json/extra']) {
+    const f=runnerFixture();f.state.rawChanges=`A\0tools/ci/campaign-restarts/dev/${name}\0`;
+    f.g.object=()=>assert.fail('no malformed path API read');f.g.get=()=>assert.fail('no malformed path API read');
+    assert.throws(f.check,/exact channel\/digest/);
+  }
 });
