@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {checkVariableReadiness,readinessTargets} from './test-variable-readiness.mjs';
 const policy=JSON.parse(readFileSync(new URL('./test-source-targets.json',import.meta.url),'utf8'));
-const workflow=readFileSync(new URL('../../.github/workflows/test-variable-readiness.yml',import.meta.url),'utf8');
+const workflow=readFileSync(new URL('../../.github/workflows/test-variable-readiness.yml',import.meta.url),'utf8').replace(/\r\n/g,'\n');
 test('probe reads exactly nine repository owners without retaining variable values',()=>{
   const paths=[];
   const result=checkVariableReadiness({get(path){paths.push(path);return {total_count:2,variables:[{name:'WSS_USE_PIN_TESTS',value:'true'},{name:'PRIVATE_UNRELATED',value:'must-not-be-published'}]};}},policy);
