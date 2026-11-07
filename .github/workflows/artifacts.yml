@@ -41,6 +41,9 @@ jobs:
   core-tests:
     name: Core conformance
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Check out source
         id: checkout
