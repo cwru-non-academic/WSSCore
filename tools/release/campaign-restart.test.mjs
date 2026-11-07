@@ -76,9 +76,9 @@ test('workflow guards run in a required check and before selection/write credent
   const core=workflow.slice(workflow.indexOf('  core-tests:'),workflow.indexOf('  ble-linux-tests:'));
   assert.match(core,/fetch-depth: 0/);assert.match(core,/campaign-restart-cli.mjs check/);
   const producer=workflow.slice(workflow.indexOf('  propagate-universal:'));
-  assert.ok(producer.indexOf('campaign-restart-cli.mjs check')<producer.indexOf('permission-variables: read'));
+  assert.ok(producer.indexOf('campaign-restart-cli.mjs check')<producer.indexOf('Create existing Actions-write snapshot dispatch token'));
   assert.ok(producer.indexOf('campaign-restart-cli.mjs check-frozen')<producer.indexOf('name: ${{ steps.channel.outputs.stage_artifact }}'));
-  assert.ok(producer.indexOf('campaign-restart-cli.mjs check-frozen')<producer.indexOf('permission-actions: write'));
+  assert.ok(producer.indexOf('campaign-restart-cli.mjs check-frozen')<producer.indexOf('Create Integration dispatch-only App token'));
   assert.match(producer,/github.event_name == 'push'/);assert.doesNotMatch(producer,/overwrite: true/);
 });
 

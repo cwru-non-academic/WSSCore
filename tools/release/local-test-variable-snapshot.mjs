@@ -81,6 +81,6 @@ export function dispatchSnapshotOnce(g,r,{newIntent,authenticatedIntent,dispatch
   const workflow=g.get(`repos/${r.target.repository}/actions/workflows/test-variable-snapshot.yml`);
   requireThat(workflow.path===r.source.workflow&&workflow.state==='active','Snapshot workflow is not registered');
   requireThat(typeof dispatch==='function','Missing scoped dispatch transport');
-  dispatch(r.target.repository,'test-variable-snapshot.yml',{ref:r.source.ref,inputs:{request:canonical(r)}});
+  dispatch(r.target.repository,'test-variable-snapshot.yml',{ref:r.channel,inputs:{request:canonical(r)}});
   return {dispatched:true};
 }

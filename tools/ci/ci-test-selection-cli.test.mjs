@@ -57,6 +57,14 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
     invoke(['select',targetId,campaign?candidatePath:'-',output,campaign?'candidate':'committed']);
     assert.doesNotMatch(readFileSync(githubOutput,'utf8'),/selection_id=/);
     writeFileSync(data.saved,readFileSync(join(output,'context.json')));
+    const firstDocument=JSON.parse(readFileSync(data.saved));
+    assert.equal(firstDocument.schema,'wss-ci-test-context/v2');
+    if(!campaign){
+      const legacy={...firstDocument,schema:'wss-ci-test-context/v1'};delete legacy.variable_semantics;
+      writeFileSync(data.saved,JSON.stringify(legacy));
+      invoke(['load',targetId,'-',join(dir,'legacy-loaded'),'committed'],{WSS_LOCAL_TEST_VARIABLES_SCHEMA:'',WSS_USE_PIN_TESTS:'invalid'});
+      writeFileSync(data.saved,JSON.stringify(firstDocument));
+    }
     const loaded=join(dir,'loaded');invoke(['load',targetId,campaign?candidatePath:'-',loaded,campaign?'candidate':'committed']);
     writeFileSync(dataPath,JSON.stringify({...data,testSha:'f'.repeat(40)}));
     const retry=join(dir,'retry');invoke(['select',targetId,campaign?candidatePath:'-',retry,campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2',WSS_LOCAL_TEST_VARIABLES_SCHEMA:'',WSS_USE_PIN_TESTS:'invalid'});

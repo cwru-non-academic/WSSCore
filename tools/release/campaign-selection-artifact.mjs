@@ -64,7 +64,10 @@ export function validateCaptures(document,m,c) {
   const targets=testSelectionPolicy(m).targets;
   requireThat(document.captures&&same(Object.keys(document.captures).sort(),targets.map(t=>t.id).sort()),'Missing effective capture provenance');
   for(const t of targets) {
-    const capture=document.captures[t.id],r=validateSnapshotRequest(capture.request),s=document.selection.targets[t.id],b=capture.binding;
+    const capture=document.captures[t.id];
+    requireThat(capture&&same(Object.keys(capture).sort(),['binding','request','settings']),'Invalid capture envelope');
+    const r=validateSnapshotRequest(capture.request),s=document.selection.targets[t.id],b=capture.binding;
+    requireThat(b&&same(Object.keys(b).sort(),['archive_digest','artifact_id','document_digest','request_id','run_id']),'Invalid capture binding fields');
     requireThat(r.channel===m.channel&&same(r.target,{id:t.id,repository:t.repository})&&same(r.producer,{repository:CORE,commit:c.commit,run_id:c.run_id,attempt:1}),'Capture belongs to another producer/target');
     requireThat(same(normalizeEffectiveTestVariables(capture.settings),capture.settings)&&b?.request_id===r.request_id&&decimal(b.run_id)&&decimal(b.artifact_id)&&/^sha256:[a-f0-9]{64}$/.test(b.archive_digest)&&/^[a-f0-9]{64}$/.test(b.document_digest),'Invalid effective capture binding');
     requireThat(capture.settings.WSS_USE_PIN_TESTS==='true'?(s.mode==='pinned'&&s.tests.repository===capture.settings.WSS_PIN_TEST_REPOSITORY&&s.tests.commit===capture.settings.WSS_PIN_TEST_COMMIT):s.mode==='latest','Selection differs from captured effective settings');
