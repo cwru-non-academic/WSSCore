@@ -5,7 +5,7 @@ import {assertPairedTestSelection} from './campaign-test-selection.mjs';
 import {channelContext} from './channels.mjs';
 
 export const RESTART_DIRECTORY='tools/ci/campaign-restarts/';
-const RECORD_PATH=/^tools\/ci\/campaign-restarts\/(dev|main)\/[a-f0-9]{64}\.json$/;
+const RECORD_PATH=/^tools\/ci\/campaign-restarts\/(dev|main)\/[a-f0-9]{64}\.json(?![\s\S])/;
 const same=(a,b)=>canonical(a)===canonical(b);
 const sha=x=>typeof x==='string'&&/^[a-f0-9]{40}$/.test(x);
 const hash=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);

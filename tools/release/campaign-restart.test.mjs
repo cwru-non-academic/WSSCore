@@ -169,7 +169,7 @@ test('NUL-delimited change parser preserves quoted and control-character paths',
   assert.throws(()=>parseChangedPaths('A\0'),/Malformed/);
 });
 test('malformed restart namespace paths fail closed before any API lookup',()=>{
-  for(const name of ['tab\tpath','newline\npath','é','"quoted"','../escape','a'.repeat(64)+'.json/extra']) {
+  for(const name of ['tab\tpath','newline\npath','é','"quoted"','../escape','a'.repeat(64)+'.json/extra','a'.repeat(64)+'.json\n','a'.repeat(64)+'.json\r\n','a'.repeat(64)+'.json\u2028']) {
     const f=runnerFixture();f.state.rawChanges=`A\0tools/ci/campaign-restarts/dev/${name}\0`;
     f.g.object=()=>assert.fail('no malformed path API read');f.g.get=()=>assert.fail('no malformed path API read');
     assert.throws(f.check,/exact channel\/digest/);
