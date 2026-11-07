@@ -136,3 +136,17 @@ existing rich runtime, projection, fixture, platform and mandatory baseline
 artifacts. It never replaces them. Keep test execution steps free of App tokens
 and publishing credentials; source/plan tokens belong only to trusted bootstrap
 steps.
+
+### Existing App read-capability probe
+
+The `Repository test variable readiness` workflow performs read-only checks with
+only the installed App's repository Variables read grant for the nine reviewed
+target repositories. It runs on a reviewed dev/main change to its own probe files,
+or by manual dispatch after workflow registration. It never changes installation
+grants, repository settings, test-selection policies, or campaign artifacts.
+
+The probe discards all variable values and reports only successful read capability.
+A permission failure remains a blocker; do not refresh or expand App permissions
+as a fallback. Successful empty settings are valid reads, but do not establish
+any chosen pin, test-source existence, receiver deployment, or campaign acceptance.
+The ordinary selection and existing release guards still establish those facts.
