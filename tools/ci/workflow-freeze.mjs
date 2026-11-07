@@ -1,3 +1,4 @@
+import {assertPairedTestSelection,validatePlanTestSelection} from '../release/campaign-test-selection.mjs';
 // Core coordinator extension. Receiver-owned target profiles remain unchanged.
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
@@ -26,6 +27,7 @@ export function snapshotRequirement(g,p,kind) {
   requireThat(file?.type==='file'&&file.encoding==='base64','Immutable producer workflow policy unavailable');
   const reviewed=JSON.parse(Buffer.from(file.content,'base64').toString('utf8'));
   requireThat(same(reviewed,definition(p,kind)),'Workflow snapshot policy differs from immutable producer policy');
+  validatePlanTestSelection(p);
   const required=reviewed.workflow_snapshot_policy;
   requireThat(c.channel==='main'?required===MAIN_SNAPSHOT_POLICY:required===undefined||required===SNAPSHOT_POLICY,'Unknown or missing producer-bound workflow snapshot policy');
   if(required===undefined)requireThat(!Object.hasOwn(p,'workflow_snapshots'),'Unexpected workflow snapshot extension in legacy plan');
@@ -93,6 +95,7 @@ export function freezeWorkflows(g,p,kind,{observations=new Map()}={}) {
   return {...extended,plan_id:digest(extended)};
 }
 export function freezeWorkflowPair(g,acceptance,stage) {
+  assertPairedTestSelection(acceptance,stage);
   requireThat(acceptance.channel==='main'&&stage.policy.channel==='main'&&same(acceptance.candidate,stage.candidate),'Paired freeze requires one exact main candidate');
   const observations=new Map();
   const a=freezeWorkflows(g,acceptance,'acceptance',{observations});
@@ -104,6 +107,7 @@ export function freezeWorkflowPair(g,acceptance,stage) {
   return {acceptance:a,stage:s};
 }
 export function assertWorkflowPair(g,acceptance,stage) {
+  assertPairedTestSelection(acceptance,stage);
   requireThat(acceptance.channel==='main'&&stage.policy.channel==='main'&&same(acceptance.candidate,stage.candidate)&&stage.acceptance_plan_id===acceptance.plan_id,'Main stage is not bound to its exact acceptance plan');
   assertWorkflows(g,acceptance,'acceptance',{live:false});assertWorkflows(g,stage,'stage',{live:false});
   const physical=new Map();

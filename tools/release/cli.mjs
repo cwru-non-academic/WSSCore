@@ -1,11 +1,11 @@
+import {freezeCampaign} from './campaign-freeze.mjs';
 import {appendFileSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {GitHub,archive,collect,freeze,loadPlan,publish} from './github.mjs';
 import {execute,journalName,prepare} from './dispatch.mjs';
 import {CORE,digest,requireThat} from './verify.mjs';
 import {tagPolicy} from './policy.mjs';
-import {assertWorkflows,collectWithWorkflows,freezeWorkflows,freezeWorkflowPair,guardedWriter} from '../ci/workflow-freeze.mjs';
-import {freezeStage} from '../ci/dev-propagation.mjs';
+import {assertWorkflows,collectWithWorkflows,freezeWorkflows,guardedWriter} from '../ci/workflow-freeze.mjs';
 import {channelContext} from './channels.mjs';
 import {channelActivation,controllerContext,publicationControls} from '../ci/channel-controls.mjs';
 
@@ -35,7 +35,7 @@ try {
     requireThat(activation.main===true&&context.channel==='main'&&process.env.GITHUB_ACTIONS==='true'&&process.env.GITHUB_REPOSITORY===CORE&&process.env.GITHUB_REF===context.ref&&process.env.GITHUB_EVENT_NAME==='push'&&process.env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/artifacts.yml@refs/heads/main`&&process.env.GITHUB_WORKFLOW_SHA===process.env.GITHUB_SHA&&c.commit===process.env.GITHUB_SHA&&c.run_id===process.env.GITHUB_RUN_ID,'Paired freeze requires this activated exact canonical main push producer');
     archive(g,c);
     const stagePolicy=JSON.parse(readFileSync(new URL('../ci/main-propagation.json',import.meta.url)));
-    const pair=freezeWorkflowPair(g,freeze(g,m,c,{verificationOnly:process.env[publicationControls()[m.channel]]!=='true'}),freezeStage(g,stagePolicy,c,{freeze:false}));
+    const pair=freezeCampaign(g,m,stagePolicy,c,{verificationOnly:process.env[publicationControls()[m.channel]]!=='true'});
     // No artifact is emitted and no initial handoff occurs unless BOTH plans
     // pass the shared observation/recheck boundary above.
     for(const [directory,p] of [[acceptanceDirectory,pair.acceptance],[stageDirectory,pair.stage]]){

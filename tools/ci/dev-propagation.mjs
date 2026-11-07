@@ -1,3 +1,4 @@
+import {testSelectionPolicy,assertPairedTestSelection,selectionFields,validatePlanTestSelection,collectSelectedTestArtifact,verifySelectedTestArtifact} from '../release/campaign-test-selection.mjs';
 import {isEntrypoint} from '../release/entrypoint.mjs';
 import {readFileSync,writeFileSync,mkdirSync,appendFileSync,realpathSync,existsSync} from 'node:fs';
 import {join,resolve,dirname,isAbsolute} from 'node:path';
@@ -126,6 +127,7 @@ function registered(g,repo,file) {
   return w;
 }
 export function policy(m) {
+  testSelectionPolicy(m);
   const context=channelContext(m.channel);
   requireThat(m.schema===context.stageSchema,'Unsupported channel staging policy');
   if(context.channel==='main')requireThat(m.application_fanout==='per-integration','Main requires independent guarded family staging');
@@ -149,8 +151,9 @@ function matlabReady(g,repo) {
 }
 // Run before the first library write token. Missing receiver hooks cannot silently
 // turn the requested integration barrier into independent per-library fanout.
-export function freezeStage(g,m,c,{freeze=true}={}) {
+export function freezeStage(g,m,c,{freeze=true,testSelection}={}) {
   policy(m);candidate(c);
+  const selected=selectionFields(m,c,testSelection);
   const context=channelContext(m.channel);
   requireThat(g.head(CORE,context.branch)===c.commit,'Core channel moved before integration handoff');
   registered(g,CORE,context.stageWorkflow.split('/').at(-1));
@@ -185,12 +188,13 @@ export function freezeStage(g,m,c,{freeze=true}={}) {
     }
     receivers[t.id]={heads,trusted};
   }
-  const body={schema:context.stagePlanSchema,...(context.channel==='main'?{channel:'main'}:{}),candidate:c,policy:m,policy_sha256:digest(m),receivers};
+  const body={schema:context.stagePlanSchema,...(context.channel==='main'?{channel:'main'}:{}),candidate:c,policy:m,policy_sha256:digest(m),receivers,...selected};
   requireThat(g.head(CORE,context.branch)===c.commit,'Core channel moved while freezing receiver tooling');
   const p={...body,plan_id:digest(body)};
   return freeze?freezeWorkflows(g,p,'stage'):p;
 }
 export function validatePlan(p) {
+  validatePlanTestSelection(p);
   candidate(p.candidate);policy(p.policy);
   const {plan_id,...body}=p;
   const context=stageContext(p);
@@ -218,6 +222,7 @@ export function loadStage(g,id,{channel='dev',initialEvent}={}) {
   requireThat(same(json(g,CORE,c.commit,context.stagePolicy),p.policy),'Plan policy is not the reviewed producer policy');
   assertWorkflows(g,p,'stage',{live:false});
   if(context.channel==='main')assertWorkflowPair(g,loadPlan(g,id),p);
+  else if(p.test_selection)assertPairedTestSelection(loadPlan(g,id),p);
   return p;
 }
 function trusted(g,p,t,head) {
@@ -300,6 +305,7 @@ export function prepareStage(g,p,run,attempt,excludeCurrent=false) {
       requireThat(r.status!=='completed' || r.conclusion==='success',`Failed integration CI for ${t.id}; no blind retry`);
       if(r.status!=='completed') {pending.push(t.id);continue;}
       jobs(g.jobs(t.repository,r),t.jobs);
+      if(p.test_selection)accepted.selected_tests=verifySelectedTestArtifact(p,`${t.id}-wrapper`,r,collectSelectedTestArtifact(g,p,`${t.id}-wrapper`,r));
       accepted.normal_ci={run_id:String(r.id),attempt:r.run_attempt};ready[t.id]=accepted;
     } catch(error) {if(!perFamily)throw error;blocked.push({target:t.id,reason:error.message});pending.push(t.id);}
   }

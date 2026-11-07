@@ -1,3 +1,5 @@
+import {resolveTestSelection} from '../ci/test-selection.mjs';
+import {CAMPAIGN_TEST_POLICY,selectionRequest,selectionFields,targetTestEvidence,selectedTestArtifactName} from './campaign-test-selection.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync,mkdtempSync,rmSync} from 'node:fs';
@@ -225,4 +227,48 @@ for(const channel of ['dev','main'])test(`${channel} publisher recollects cross-
     assert.equal(publish(writer,f.p,accepted,directory,reader).state,'created');
     assert.equal(writes.length,1);
   } finally {rmSync(directory,{recursive:true,force:true});}
+});
+
+function selectedFixture(channel='dev') {
+  const f=fixture(channel),{p,e}=f;
+  p.manifest.test_selection_policy={schema:CAMPAIGN_TEST_POLICY,targets:p.manifest.targets.map(t=>({id:t.id,repository:t.repository,default_test_repository:'cwru-non-academic/TestBundle',allowed_test_repositories:['cwru-non-academic/TestBundle']}))};
+  const selection=resolveTestSelection(selectionRequest(p.manifest,p.candidate),{head:()=>sha(99)});
+  Object.assign(p,selectionFields(p.manifest,p.candidate,selection));p.manifest_sha256=digest(p.manifest);
+  const {plan_id,...body}=p;p.plan_id=digest(body);
+  for(const t of p.manifest.targets) {
+    const x=e.targets[t.id],evidence=targetTestEvidence(p,t.id);
+    const proof=run=>({artifact:{id:900+Number(run.id),name:selectedTestArtifactName(t.id,run.run_attempt),expired:false,workflow_run:{id:run.id,head_sha:run.head_sha}},bytes:Buffer.from(JSON.stringify(evidence))});
+    x.receipt.plan_id=p.plan_id;x.artifact.name=`wss-acceptance-${t.id}-${p.plan_id}-a1`;
+    x.receipt.selected_tests=evidence;x.selected_tests=proof(x.normal_run);
+    for(const preflight of x.preflights)preflight.selected_tests=proof(preflight.run);
+  }
+  sync(e);return f;
+}
+function selectedCollector(f) {
+  const g=collectorFixture(f),artifact=g.artifact,download=g.download;
+  const proof=(repo,id)=>{const t=Object.values(f.e.targets).find(x=>x.normal_run.repository.full_name===repo);return String(t.normal_run.id)===id?t.selected_tests:t.preflights.find(x=>String(x.run.id)===id).selected_tests;};
+  g.artifact=(repo,id,name)=>name.startsWith('wss-selected-tests-')?proof(repo,id).artifact:artifact(repo,id,name);
+  g.download=(repo,id,name,files)=>name.startsWith('wss-selected-tests-')?{'evidence.json':proof(repo,id).bytes}:download(repo,id,name,files);
+  return g;
+}
+for(const channel of ['dev','main'])test(`${channel} collector requires authenticated normal and preflight selected-test artifacts`,()=>{
+  const f=selectedFixture(channel),record=collect(selectedCollector(f),f.p).record;
+  assert.equal(record.test_selection_id,f.p.test_selection_id);
+  assert.equal(record.targets['python-cli'].selected_tests.test_commit,sha(99));
+});
+for(const [name,mutate] of Object.entries({
+  'missing normal artifact':t=>delete t.selected_tests,
+  'missing preflight artifact':t=>delete t.preflights[0].selected_tests,
+  'foreign artifact owner':t=>t.selected_tests.artifact.workflow_run.id=999,
+  'foreign artifact source':t=>t.selected_tests.artifact.workflow_run.head_sha=sha(88),
+  'expired artifact':t=>t.selected_tests.artifact.expired=true,
+  'stale attempt':t=>t.selected_tests.artifact.name=t.selected_tests.artifact.name.replace('-a1','-a2'),
+  'receipt-only forged source':t=>t.receipt.selected_tests.test_commit=sha(88),
+  'artifact wrong source':t=>{const data=JSON.parse(t.selected_tests.bytes);data.test_commit=sha(88);t.selected_tests.bytes=Buffer.from(JSON.stringify(data));},
+  'artifact wrong selection id':t=>{const data=JSON.parse(t.selected_tests.bytes);data.selection_id='b'.repeat(64);t.selected_tests.bytes=Buffer.from(JSON.stringify(data));},
+  'preflight wrong selection id':t=>{const data=JSON.parse(t.preflights[0].selected_tests.bytes);data.selection_id='b'.repeat(64);t.preflights[0].selected_tests.bytes=Buffer.from(JSON.stringify(data));},
+  'old product check still required':t=>t.merge_tree=sha(88),
+  'old job check still required':t=>t.normal_jobs.pop()
+}))test(`selected tests reject ${name}`,()=>{
+  const f=selectedFixture();mutate(f.e.targets['python-cli']);sync(f.e);assert.throws(()=>allClear(f.p,f.e));
 });

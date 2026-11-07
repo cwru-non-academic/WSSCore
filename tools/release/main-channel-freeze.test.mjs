@@ -1,3 +1,5 @@
+import {resolveTestSelection} from '../ci/test-selection.mjs';
+import {CAMPAIGN_TEST_POLICY,selectionRequest,selectionFields} from './campaign-test-selection.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
@@ -140,4 +142,24 @@ GitHub.prototype.object=(repo,ref,path)=>{if(path!=='.github/workflows')throw Er
     writeFileSync(join(source,'.github/scripts/wss-ci.lock.json'),JSON.stringify({source_repository:CORE,source_commit:sha(999)}));
     assert.throws(()=>execFileSync('pwsh',args,{env,stdio:'pipe'}));
   }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test('paired workflow freeze requires identical mandatory test policy and selection',()=>{
+  function selected() {
+    const f=fixture();
+    const policy={schema:CAMPAIGN_TEST_POLICY,targets:f.manifest.targets.map(t=>({id:t.id,repository:t.repository,default_test_repository:'cwru-non-academic/TestBundle',allowed_test_repositories:['cwru-non-academic/TestBundle']}))};
+    f.manifest.test_selection_policy=policy;f.policy.test_selection_policy=policy;
+    f.acceptance.manifest=structuredClone(f.manifest);f.stage.policy=structuredClone(f.policy);
+    const selection=resolveTestSelection(selectionRequest(f.manifest,f.acceptance.candidate),{head:()=>sha(777)});
+    Object.assign(f.acceptance,selectionFields(f.manifest,f.acceptance.candidate,selection));
+    Object.assign(f.stage,selectionFields(f.policy,f.stage.candidate,selection));
+    f.acceptance=rehash(f.acceptance);f.stage=rehash(f.stage);return f;
+  }
+  const f=selected(),pair=freezeWorkflowPair(f.g,f.acceptance,f.stage);
+  assert.deepEqual(pair.acceptance.test_selection,pair.stage.test_selection);
+  assert.equal(pair.acceptance.test_selection_id,pair.stage.test_selection_id);
+  for(const mutate of [p=>delete p.test_selection,p=>delete p.test_selection_id,p=>delete p.policy.test_selection_policy,p=>{
+    p.test_selection.targets['python-cli'].tests.commit=sha(888);
+    const {selection_id,...body}=p.test_selection;p.test_selection.selection_id=digest(body);p.test_selection_id=p.test_selection.selection_id;
+  }]) {const x=selected();mutate(x.stage);x.stage=rehash(x.stage);assert.throws(()=>freezeWorkflowPair(x.g,x.acceptance,x.stage));}
 });
