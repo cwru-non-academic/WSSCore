@@ -71,7 +71,7 @@
       ],
       "native_evidence_guard": {
         "path": ".github/scripts/Complete-MatlabPreflight.ps1",
-        "sha": "933ad63d298bb02dfaac3874910cea91f3c319a1"
+        "sha": "4fb78d26cabc7605276b3119f0e8b4d4dc5ef57e"
       },
       "promotion_contract_test": {
         "path": ".github/scripts/tests/Test-MatlabPromotion.ps1",
@@ -79,7 +79,7 @@
       },
       "merge_evidence_guard": {
         "path": ".github/scripts/MatlabPromotion.ps1",
-        "sha": "f36750d9a7ada6d83c2835bac6a87847b2428ab7"
+        "sha": "d6aaeaa64ad817e98f77ffb7d919d298cbc12628"
       }
     }
   ],
