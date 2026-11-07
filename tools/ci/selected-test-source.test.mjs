@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,writeFileSync,readFileSync,rmSync,mkdirSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,readFileSync,rmSync,mkdirSync,symlinkSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -102,5 +102,16 @@ test('initialized product submodules require their own exact checked source decl
     assert.throws(()=>inspectSelectedTestCheckouts(x.binding,'python-wrapper',x.roots,x.productSha),/own exact source declaration|must be clean/);
     x.roots.products.push(child);
     assert.throws(()=>inspectSelectedTestCheckouts(x.binding,'python-wrapper',x.roots,x.productSha),/index cannot hide changes|must be clean/);
+  } finally {rmSync(x.dir,{recursive:true,force:true});}
+});
+
+
+test('physical path aliases cannot hide evidence inside a source checkout',()=>{
+  const x=setup();try {
+    const alias=join(x.dir,'test-alias');symlinkSync(x.tests,alias,process.platform==='win32'?'junction':'dir');
+    const roots={...x.roots,test_root:alias};
+    assert.equal(inspectSelectedTestCheckouts(x.binding,'python-wrapper',roots,x.productSha).evidence.test_commit,x.testSha);
+    assert.throws(()=>writeSelectedTestEvidence(x.binding,'python-wrapper',x.roots,x.productSha,join(alias,'new','evidence.json')),/outside source/);
+    assert.throws(()=>writeSelectedTestEvidence(x.binding,'python-wrapper',roots,x.productSha,join(x.tests,'evidence.json')),/outside source/);
   } finally {rmSync(x.dir,{recursive:true,force:true});}
 });

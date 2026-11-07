@@ -2,20 +2,26 @@
 // scripts, edits product source, or treats test evidence as release authority.
 import {execFileSync} from 'node:child_process';
 import {readFileSync,writeFileSync,realpathSync,mkdirSync,existsSync,readdirSync} from 'node:fs';
-import {resolve,relative,dirname,isAbsolute,join} from 'node:path';
+import {resolve,relative,dirname,isAbsolute,join,basename} from 'node:path';
 import {GitHub,loadPlan} from '../release/github.mjs';
 import {canonical,requireThat} from '../release/verify.mjs';
 import {channelContext} from '../release/channels.mjs';
 import {isEntrypoint} from '../release/entrypoint.mjs';
 import {verifyTestSelection,verifySelectedTestEvidence} from './test-selection.mjs';
+const realpath=realpathSync.native;
+function physicalPath(path) {
+  let ancestor=resolve(path);const tail=[];
+  while(!existsSync(ancestor)){tail.unshift(basename(ancestor));ancestor=dirname(ancestor);}
+  return resolve(realpath(ancestor),...tail);
+}
 const fullSha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
 const git=(root,...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8',maxBuffer:16*1024*1024}).trim();
 const contains=(parent,child)=>{const part=relative(parent,child);return part===''||(!part.startsWith('..'+(process.platform==='win32'?'\\':'/'))&&part!=='..'&&!isAbsolute(part));};
 const remoteRepository=remote=>/^(?:https:\/\/github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?\/?$/.exec(remote)?.[1];
 function checkout(path,repository,commit,{test=false}={}) {
   requireThat(typeof path==='string'&&path.length>0&&fullSha(commit),'Expected an explicit immutable source checkout');
-  const root=realpathSync(path);
-  requireThat(realpathSync(git(root,'rev-parse','--show-toplevel'))===root,'Source root must identify its exact Git checkout');
+  const root=realpath(path);
+  requireThat(realpath(git(root,'rev-parse','--show-toplevel'))===root,'Source root must identify its exact Git checkout');
   requireThat(remoteRepository(git(root,'remote','get-url','origin'))===repository,'Source checkout repository differs from selected identity');
   requireThat(git(root,'rev-parse','HEAD')===commit,'Source checkout commit differs from selected identity');
   const tracked=git(root,'ls-files','-v','-z').split('\0').filter(Boolean);
@@ -50,14 +56,14 @@ export function inspectSelectedTestCheckouts(binding,targetId,roots,expectedProd
   for(const product of products)requireThat(!contains(product.path,testRoot)&&!contains(testRoot,product.path),'Selected tests and product sources must use separate non-overlapping checkouts');
   for(const product of products)for(const link of gitlinks(product.path)){
     const path=join(product.path,link.path);
-    if(initialized(path))requireThat(products.some(p=>p.path===realpathSync(path)&&p.commit===link.commit),'Every initialized product submodule must have its own exact source declaration');
+    if(initialized(path))requireThat(products.some(p=>p.path===realpath(path)&&p.commit===link.commit),'Every initialized product submodule must have its own exact source declaration');
   }
   const evidence={selection_id,target_id:targetId,repository:selected.repository,test_repository:selected.tests.repository,test_commit:selected.tests.commit};
   verifySelectedTestEvidence(selection,request,selection_id,targetId,evidence);
   return {evidence,test_root:testRoot,products};
 }
 export function writeSelectedTestEvidence(binding,targetId,roots,expectedProductSha,outputPath) {
-  const checked=inspectSelectedTestCheckouts(binding,targetId,roots,expectedProductSha),path=resolve(outputPath);
+  const checked=inspectSelectedTestCheckouts(binding,targetId,roots,expectedProductSha),path=physicalPath(outputPath);
   for(const root of [checked.test_root,...checked.products.map(p=>p.path)])requireThat(!contains(root,path),'Evidence output must be outside source checkouts');
   mkdirSync(dirname(path),{recursive:true});
   writeFileSync(path,canonical(checked.evidence)+'\n',{encoding:'utf8',flag:'wx'});
