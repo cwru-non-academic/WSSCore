@@ -1,10 +1,10 @@
 name: Common CI contracts
 on:
   pull_request:
-    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml']
+    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml', '.github/workflows/test-variable-snapshot-readiness.yml']
   push:
     branches: [dev, main]
-    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml']
+    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml', '.github/workflows/test-variable-snapshot-readiness.yml']
 permissions:
   contents: read
 jobs:

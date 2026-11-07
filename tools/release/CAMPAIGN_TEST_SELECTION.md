@@ -25,8 +25,10 @@ Upload `result.document` as the sole `selection.json` file only when
 `result.created` is true. This versioned envelope binds the canonical producer,
 creating attempt 1, and full selection. Then independently call
 `loadProducerTestSelection` to authenticate and read the uploaded artifact.
-Pass its return value as `testSelection` into `freezeCampaign` before either
-plan freezes. `freezeCampaign` never resolves fresh variables or refs itself.
+Load the independently authenticated full producer document and pass its
+selection as `testSelection` and document as `captureDocument` into `freezeCampaign`
+before either plan freezes. Historical v1 remains readable; new v2 carries the
+local capture source bindings required by final receiver-head checks. `freezeCampaign` never resolves fresh variables or refs itself.
 No initial handoff may occur until durable upload and both freezes succeed.
 
 `resolveCampaignTestSelection` also offers create-only local lock reuse for
@@ -66,11 +68,11 @@ receipt bytes, and publication guards remain mandatory.
    declaration support across all nine targets and required branch baselines.
 2. Preserve normal/preflight product roots and existing adapter-pins checks;
    adopt stable bootstrap tooling on both branches and review literal pin updates.
-3. Verify the installed App already grants repository Variables read access for
-   the required targets before activation. The implemented reader paginates at
-   thirty, validates complete unique results, and reads repository variables only.
-   Organization/environment inheritance is not used. A denied read is an error,
-   never an unset pin. Any installation permission expansion is a separate action.
+3. Deploy authenticated local effective-variable capture using existing App
+   Actions-write/Contents-read grants, not Variables-read. GitHub effective
+   org/repository precedence applies; resolver jobs must have no environment.
+   Follow `../ci/LOCAL_TEST_VARIABLE_SNAPSHOTS.md` and the separately reviewed
+   readiness namespace described in `../ci/TEST_VARIABLE_READINESS.md`.
 4. Verify the implemented producer prepare/upload/independent-load sequence in
    the real campaign. Never overwrite or delete an existing selection artifact
    during retry recovery.
@@ -87,8 +89,12 @@ copy only individual scripts into a receiver and assume their imports work.
 The trusted prerequisite calls `tools/ci/ci-test-selection.mjs select <target-id>
 <candidate.json|-> <output-directory> [committed|candidate]`. It passes the actual
 GitHub run identity, explicit `WSS_CI_CHANNEL`, read-only source/plan `GH_TOKEN`,
-and separate repository-only `WSS_TEST_VARIABLE_READ_TOKEN`. The helper reads
-current repository settings only for a fresh ordinary run selection. Candidate
+and four explicit local environment mappings: `WSS_LOCAL_TEST_VARIABLES_SCHEMA`
+set to `wss-effective-test-variables/v1`, plus `WSS_USE_PIN_TESTS`,
+`WSS_PIN_TEST_REPOSITORY`, and `WSS_PIN_TEST_COMMIT` from the owning repository's
+`vars` context. No Variables-read token is used. The resolver job has no
+`environment`; values enter through env, never shell interpolation. The helper
+reads these effective org/repository settings only for a fresh ordinary run selection. Candidate
 or current-product runs under an enabled policy use the durable campaign lock.
 PR runs use an independent snapshot of the matching branch tests.
 
