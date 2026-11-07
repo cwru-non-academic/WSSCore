@@ -533,6 +533,7 @@ jobs:
           ./tools/ArtifactBuild/extract-universal.ps1 -ReleaseAssets "$env:RUNNER_TEMP/release-input" -Destination "$env:RUNNER_TEMP/handoff-verification"
           $hash = (Get-FileHash "$env:RUNNER_TEMP/release-input/WSS-Universal-ci.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           "sha256=$hash" >> $env:GITHUB_OUTPUT
+          @{repository='cwru-non-academic/WSSCore';commit=$env:GITHUB_SHA;run_id=$env:GITHUB_RUN_ID;artifact_id=$env:ARTIFACT_ID;archive='WSS-Universal-ci.zip';sha256=$hash}|ConvertTo-Json|Set-Content "$env:RUNNER_TEMP/candidate.json"
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -543,12 +544,49 @@ jobs:
             import fs from "node:fs";
             import {channelContext} from "./tools/release/channels.mjs";
             import {channelActivation,publicationControls} from "./tools/ci/channel-controls.mjs";
+            import {testSelectionPolicy} from "./tools/release/campaign-test-selection.mjs";
+            import {canonical} from "./tools/release/verify.mjs";
             const c=channelContext(process.env.WSS_CI_CHANNEL);
             const a=channelActivation(JSON.parse(fs.readFileSync("tools/ci/channel-activation.json")));
             if(!a[c.channel])throw Error("Producer channel is not activated");
+            const policy=testSelectionPolicy(JSON.parse(fs.readFileSync(c.targetPolicy)));
+            const stage=testSelectionPolicy(JSON.parse(fs.readFileSync(c.stagePolicy)));
+            if(canonical(policy)!==canonical(stage))throw Error("Campaign test policies differ");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT,`test_selection_enabled=${Boolean(policy)}\ntest_selection_repositories=${policy?policy.targets.map(t=>t.repository.split("/")[1]).join(","):""}\n`);
             fs.appendFileSync(process.env.GITHUB_ENV,`WSS_ACCEPTANCE_PLAN=${process.env.RUNNER_TEMP}/release-plan/plan.json\n`);
             fs.appendFileSync(process.env.GITHUB_OUTPUT,`stage_artifact=${c.stageArtifact}\npublication_variable=${publicationControls()[c.channel]}\n`);
           '
+      - name: Read repository variables only for the first enabled campaign attempt
+        if: steps.channel.outputs.test_selection_enabled == 'true' && github.run_attempt == 1
+        id: test-variable-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: ${{ steps.channel.outputs.test_selection_repositories }}
+          permission-variables: read
+      - name: Prepare or reuse the authenticated frozen test selection
+        if: steps.channel.outputs.test_selection_enabled == 'true'
+        id: test-selection
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_TEST_VARIABLE_READ_TOKEN: ${{ steps.test-variable-token.outputs.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . ./tools/ci/shared/Channel.ps1
+          $context=Get-WssCiChannelContext
+          node tools/release/cli.mjs prepare-test-selection "$env:RUNNER_TEMP/candidate.json" $context.targetPolicy "$env:RUNNER_TEMP/test-selection"
+          if($LASTEXITCODE -ne 0){throw 'Frozen test selection preparation failed; no handoff.'}
+      - name: Persist the selection before freezing or dispatching
+        if: steps.test-selection.outputs.created == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wss-test-selection
+          path: ${{ runner.temp }}/test-selection/selection.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Freeze exact candidate and channel plans before any downstream writes
         shell: pwsh
         env:
@@ -557,6 +595,7 @@ jobs:
           SHA256: ${{ steps.candidate.outputs.sha256 }}
           WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
           PUBLICATION_ENABLED: ${{ vars[steps.channel.outputs.publication_variable] }}
+          TEST_SELECTION_ENABLED: ${{ steps.channel.outputs.test_selection_enabled }}
         run: |
           $ErrorActionPreference = 'Stop'
           . ./tools/ci/shared/Channel.ps1
@@ -565,11 +604,10 @@ jobs:
           $publicationVariable=$controls.($context.channel)
           if($publicationVariable -cnotin @('WSS_DEV_RELEASE_ENABLED','WSS_MAIN_RELEASE_ENABLED') -or $env:PUBLICATION_ENABLED -cnotin @('','true','false')){throw 'Invalid explicit publication control.'}
           [Environment]::SetEnvironmentVariable($publicationVariable,$env:PUBLICATION_ENABLED,'Process')
-          @{repository='cwru-non-academic/WSSCore';commit=$env:GITHUB_SHA;run_id=$env:GITHUB_RUN_ID;artifact_id=$env:ARTIFACT_ID;archive='WSS-Universal-ci.zip';sha256=$env:SHA256}|ConvertTo-Json|Set-Content "$env:RUNNER_TEMP/candidate.json"
-          if($context.channel -ceq 'main'){
-            if($env:WSS_DEV_ACCEPTANCE_ENABLED -cne 'true'){throw 'Main campaign requires both frozen acceptance and stage plans.'}
+          if($context.channel -ceq 'main' -or $env:TEST_SELECTION_ENABLED -ceq 'true'){
+            if($env:WSS_DEV_ACCEPTANCE_ENABLED -cne 'true'){throw 'Main or selected-test campaign requires both frozen acceptance and stage plans.'}
             node tools/release/cli.mjs freeze-campaign "$env:RUNNER_TEMP/candidate.json" $context.targetPolicy "$env:RUNNER_TEMP/release-plan" "$env:RUNNER_TEMP/propagation-plan"
-            if($LASTEXITCODE -ne 0){throw 'Atomic paired main freeze failed; no handoff.'}
+            if($LASTEXITCODE -ne 0){throw 'Atomic paired campaign freeze failed; no handoff.'}
           }else{
             node tools/ci/dev-propagation.mjs freeze "$env:RUNNER_TEMP/candidate.json" "$env:RUNNER_TEMP/propagation-plan"
             if($LASTEXITCODE -ne 0){throw 'Canonical dev stage freeze failed; no handoff.'}

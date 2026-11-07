@@ -15,11 +15,19 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "5caa943d5472a4709e4eb77176650acbef52d8a4",
-      "ref": "refs/heads/ci/tooling/5caa943d5472a4709e4eb77176650acbef52d8a4"
+      "commit": "c266ff8e5bdcdde840bec87b757cd6d23e888e76",
+      "ref": "refs/heads/ci/tooling/c266ff8e5bdcdde840bec87b757cd6d23e888e76"
     }
   },
   "files": {
+    ".github/scripts/wss-ci/campaign-test-selection.mjs": {
+      "origin": "core",
+      "path": "tools/release/campaign-test-selection.mjs"
+    },
+    ".github/scripts/wss-ci/test-selection-contract.mjs": {
+      "origin": "core",
+      "path": "tools/release/test-selection-contract.mjs"
+    },
     ".github/scripts/wss-ci/verify.mjs": {
       "origin": "core",
       "path": "tools/release/verify.mjs"
