@@ -1,0 +1,38 @@
+name: Existing App installation scope
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/test-installation-scope.yml'
+      - 'tools/ci/test-installation-scope.mjs'
+      - 'tools/ci/test-source-targets.json'
+permissions:
+  contents: read
+jobs:
+  inventory:
+    name: Existing metadata-only installation inventory
+    if: github.repository == 'cwru-non-academic/WSSCore' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Request only existing Metadata read
+        id: installation
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          permission-metadata: read
+      - name: Verify inventory without exposing nonpublic names
+        env:
+          GH_TOKEN: ${{ steps.installation.outputs.token }}
+          WSS_INSTALLATION_ID: ${{ steps.installation.outputs.installation-id }}
+          WSS_APP_SLUG: ${{ steps.installation.outputs.app-slug }}
+        run: node tools/ci/test-installation-scope.mjs
