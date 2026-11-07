@@ -1,8 +1,8 @@
 // Trusted bootstrap for a selected test checkout. It never executes selected
 // scripts, edits product source, or treats test evidence as release authority.
 import {execFileSync} from 'node:child_process';
-import {readFileSync,writeFileSync,realpathSync,mkdirSync} from 'node:fs';
-import {resolve,relative,dirname,isAbsolute} from 'node:path';
+import {readFileSync,writeFileSync,realpathSync,mkdirSync,existsSync,readdirSync} from 'node:fs';
+import {resolve,relative,dirname,isAbsolute,join} from 'node:path';
 import {GitHub,loadPlan} from '../release/github.mjs';
 import {canonical,requireThat} from '../release/verify.mjs';
 import {channelContext} from '../release/channels.mjs';
@@ -20,15 +20,23 @@ function checkout(path,repository,commit,{test=false}={}) {
   requireThat(git(root,'rev-parse','HEAD')===commit,'Source checkout commit differs from selected identity');
   const tracked=git(root,'ls-files','-v','-z').split('\0').filter(Boolean);
   requireThat(tracked.every(entry=>entry.startsWith('H ')),'Source index cannot hide changes with assume-unchanged or skip-worktree flags');
-  const args=['status','--porcelain','--untracked-files=all'];
+  const args=['status','--porcelain','--untracked-files=all','--ignore-submodules=none'];
   if(test)args.push('--ignored');
   requireThat(git(root,...args)==='',test?'Selected test checkout must be pristine, including ignored/untracked files':'Product source checkout must be clean');
   if(!test){
     const ignored=git(root,'ls-files','--others','--ignored','--exclude-standard','-z').split('\0').filter(Boolean);
     requireThat(!ignored.some(path=>/\.(?:pyc|pyo)$/i.test(path)||path.replaceAll('\\','/').startsWith('src/')),'Ignored files cannot override executable product source');
   }
+  if(test)for(const link of gitlinks(root))requireThat(!initialized(join(root,link.path)),'Selected test gitlinks must remain uninitialized; use separate frozen dependency checkouts');
   return root;
 }
+function gitlinks(root) {
+  return git(root,'ls-files','--stage','-z').split('\0').filter(entry=>entry.startsWith('160000 ')).map(entry=>{
+    const match=/^160000 ([a-f0-9]{40}) 0\t(.+)$/s.exec(entry);
+    requireThat(match,'Invalid source gitlink index entry');return {commit:match[1],path:match[2]};
+  });
+}
+const initialized=path=>existsSync(path)&&readdirSync(path).length>0;
 export function inspectSelectedTestCheckouts(binding,targetId,roots,expectedProductSha) {
   const {selection,request,selection_id}=binding;
   verifyTestSelection(selection,request,selection_id);
@@ -40,6 +48,10 @@ export function inspectSelectedTestCheckouts(binding,targetId,roots,expectedProd
   const testRoot=checkout(roots.test_root,selected.tests.repository,selected.tests.commit,{test:true});
   const products=roots.products.map(p=>({repository:p.repository,commit:p.commit,path:checkout(p.path,p.repository,p.commit)}));
   for(const product of products)requireThat(!contains(product.path,testRoot)&&!contains(testRoot,product.path),'Selected tests and product sources must use separate non-overlapping checkouts');
+  for(const product of products)for(const link of gitlinks(product.path)){
+    const path=join(product.path,link.path);
+    if(initialized(path))requireThat(products.some(p=>p.path===realpathSync(path)&&p.commit===link.commit),'Every initialized product submodule must have its own exact source declaration');
+  }
   const evidence={selection_id,target_id:targetId,repository:selected.repository,test_repository:selected.tests.repository,test_commit:selected.tests.commit};
   verifySelectedTestEvidence(selection,request,selection_id,targetId,evidence);
   return {evidence,test_root:testRoot,products};

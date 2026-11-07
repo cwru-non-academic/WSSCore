@@ -46,3 +46,11 @@ test('default source policy keeps all required targets and their own bundle owne
   assert.equal(testSelectionPolicy({...manifest,test_selection_policy:source}),source);
   assert.ok(source.targets.every(t=>t.default_test_repository===t.repository&&t.allowed_test_repositories.length===1));
 });
+
+test('repository variable reader is invoked only for fresh run selections',async()=>{
+  let reads=0;const variables=()=>{reads++;return {};};
+  await selectCiTests({...input('pull_request'),variables},{head:()=>sha(3)});assert.equal(reads,1);
+  const binding={selection_id:'b'.repeat(64),selection:{targets:{[targetId]:{repository}}},request:{}};
+  await selectCiTests({...input(),variables},{head:()=>producer.commit,get:()=>manifest(true)},{loadCampaign:async()=>binding});
+  assert.equal(reads,1,'Frozen campaign cannot reread changed settings');
+});

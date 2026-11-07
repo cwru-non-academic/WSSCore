@@ -29,8 +29,10 @@ pin repositories. Repository variables cannot invent executable-source trust or
 change the product being tested. Extending that allowlist is a reviewed code
 change. The campaign controller must obtain effective variable snapshots from the
 owning repositories, not reuse the Core repository's `vars` for every receiver.
-Reading repository variables through the GitHub API requires the relevant existing
-API permission; this PR does not create credentials or expand app permissions.
+Both ordinary CI and campaign preparation read repository variables through the
+GitHub API. Organization/environment inheritance is intentionally excluded. The
+reader needs the existing Variables read grant; the workflow requests a narrowly
+scoped short-lived App token, but does not expand installation permissions.
 
 ## Resolve once and reuse
 
@@ -114,6 +116,10 @@ independently checked; do not copy new product sources or substitute DLLs just t
 make new tests pass.
 
 ## Required adoption and rollout order
+
+Producer and consumer bootstrap operation is implemented and documented in
+[the campaign operating contract](../release/CAMPAIGN_TEST_SELECTION.md). Live
+policy activation remains gated on receiver deployment and verification below.
 
 1. Review explicit test-source ownership and allowed repositories for each target.
    Separate test scripts/fixtures from product sources and trusted release tooling.

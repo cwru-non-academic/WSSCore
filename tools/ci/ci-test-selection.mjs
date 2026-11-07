@@ -1,6 +1,7 @@
 // Ordinary CI snapshots repository settings once. A current, selection-enabled
 // product campaign must reuse its authenticated lock instead of resolving latest.
-import {resolveTestSelection,verifyTestSelection,TEST_VARIABLES} from './test-selection.mjs';
+import {resolveTestSelection,verifyTestSelection} from './test-selection.mjs';
+import {readRepositoryTestVariables} from './repository-test-variables.mjs';
 import {readFileSync,writeFileSync,mkdirSync,appendFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isEntrypoint} from '../release/entrypoint.mjs';
@@ -34,7 +35,7 @@ export async function selectCiTests({channel,targetId,policy,variables={},run,pr
       return {scope:'campaign',...binding};
     }
   }
-  const request={channel,campaign:{repository:run.repository,commit:run.commit,run_id:run.run_id},targets:[{...target,variables}]};
+  const request={channel,campaign:{repository:run.repository,commit:run.commit,run_id:run.run_id},targets:[{...target,variables:typeof variables==='function'?variables():variables}]};
   const selection=resolveTestSelection(request,g);
   return {scope:'run',selection,request,selection_id:selection.selection_id};
 }
@@ -62,7 +63,9 @@ if(isEntrypoint(import.meta.url)) {
   if(operation==='select') {
     const raw=first==='-'?null:JSON.parse(readFileSync(first,'utf8').replace(/^\uFEFF/,''));
     const productCandidate=raw?(raw.candidate||raw):null;
-    const variables=Object.fromEntries(Object.values(TEST_VARIABLES).map(name=>[name,process.env[name]??'']));
+    // Read repository-only settings just like the producer; inherited org or
+    // environment variables must not silently choose a different test source.
+    const variables=()=>{requireThat(process.env.WSS_TEST_VARIABLE_READ_TOKEN,'Repository variable read token unavailable');return readRepositoryTestVariables(new GitHub(process.env.WSS_TEST_VARIABLE_READ_TOKEN),run.repository);};
     const result=await selectCiTests({channel,targetId,policy,variables,run,productCandidate,mode:third||'committed'},g);
     mkdirSync(second,{recursive:true});writeFileSync(join(second,'context.json'),canonical(result)+'\n',{flag:'wx'});
     const chosen=result.selection.targets[targetId];

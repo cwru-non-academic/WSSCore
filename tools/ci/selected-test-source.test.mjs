@@ -79,3 +79,28 @@ test('ignored cached Python code cannot override an exact product SHA',()=>{
     assert.throws(()=>inspectSelectedTestCheckouts(x.binding,'python-wrapper',x.roots,x.productSha),/override executable product source/);
   } finally {rmSync(x.dir,{recursive:true,force:true});}
 });
+function addSubmodule(x,root) {
+  const repo='cwru-non-academic/Fixture_Dependency',original=join(x.dir,'dependency-source'),commit=checkout(original,repo);
+  git(root,'config','-f','.gitmodules','submodule.dependency.path','dependency');
+  git(root,'config','-f','.gitmodules','submodule.dependency.url',`https://github.com/${repo}.git`);
+  git(root,'add','.gitmodules');git(root,'update-index','--add','--cacheinfo',`160000,${commit},dependency`);git(root,'commit','-m','add exact dependency');
+  git(root,'clone',original,'dependency');const child=join(root,'dependency');git(child,'remote','set-url','origin',`https://github.com/${repo}.git`);
+  git(root,'config','submodule.dependency.ignore','all');git(child,'update-index','--assume-unchanged','source.txt');writeFileSync(join(child,'source.txt'),'concealed nested executable source');
+  return {repository:repo,commit,path:child};
+}
+test('selected test gitlinks cannot hide initialized mutable nested code',()=>{
+  const x=setup();try {
+    addSubmodule(x,x.tests);x.testSha=git(x.tests,'rev-parse','HEAD');
+    const selection=resolveTestSelection(x.binding.request,{head:()=>x.testSha});
+    x.binding={...x.binding,selection,selection_id:selection.selection_id};x.roots.selection_id=selection.selection_id;
+    assert.throws(()=>inspectSelectedTestCheckouts(x.binding,'python-wrapper',x.roots,x.productSha),/gitlinks must remain uninitialized|pristine/);
+  } finally {rmSync(x.dir,{recursive:true,force:true});}
+});
+test('initialized product submodules require their own exact checked source declaration',()=>{
+  const x=setup();try {
+    const child=addSubmodule(x,x.product);x.productSha=git(x.product,'rev-parse','HEAD');x.roots.products[0].commit=x.productSha;
+    assert.throws(()=>inspectSelectedTestCheckouts(x.binding,'python-wrapper',x.roots,x.productSha),/own exact source declaration|must be clean/);
+    x.roots.products.push(child);
+    assert.throws(()=>inspectSelectedTestCheckouts(x.binding,'python-wrapper',x.roots,x.productSha),/index cannot hide changes|must be clean/);
+  } finally {rmSync(x.dir,{recursive:true,force:true});}
+});

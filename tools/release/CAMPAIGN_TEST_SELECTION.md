@@ -1,8 +1,9 @@
 # Opt-in frozen campaign test selection
 
-This extension is inactive in every checked-in live policy. It does not change
-product pins, adapter tooling guards, receiver workflows, app permissions, or
-repository variables. Old plans keep their existing checks.
+This extension is inactive in every checked-in live policy. Producer preparation,
+durable upload, paired freeze, and the consumer bootstrap are implemented behind
+that policy. Product pins, adapter guards, installed App permissions and repository
+variable values are unchanged. Old plans keep their existing checks.
 
 ## Reviewed contract
 
@@ -65,12 +66,50 @@ receipt bytes, and publication guards remain mandatory.
    declaration support across all nine targets and required branch baselines.
 2. Preserve normal/preflight product roots and existing adapter-pins checks;
    adopt stable bootstrap tooling on both branches and review literal pin updates.
-3. Verify a least-privilege repository-variable reader and connect it through
-   `resolveSnapshots`; do not expand permissions implicitly or trust a caller's
-   unverified snapshot file. The current CLI intentionally has no active reader.
-4. Wire producer prepare/upload/independent-load steps into the workflow and
-   pass the authenticated selection to the paired freeze controller. Never
-   overwrite or delete an existing selection artifact during retry recovery.
+3. Verify the installed App already grants repository Variables read access for
+   the required targets before activation. The implemented reader paginates at
+   thirty, validates complete unique results, and reads repository variables only.
+   Organization/environment inheritance is not used. A denied read is an error,
+   never an unset pin. Any installation permission expansion is a separate action.
+4. Verify the implemented producer prepare/upload/independent-load sequence in
+   the real campaign. Never overwrite or delete an existing selection artifact
+   during retry recovery.
 5. Review identical policy allowlists in both producer policy files, exercise
    actual normal/preflight/receipt artifacts, then opt in. Do not activate policy
    merely because these dormant library contracts pass.
+
+## Consumer bootstrap operation
+
+Receivers check out the full reviewed Core tooling tree at the immutable SHA in
+its verified tooling lock. These CLI files use Core's directory layout; do not
+copy only individual scripts into a receiver and assume their imports work.
+
+The trusted prerequisite calls `tools/ci/ci-test-selection.mjs select <target-id>
+<candidate.json|-> <output-directory> [committed|candidate]`. It passes the actual
+GitHub run identity, explicit `WSS_CI_CHANNEL`, read-only source/plan `GH_TOKEN`,
+and separate repository-only `WSS_TEST_VARIABLE_READ_TOKEN`. The helper reads
+current repository settings only for a fresh ordinary run selection. Candidate
+or current-product runs under an enabled policy use the durable campaign lock.
+PR runs use an independent snapshot of the matching branch tests.
+
+Upload `context.json` once in the prerequisite, pass its `selection_id`,
+`test_repository` and `test_commit` outputs to dependent jobs, and download that
+same context there. Check out the selected test commit separately without
+submodules or persisted credentials. Keep `WSS_TEST_SELECTION_ID` tied to the
+prerequisite output, never a value read from selected test code.
+
+Before execution call `inspect <target-id> <context.json> <roots.json>`. After all
+required fixed baseline and selected tests succeed, call `evidence` with the same
+arguments and a new output file. The roots file contains `selection_id`,
+`test_root`, and `products` entries with repository, full commit and checkout path.
+Include the actual target source and every initialized product submodule; each
+gets independent commit, cleanliness, index-flag and executable-cache checks.
+Selected test gitlinks must remain uninitialized and use explicitly frozen external
+dependency checkouts instead. No test and product checkout may overlap.
+
+Upload only the resulting `evidence.json` as
+`wss-selected-tests-<target-id>-a<run-attempt>`. This upload is additional to all
+existing rich runtime, projection, fixture, platform and mandatory baseline
+artifacts. It never replaces them. Keep test execution steps free of App tokens
+and publishing credentials; source/plan tokens belong only to trusted bootstrap
+steps.
