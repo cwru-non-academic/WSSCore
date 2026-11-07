@@ -92,9 +92,32 @@ current repository settings only for a fresh ordinary run selection. Candidate
 or current-product runs under an enabled policy use the durable campaign lock.
 PR runs use an independent snapshot of the matching branch tests.
 
-Upload `context.json` once in the prerequisite, pass its `selection_id`,
-`test_repository` and `test_commit` outputs to dependent jobs, and download that
-same context there. Check out the selected test commit separately without
+`select` is prepare-only: it emits `created` and `artifact_name`, not trusted
+selection outputs. When `created == 'true'`, upload its sole `context.json` using
+`actions/upload-artifact@v4`, the exact `artifact_name`, `overwrite: false` and
+`if-no-files-found: error`. Never suffix this name with the run attempt. A racing
+publication must fail rather than replace an existing context.
+
+After upload (or recovery), call `load <target-id> <same-candidate.json|->
+<different-output-directory> [same-mode]`. This independently downloads and
+validates the durable artifact, then emits `selection_id`, `test_repository`,
+`test_commit`, `scope` and `target_id`. Export these **load** outputs from the
+prerequisite only after load succeeds. Dependent jobs can call load again to
+materialize raw context, but must compare its ID with the original prerequisite
+ID and continue passing that prerequisite ID to inspect/evidence.
+
+Both operations require unmodified runner `GITHUB_RUN_ATTEMPT`, `GITHUB_REF`,
+`GITHUB_WORKFLOW_REF` and `GITHUB_WORKFLOW_SHA`. The unique artifact is bound to
+the actual repository, run, product SHA, API head SHA (PR API head differs from
+the runner merge SHA), workflow, event, target, channel, mode, product candidate
+and full trusted tooling policy. Recovery checks GitHub first-attempt metadata
+and artifact creation time, not only a self-asserted envelope or content hash.
+Only attempt 1 with no artifact may resolve variables/latest tests. Missing,
+expired, ambiguous, mismatched or later-attempt artifacts fail closed. No attempt
+may overwrite the context; rerun with missing publication requires investigation
+or a new workflow run. Campaign contexts are also persisted, preventing a retry
+from changing scope when the producer branch moves. Campaign recovery still
+reloads and authenticates the original frozen producer plan. Check out the selected test commit separately without
 submodules or persisted credentials. Keep `WSS_TEST_SELECTION_ID` tied to the
 prerequisite output, never a value read from selected test code.
 

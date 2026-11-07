@@ -28,27 +28,40 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
       const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:productSha,trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,'c'.repeat(40)]))}])),...selectionFields(manifest,candidate,selection)};
       plan={...body,plan_id:digest(body)};
     }
-    const data={campaign,manifest,plan,candidate,testSha,log:join(dir,'network.log')},dataPath=join(dir,'fixture.json');writeFileSync(dataPath,JSON.stringify(data));
+    const data={fault:null,campaign,manifest,plan,candidate,testSha,productSha,saved:join(dir,'saved.json'),log:join(dir,'network.log')},dataPath=join(dir,'fixture.json');writeFileSync(dataPath,JSON.stringify(data));
     const stub=join(dir,'mock-network.mjs');writeFileSync(stub,`
       import {readFileSync,appendFileSync} from 'node:fs';
       import {GitHub} from ${JSON.stringify(new URL('../release/github.mjs',import.meta.url).href)};
       const f=JSON.parse(readFileSync(process.env.WSS_CONSUMER_TEST_FIXTURE,'utf8'));
       GitHub.prototype.head=function(repo,branch){if(branch!=='dev')throw Error('Wrong branch');if(repo===${JSON.stringify(core)})return f.candidate.commit;if(repo===${JSON.stringify(repository)})return f.testSha;throw Error('Unexpected head read');};
+      GitHub.prototype.pages=function(){return f.fault==='missing'?[]:requireSaved()?(f.fault==='duplicate'?[artifact(),artifact()]:[artifact()]):[];};
+      function requireSaved(){try{return JSON.parse(readFileSync(f.saved,'utf8'));}catch(e){if(e.code==='ENOENT')return null;throw e;}}
+      function artifact(){return {id:123,name:'wss-ci-test-context-python-wrapper',expired:f.fault==='expired',created_at:f.fault==='late'?'2026-01-02T00:01:00Z':'2026-01-01T00:01:00Z',workflow_run:{id:f.fault==='artifact-run'?98:99,head_sha:f.fault==='artifact-head'?'e'.repeat(40):f.productSha}};}
+      GitHub.prototype.artifact=function(){return artifact();};
+      function run(){return {id:99,repository:{full_name:${JSON.stringify(repository)}},head_sha:f.productSha,path:f.fault==='workflow'?'.github/workflows/other.yml':'.github/workflows/ci.yml',event:f.campaign?'workflow_dispatch':'pull_request',run_attempt:f.fault==='attempt'?7:Number(process.env.GITHUB_RUN_ATTEMPT),status:'in_progress'};}
       GitHub.prototype.get=function(path){
+        if(path.endsWith('/attempts/1'))return {...run(),run_attempt:1,status:'completed',run_started_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-01T00:02:00Z'};
         if(path===${JSON.stringify(`repos/${repository}/actions/variables?per_page=30&page=1`)}&&!f.campaign){appendFileSync(f.log,'variables\\n');return {total_count:0,variables:[]};}
         if(path===${JSON.stringify(`repos/${core}/contents/tools/release/targets.dev.json?ref=`)}+f.candidate.commit)return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(f.manifest)).toString('base64')};
         throw Error('Unexpected API read: '+path);
       };
-      GitHub.prototype.run=function(repo,id){if(repo!==${JSON.stringify(core)}||id!=='42')throw Error('Wrong producer');return {id:42,repository:{full_name:repo},head_repository:{full_name:repo},path:'.github/workflows/artifacts.yml',head_sha:f.candidate.commit,head_branch:'dev',event:'push'};};
-      GitHub.prototype.download=function(repo,id,name,files){if(!f.campaign||repo!==${JSON.stringify(core)}||id!=='42'||name!=='wss-propagation-plan'||JSON.stringify(files)!=='["plan.json"]')throw Error('Unexpected artifact download');appendFileSync(f.log,'plan\\n');return {'plan.json':Buffer.from(JSON.stringify(f.plan))};};
+      GitHub.prototype.run=function(repo,id){if(id==='99')return run();if(repo!==${JSON.stringify(core)}||id!=='42')throw Error('Wrong producer');return {id:42,repository:{full_name:repo},head_repository:{full_name:repo},path:'.github/workflows/artifacts.yml',head_sha:f.candidate.commit,head_branch:'dev',event:'push'};};
+      GitHub.prototype.download=function(repo,id,name,files){if(id==='99')return {'context.json':Buffer.from(JSON.stringify(requireSaved()))};if(!f.campaign||repo!==${JSON.stringify(core)}||id!=='42'||name!=='wss-propagation-plan'||JSON.stringify(files)!=='["plan.json"]')throw Error('Unexpected artifact download');appendFileSync(f.log,'plan\\n');return {'plan.json':Buffer.from(JSON.stringify(f.plan))};};
       GitHub.prototype.command=function(){throw Error('Real network transport is forbidden by this test');};
     `);
     const script=fileURLToPath(new URL('./ci-test-selection.mjs',import.meta.url)),output=join(dir,'selection'),githubOutput=join(dir,'github-output');
-    const env={...process.env,GH_TOKEN:'',WSS_TEST_VARIABLE_READ_TOKEN:campaign?'':'read-only-test-token',WSS_CONSUMER_TEST_FIXTURE:dataPath,GITHUB_ACTIONS:'true',GITHUB_REPOSITORY:repository,GITHUB_SHA:productSha,GITHUB_RUN_ID:'99',GITHUB_RUN_ATTEMPT:'1',GITHUB_EVENT_NAME:campaign?'workflow_dispatch':'pull_request',GITHUB_OUTPUT:githubOutput,WSS_CI_CHANNEL:'dev'};
+    const env={...process.env,GH_TOKEN:'',WSS_TEST_VARIABLE_READ_TOKEN:campaign?'':'read-only-test-token',WSS_CONSUMER_TEST_FIXTURE:dataPath,GITHUB_ACTIONS:'true',GITHUB_REPOSITORY:repository,GITHUB_SHA:productSha,GITHUB_RUN_ID:'99',GITHUB_RUN_ATTEMPT:'1',GITHUB_REF:'refs/heads/dev',GITHUB_WORKFLOW_REF:`${repository}/.github/workflows/ci.yml@refs/heads/dev`,GITHUB_WORKFLOW_SHA:productSha,GITHUB_EVENT_NAME:campaign?'workflow_dispatch':'pull_request',GITHUB_OUTPUT:githubOutput,WSS_CI_CHANNEL:'dev'};
     const invoke=(args,extra={})=>execFileSync(process.execPath,['--import',pathToFileURL(stub).href,script,...args],{encoding:'utf8',env:{...env,...extra},stdio:['ignore','pipe','pipe']});
     const candidatePath=join(dir,'candidate.json');writeFileSync(candidatePath,JSON.stringify(candidate));
     invoke(['select',targetId,campaign?candidatePath:'-',output,campaign?'candidate':'committed']);
-    const contextPath=join(output,'context.json'),context=JSON.parse(readFileSync(contextPath,'utf8'));
+    assert.doesNotMatch(readFileSync(githubOutput,'utf8'),/selection_id=/);
+    writeFileSync(data.saved,readFileSync(join(output,'context.json')));
+    const loaded=join(dir,'loaded');invoke(['load',targetId,campaign?candidatePath:'-',loaded,campaign?'candidate':'committed']);
+    writeFileSync(dataPath,JSON.stringify({...data,testSha:'f'.repeat(40)}));
+    const retry=join(dir,'retry');invoke(['select',targetId,campaign?candidatePath:'-',retry,campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2',WSS_TEST_VARIABLE_READ_TOKEN:''});
+    writeFileSync(dataPath,JSON.stringify(data));
+    assert.equal(JSON.parse(readFileSync(join(retry,'context.json'))).context.selection_id,JSON.parse(readFileSync(data.saved)).context.selection_id);
+    const contextPath=join(loaded,'context.json'),context=JSON.parse(readFileSync(contextPath,'utf8'));
     assert.equal(context.scope,campaign?'campaign':'run');assert.match(readFileSync(githubOutput,'utf8'),new RegExp(`selection_id=${context.selection_id}`));
     const rootsPath=join(dir,'roots.json');writeFileSync(rootsPath,JSON.stringify({selection_id:context.selection_id,test_root:tests,products:[{repository,commit:productSha,path:product}]}));
     const selectedEnv={WSS_TEST_SELECTION_ID:context.selection_id};
@@ -56,6 +69,19 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
     const evidencePath=join(dir,'evidence.json');invoke(['evidence',targetId,contextPath,rootsPath,evidencePath],selectedEnv);
     assert.equal(JSON.parse(readFileSync(evidencePath,'utf8')).test_commit,testSha);
     assert.throws(()=>invoke(['inspect',targetId,contextPath,rootsPath],{WSS_TEST_SELECTION_ID:'d'.repeat(64)}),/prerequisite output/);
-    const calls=readFileSync(data.log,'utf8').trim().split('\n');assert.deepEqual(calls,campaign?['plan','plan','plan']:['variables']);
+    for(const fault of ['missing','duplicate','expired','late','artifact-run','artifact-head','workflow','attempt']) {
+      writeFileSync(dataPath,JSON.stringify({...data,fault}));
+      assert.throws(()=>invoke(['select',targetId,campaign?candidatePath:'-',join(dir,`bad-${fault}`),campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2',WSS_TEST_VARIABLE_READ_TOKEN:''}),undefined,fault);
+    }
+    writeFileSync(dataPath,JSON.stringify(data));
+    const original=JSON.parse(readFileSync(data.saved));
+    for(const field of ['policy','commit','event','channel','targetId','mode']) {
+      const forged=structuredClone(original);forged.identity[field]='tampered';writeFileSync(data.saved,JSON.stringify(forged));
+      assert.throws(()=>invoke(['load',targetId,campaign?candidatePath:'-',join(dir,`bad-envelope-${field}`),campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2'}),/envelope/);
+    }
+    writeFileSync(data.saved,JSON.stringify({...original,attempt:2}));
+    assert.throws(()=>invoke(['select',targetId,campaign?candidatePath:'-',join(dir,'bad-creator'),campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2'}),/envelope/);
+    writeFileSync(data.saved,JSON.stringify(original));
+    const calls=readFileSync(data.log,'utf8').trim().split('\n');assert.deepEqual(calls,campaign?['plan','plan','plan','plan','plan']:['variables']);
   } finally {rmSync(dir,{recursive:true,force:true});}
 });

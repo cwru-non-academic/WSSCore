@@ -1,5 +1,6 @@
 // Ordinary CI snapshots repository settings once. A current, selection-enabled
 // product campaign must reuse its authenticated lock instead of resolving latest.
+import {prepareCiContext,loadCiContext} from './ci-test-context-artifact.mjs';
 import {resolveTestSelection,verifyTestSelection} from './test-selection.mjs';
 import {readRepositoryTestVariables} from './repository-test-variables.mjs';
 import {readFileSync,writeFileSync,mkdirSync,appendFileSync} from 'node:fs';
@@ -55,23 +56,33 @@ export async function verifyCiTestBinding(value,policy,targetId,run,expectedId,g
 }
 if(isEntrypoint(import.meta.url)) {
   const [operation,targetId,first,second,third,...rest]=process.argv.slice(2);
-  requireThat(['select','inspect','evidence'].includes(operation)&&targetId&&first&&second&&rest.length===0,'Usage: ci-test-selection.mjs select <target> <candidate.json|-> <output-dir> [committed|candidate] OR inspect|evidence <target> <context.json> <roots.json> [evidence.json]');
+  requireThat(['select','load','inspect','evidence'].includes(operation)&&targetId&&first&&second&&rest.length===0,'Usage: ci-test-selection.mjs select|load <target> <candidate.json|-> <output-dir> [committed|candidate] OR inspect|evidence <target> <context.json> <roots.json> [evidence.json]');
   requireThat(process.env.GITHUB_ACTIONS==='true'&&sha(process.env.GITHUB_SHA)&&/^[1-9][0-9]*$/.test(process.env.GITHUB_RUN_ID||''),'CI selection requires authenticated runner identity');
   const policy=testSelectionPolicy({test_selection_policy:JSON.parse(readFileSync(new URL('./test-source-targets.json',import.meta.url)))});
   const run={repository:process.env.GITHUB_REPOSITORY,commit:process.env.GITHUB_SHA,run_id:process.env.GITHUB_RUN_ID,event:process.env.GITHUB_EVENT_NAME};
   const channel=channelContext(process.env.WSS_CI_CHANNEL).channel,g=new GitHub();
-  if(operation==='select') {
+  if(operation==='select'||operation==='load') {
     const raw=first==='-'?null:JSON.parse(readFileSync(first,'utf8').replace(/^\uFEFF/,''));
     const productCandidate=raw?(raw.candidate||raw):null;
     // Read repository-only settings just like the producer; inherited org or
     // environment variables must not silently choose a different test source.
     const variables=()=>{requireThat(process.env.WSS_TEST_VARIABLE_READ_TOKEN,'Repository variable read token unavailable');return readRepositoryTestVariables(new GitHub(process.env.WSS_TEST_VARIABLE_READ_TOKEN),run.repository);};
-    const result=await selectCiTests({channel,targetId,policy,variables,run,productCandidate,mode:third||'committed'},g);
-    mkdirSync(second,{recursive:true});writeFileSync(join(second,'context.json'),canonical(result)+'\n',{flag:'wx'});
-    const chosen=result.selection.targets[targetId];
+    const input={channel,targetId,policy,variables,run,productCandidate,mode:third||'committed'};
+    const verify=value=>{requireThat(value.selection.channel===channel,'Durable CI channel mismatch');return verifyCiTestBinding(value,policy,targetId,run,value.selection_id,g);};
     requireThat(process.env.GITHUB_OUTPUT,'CI selection requires runner output context');
-    appendFileSync(process.env.GITHUB_OUTPUT,`scope=${result.scope}\nselection_id=${result.selection_id}\ntarget_id=${targetId}\ntest_repository=${chosen.tests.repository}\ntest_commit=${chosen.tests.commit}\n`);
-    console.log(JSON.stringify({scope:result.scope,selection_id:result.selection_id,test_repository:chosen.tests.repository,test_commit:chosen.tests.commit}));
+    if(operation==='select') {
+      const prepared=await prepareCiContext(g,input,{select:()=>selectCiTests(input,g),verify});
+      mkdirSync(second,{recursive:true});writeFileSync(join(second,'context.json'),canonical(prepared.document)+'\n',{flag:'wx'});
+      appendFileSync(process.env.GITHUB_OUTPUT,`created=${prepared.created}\nartifact_name=${prepared.artifact_name}\n`);
+      console.log(JSON.stringify({created:prepared.created,artifact_name:prepared.artifact_name}));
+    } else {
+      const result=await loadCiContext(g,input,{verify});
+      mkdirSync(second,{recursive:true});writeFileSync(join(second,'context.json'),canonical(result)+'\n',{flag:'wx'});
+      const chosen=result.selection.targets[targetId];
+      requireThat(process.env.GITHUB_OUTPUT,'CI selection requires runner output context');
+      appendFileSync(process.env.GITHUB_OUTPUT,`scope=${result.scope}\nselection_id=${result.selection_id}\ntarget_id=${targetId}\ntest_repository=${chosen.tests.repository}\ntest_commit=${chosen.tests.commit}\n`);
+      console.log(JSON.stringify({scope:result.scope,selection_id:result.selection_id,test_repository:chosen.tests.repository,test_commit:chosen.tests.commit}));
+    }
   } else {
     requireThat(operation==='evidence'?Boolean(third):!third,'Invalid selected-test evidence output arguments');
     const value=JSON.parse(readFileSync(first,'utf8'));
