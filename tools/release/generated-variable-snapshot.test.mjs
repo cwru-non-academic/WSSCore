@@ -4,17 +4,20 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
 import {join,dirname} from 'node:path';
 import {tmpdir} from 'node:os';
 import {execFileSync} from 'node:child_process';
-import {expectedLock,sourceBytes} from '../ci/sync-tooling.mjs';
+import {sourceBytes} from '../ci/sync-tooling.mjs';
 import {createSnapshotRequest,SNAPSHOT_WORKFLOW,snapshotName} from './local-test-variable-snapshot.mjs';
 import {CORE} from './verify.mjs';
 const sha=n=>String(n).repeat(40);
 test('generated receiver capture runs from only its registered closure and enforces safe named vars',()=>{
  const root=mkdtempSync(join(tmpdir(),'wss-local-capture-')),repository='Python_WSS_Integration_Lib';
  try{
-  const lock=expectedLock(repository,sha(1));
-  assert.ok(lock.files[SNAPSHOT_WORKFLOW]);
-  for(const [path,entry] of Object.entries(lock.files)){
-   mkdirSync(dirname(join(root,path)),{recursive:true});writeFileSync(join(root,path),sourceBytes({origin:entry.origin,path:entry.source}));
+  const manifest=JSON.parse(readFileSync(new URL('../ci/sync-tooling.json',import.meta.url)));
+  assert.ok(manifest.repositories.includes(repository));
+  assert.ok(manifest.files[SNAPSHOT_WORKFLOW]);
+  // Snapshot execution must not depend on an integration-owned module. Copy
+  // exactly the registered Core-origin closure, without an integration checkout.
+  for(const [path,entry] of Object.entries(manifest.files).filter(([,entry])=>entry.origin==='core')){
+   mkdirSync(dirname(join(root,path)),{recursive:true});writeFileSync(join(root,path),sourceBytes(entry));
   }
   const workflow=readFileSync(join(root,SNAPSHOT_WORKFLOW),'utf8');
   assert.doesNotMatch(workflow,/environment:|secrets\.|create-github-app-token|WSS_GITHUB_APP_PRIVATE_KEY|overwrite: true/);
