@@ -144,6 +144,43 @@ policy activation remains gated on receiver deployment and verification below.
    and new campaigns. Then verify a complete new campaign before enabling any
    publication gate.
 
+### Candidate payload regression before rollout
+
+Validate generated test projects with a candidate payload that differs from the
+payload committed in the product checkout. Assert that the relevant committed
+and candidate assembly hashes really differ before running the regression. A
+same-payload test can hide incorrect assembly resolution and is not sufficient
+candidate-path coverage.
+
+Keep the product source SHA, test source SHA, trusted tooling revision and exact
+producer/artifact/archive hash explicit and independently verified. For generated
+SDK projects, inspect implicit item discovery and assembly search paths as well
+as explicit references. An archived product beneath the generated project can
+contribute old DLLs through default `None` items to `CandidateAssemblyFiles`,
+which can take precedence over a candidate `HintPath`. Disabling default compile
+items alone does not exclude those inputs. Exclude unintended default items in
+the trusted generator and prove that the candidate is actually used; never
+replace the original product payload to make the regression pass.
+
+Require the existing full output/projection identity checks against the exact
+candidate after build and publish, including every required managed and native
+file. Successful compilation or one matching DLL is insufficient. Restore,
+build and publish must address the same staged product/project and compatible
+configuration; `publish --no-restore` must not switch back to an unrestored
+original source tree. Preserve pristine original roots and all mandatory
+profile, canonical, runtime, platform and provenance checks. Build-only evidence
+does not establish runtime compatibility or campaign acceptance.
+
+Complete review and hosted checks at the final receiver commits, including the
+mismatched-payload regression and candidate preflight, before creating the next
+campaign. These requirements apply even while selected tests remain disabled.
+If a repair changes receiver workflow trees or protected source/tooling objects,
+the old frozen snapshots no longer describe the deployed execution authority.
+Rerunning that producer cannot refresh its immutable plans or legitimize receipts
+from changed receivers. Let all receiver fixes and supported pins settle, then
+create a fresh canonical producer and frozen campaign through the supported
+flow. Do not edit old plans, mix campaign receipts or relax snapshot guards.
+
 ### Existing blocker remains explicit
 
 `tools/ci/adapter-pins.mjs` currently requires an executable integration pin's
