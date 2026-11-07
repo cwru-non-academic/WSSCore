@@ -1,3 +1,5 @@
+import {resolveTestSelection} from '../ci/test-selection.mjs';
+import {CAMPAIGN_TEST_POLICY,selectionRequest,selectionFields,targetTestEvidence,selectedTestArtifactName} from './campaign-test-selection.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -106,4 +108,26 @@ test('main rechecks exact execution source after final concurrent-run lookup bef
   const pages=f.g.pages;let lookups=0;
   f.g.pages=path=>{const result=pages(path);if(path.includes(`/actions/workflows/${f.python.fanout}/runs`)&&++lookups===2)f.state.heads.python=sha(999);return result;};
   assert.throws(()=>executeStage(f.g,f.g,f.p,j),/execution source moved/);assert.equal(f.commands.length,0);
+});
+
+for(const channel of ['dev','main'])test(`${channel} stage fanout requires authenticated frozen selected-test evidence`,()=>{
+  const f=fixture(true,channel),manifest=JSON.parse(readFileSync(new URL(`./targets.${channel}.json`,import.meta.url)));
+  f.p.policy.test_selection_policy={schema:CAMPAIGN_TEST_POLICY,targets:manifest.targets.map(t=>({id:t.id,repository:t.repository,default_test_repository:'cwru-non-academic/TestBundle',allowed_test_repositories:['cwru-non-academic/TestBundle']}))};
+  const selection=resolveTestSelection(selectionRequest(f.p.policy,f.p.candidate),{head:()=>sha(99)});
+  Object.assign(f.p,selectionFields(f.p.policy,f.p.candidate,selection));f.p.policy_sha256=digest(f.p.policy);
+  const {plan_id,...body}=f.p;f.p.plan_id=digest(body);
+  const normal=f.g.pages(`repos/${f.python.repository}/actions/workflows/${f.python.normal}/runs`)[0];
+  const evidence=targetTestEvidence(f.p,'python-wrapper');
+  const artifact={id:900,name:selectedTestArtifactName('python-wrapper',1),expired:false,workflow_run:{id:normal.id,head_sha:normal.head_sha}};
+  f.g.artifact=()=>artifact;
+  f.g.download=()=>({'evidence.json':Buffer.from(JSON.stringify(evidence))});
+  const j=prepareStage(f.g,f.p,'9',1);assert.equal(j.actions.length,1);assert.deepEqual(j.barrier.integrations.python.selected_tests,evidence);
+  for(const corrupt of ['owner','source','selection']) {
+    const old=structuredClone(artifact),oldEvidence=structuredClone(evidence);
+    if(corrupt==='owner')artifact.workflow_run.id=999;
+    if(corrupt==='source')evidence.test_commit=sha(88);
+    if(corrupt==='selection')evidence.selection_id='b'.repeat(64);
+    const blocked=prepareStage(f.g,f.p,'9',1);assert.equal(blocked.actions.length,0);assert.ok(blocked.blocked.some(b=>b.target==='python'));
+    Object.assign(artifact,old);Object.assign(evidence,oldEvidence);
+  }
 });
