@@ -31,7 +31,7 @@ test('legacy channel flow remains separate and selected campaigns require both p
 
 test('capture source race check is inside paired freeze and before plan files',()=>{
  const freeze=readFileSync(new URL('../release/campaign-freeze.mjs',import.meta.url),'utf8');
- assert.ok(freeze.indexOf('if(captureDocument)assertSnapshotSourcesMatchPlans(captureDocument,pair)')<freeze.indexOf('return pair;'));
+ assert.ok(freeze.indexOf('if(captureDocument)assertSnapshotSourcesMatchPlans(captureDocument,pair,g)')<freeze.indexOf('return pair;'));
  assert.ok(cli.indexOf('loadProducerTestSelection(g,m,stagePolicy,c,')<cli.indexOf('freezeCampaign(g,m,stagePolicy,c'));
  assert.match(cli,/freezeCampaign\(g,m,stagePolicy,c,\{testSelection,captureDocument/);
 });

@@ -19,7 +19,7 @@ export function freezeCampaign(g,manifest,policy,candidate,{testSelection,captur
   const s=freezeStage(g,policy,candidate,{freeze:false,testSelection});
   const pair=manifest.channel==='main'?freezeWorkflowPair(g,a,s):{acceptance:freezeWorkflows(g,a,'acceptance'),stage:freezeWorkflows(g,s,'stage')};
   assertPairedTestSelection(pair.acceptance,pair.stage);
-  if(captureDocument)assertSnapshotSourcesMatchPlans(captureDocument,pair);
+  if(captureDocument)assertSnapshotSourcesMatchPlans(captureDocument,pair,g);
   return pair;
 }
 

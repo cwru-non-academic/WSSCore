@@ -85,19 +85,31 @@ for(const channel of ['dev','main'])test(`${channel} effective v2 captures persi
 for(const channel of ['dev','main'])test(`${channel} new snapshot sources cannot move between capture and paired freeze; historical v1 remains readable`,()=>{
  const document={schema:'wss-test-selection-artifact/v2',selection:{selection_id:'a'.repeat(64)},captures:{'python-wrapper':{request:{source:{commit:sha(2)},target:{repository:'owner/python'},channel}}}};
  const pair={acceptance:{test_selection_id:'a'.repeat(64),target_snapshots:{'python-wrapper':{head_sha:sha(2)}}},stage:{test_selection_id:'a'.repeat(64),policy:{libraries:[{id:'python',repository:'owner/python'}]},receivers:{python:{heads:{[channel]:sha(2)}}}}};
- assertSnapshotSourcesMatchPlans(document,pair);
+ assertSnapshotSourcesMatchPlans(document,pair,{head:()=>sha(2)});
  pair.acceptance.target_snapshots['python-wrapper'].head_sha=sha(3);
- assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair),/Receiver moved/);
+ assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair,{head:()=>sha(2)}),/Receiver moved/);
  pair.acceptance.target_snapshots['python-wrapper'].head_sha=sha(2);pair.stage.receivers.python.heads[channel]=sha(3);
- assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair),/Stage receiver moved/);
+ assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair,{head:()=>sha(2)}),/Stage receiver moved/);
  assert.doesNotThrow(()=>assertSnapshotSourcesMatchPlans({schema:'wss-test-selection-artifact/v1'},pair));
 });
 
 for(const channel of ['dev','main'])test(`${channel} application source movement with unchanged workflow cannot pass paired source binding`,()=>{
  const id='python-cli',document={schema:'wss-test-selection-artifact/v2',selection:{selection_id:'a'.repeat(64)},captures:{[id]:{request:{source:{commit:sha(2),workflow_blob:sha(9)},target:{repository:'owner/python-cli'},channel}}}};
  const pair={acceptance:{test_selection_id:'a'.repeat(64),target_snapshots:{[id]:{head_sha:sha(2),trusted:{'.github/workflows':sha(9)}}}},stage:{test_selection_id:'a'.repeat(64),policy:{libraries:[]},receivers:{}}};
- assertSnapshotSourcesMatchPlans(document,pair);
+ assertSnapshotSourcesMatchPlans(document,pair,{head:()=>sha(2)});
  pair.acceptance.target_snapshots[id].head_sha=sha(3);
- assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair),/Receiver moved/);
+ assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair,{head:()=>sha(2)}),/Receiver moved/);
  assert.equal(pair.acceptance.target_snapshots[id].trusted['.github/workflows'],sha(9));
+});
+
+for(const channel of ['dev','main'])for(const kind of ['wrapper','cli'])test(`${channel} ${kind} movement after pair snapshot observation aborts before returning plans`,()=>{
+ let live=sha(2),returned=false;
+ const id=`python-${kind}`,repository=`owner/python-${kind}`;
+ const document={schema:'wss-test-selection-artifact/v2',selection:{selection_id:'a'.repeat(64)},captures:{[id]:{request:{source:{commit:sha(2),workflow_blob:sha(9)},target:{repository},channel}}}};
+ const pair={acceptance:{test_selection_id:'a'.repeat(64),target_snapshots:{[id]:{head_sha:sha(2),trusted:{'.github/workflows':sha(9)}}}},stage:{test_selection_id:'a'.repeat(64),policy:{libraries:kind==='wrapper'?[{id:'python',repository}]:[]},receivers:kind==='wrapper'?{python:{heads:{[channel]:sha(2)}}}:{}}};
+ const g={head:(repo,branch)=>{assert.equal(repo,repository);assert.equal(branch,channel);return live;}};
+ assertSnapshotSourcesMatchPlans(document,pair,g);
+ live=sha(3); // move AFTER both snapshots, without modifying either executable tree
+ assert.throws(()=>{assertSnapshotSourcesMatchPlans(document,pair,g);returned=true;},/after paired source observation/);
+ assert.equal(returned,false);
 });

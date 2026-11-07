@@ -77,7 +77,7 @@ export function validateCaptures(document,m,c) {
 
 // Compare only against independently loaded capture provenance and freshly
 // frozen plans. A receiver moving after capture must not become a new authority.
-export function assertSnapshotSourcesMatchPlans(document,pair) {
+export function assertSnapshotSourcesMatchPlans(document,pair,g) {
   if(document.schema==='wss-test-selection-artifact/v1')return;
   requireThat(document.schema==='wss-test-selection-artifact/v2','Unknown selection envelope');
   requireThat(document.selection.selection_id===pair.acceptance.test_selection_id&&document.selection.selection_id===pair.stage.test_selection_id,'Captured settings differ from paired selection');
@@ -86,6 +86,7 @@ export function assertSnapshotSourcesMatchPlans(document,pair) {
     requireThat(a?.head_sha===r.source.commit,'Receiver moved between variable capture and paired freeze');
     const libraries=pair.stage.policy.libraries.filter(l=>l.repository===r.target.repository);
     requireThat(libraries.length<=1,'Ambiguous captured stage receiver');
+    requireThat(g&&g.head(r.target.repository,r.channel)===r.source.commit,'Receiver moved after paired source observation');
     if(libraries.length)requireThat(pair.stage.receivers[libraries[0].id]?.heads?.[r.channel]===r.source.commit,'Stage receiver moved after variable capture');
   }
 }
