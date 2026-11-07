@@ -18,9 +18,15 @@ function checkout(path,repository,commit,{test=false}={}) {
   requireThat(realpathSync(git(root,'rev-parse','--show-toplevel'))===root,'Source root must identify its exact Git checkout');
   requireThat(remoteRepository(git(root,'remote','get-url','origin'))===repository,'Source checkout repository differs from selected identity');
   requireThat(git(root,'rev-parse','HEAD')===commit,'Source checkout commit differs from selected identity');
+  const tracked=git(root,'ls-files','-v','-z').split('\0').filter(Boolean);
+  requireThat(tracked.every(entry=>entry.startsWith('H ')),'Source index cannot hide changes with assume-unchanged or skip-worktree flags');
   const args=['status','--porcelain','--untracked-files=all'];
   if(test)args.push('--ignored');
   requireThat(git(root,...args)==='',test?'Selected test checkout must be pristine, including ignored/untracked files':'Product source checkout must be clean');
+  if(!test){
+    const ignored=git(root,'ls-files','--others','--ignored','--exclude-standard','-z').split('\0').filter(Boolean);
+    requireThat(!ignored.some(path=>/\.(?:pyc|pyo)$/i.test(path)||path.replaceAll('\\','/').startsWith('src/')),'Ignored files cannot override executable product source');
+  }
   return root;
 }
 export function inspectSelectedTestCheckouts(binding,targetId,roots,expectedProductSha) {

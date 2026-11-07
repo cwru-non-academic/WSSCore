@@ -63,3 +63,19 @@ test('source roots must be checkout roots, not a trusted-looking subdirectory',(
     assert.throws(()=>inspectSelectedTestCheckouts(x.binding,'python-wrapper',roots,x.productSha),/exact Git checkout/);
   } finally {rmSync(x.dir,{recursive:true,force:true});}
 });
+
+test('git index flags cannot conceal mutable selected or product source',()=>{
+  for(const flag of ['--assume-unchanged','--skip-worktree'])for(const role of ['tests','product']) {
+    const x=setup();try {
+      git(x[role],'update-index',flag,'source.txt');writeFileSync(join(x[role],'source.txt'),'concealed');
+      assert.throws(()=>inspectSelectedTestCheckouts(x.binding,'python-wrapper',x.roots,x.productSha),/index cannot hide changes/);
+    } finally {rmSync(x.dir,{recursive:true,force:true});}
+  }
+});
+test('ignored cached Python code cannot override an exact product SHA',()=>{
+  const x=setup();try {
+    writeFileSync(join(x.product,'.git','info','exclude'),'__pycache__/\n');mkdirSync(join(x.product,'__pycache__'));
+    writeFileSync(join(x.product,'__pycache__','source.cpython-312.pyc'),'unchecked-hash cache');
+    assert.throws(()=>inspectSelectedTestCheckouts(x.binding,'python-wrapper',x.roots,x.productSha),/override executable product source/);
+  } finally {rmSync(x.dir,{recursive:true,force:true});}
+});

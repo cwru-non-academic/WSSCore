@@ -31,3 +31,18 @@ test('run selection uses repository pin while preserving actual target source',a
   const result=await selectCiTests({...input('pull_request'),variables:{WSS_USE_PIN_TESTS:'true',WSS_PIN_TEST_REPOSITORY:repository,WSS_PIN_TEST_COMMIT:sha(5)}},{head:()=>{throw Error('No floating ref');},get:()=>({sha:sha(5)})});
   assert.equal(result.selection.campaign.commit,sha(2));assert.equal(result.selection.targets[targetId].tests.commit,sha(5));
 });
+
+test('run context is checked against actual source and trusted prerequisite ID',async()=>{
+  const {verifyCiTestBinding}=await import('./ci-test-selection.mjs');
+  const x=input('pull_request'),selected=await selectCiTests(x,{head:()=>sha(3)});
+  assert.equal((await verifyCiTestBinding(selected,policy,targetId,x.run,selected.selection_id,{})).selection_id,selected.selection_id);
+  await assert.rejects(()=>verifyCiTestBinding(selected,policy,targetId,{...x.run,commit:sha(9)},selected.selection_id,{}),/another campaign/);
+  await assert.rejects(()=>verifyCiTestBinding(selected,policy,targetId,x.run,'a'.repeat(64),{}),/prerequisite output/);
+});
+test('default source policy keeps all required targets and their own bundle owners',async()=>{
+  const {readFileSync}=await import('node:fs');const {testSelectionPolicy}=await import('../release/campaign-test-selection.mjs');
+  const source=JSON.parse(readFileSync(new URL('./test-source-targets.json',import.meta.url)));
+  const manifest=JSON.parse(readFileSync(new URL('../release/targets.dev.json',import.meta.url)));
+  assert.equal(testSelectionPolicy({...manifest,test_selection_policy:source}),source);
+  assert.ok(source.targets.every(t=>t.default_test_repository===t.repository&&t.allowed_test_repositories.length===1));
+});
