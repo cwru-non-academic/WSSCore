@@ -124,4 +124,3 @@ the deferred capture callback. Family fragments are NOT activated by this change
 Remaining hosted proof and deployed registry values are real rollout dependencies,
 not synthetic test successes. The old Variables-read diagnostic workflow is now
 credential-free protocol contracts and cannot retry the denied permission probe.
-
