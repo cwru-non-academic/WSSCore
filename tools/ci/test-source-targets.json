@@ -1,0 +1,77 @@
+{
+  "schema": "wss-campaign-test-selection/v1",
+  "targets": [
+    {
+      "id": "csharp-wrapper",
+      "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "default_test_repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "allowed_test_repositories": [
+        "cwru-non-academic/CSharp_WSS_Integration_Lib"
+      ]
+    },
+    {
+      "id": "csharp-cli",
+      "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+      "default_test_repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+      "allowed_test_repositories": [
+        "cwru-non-academic/CLI_CSharp_WSS_Application"
+      ]
+    },
+    {
+      "id": "unity-wrapper",
+      "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "default_test_repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "allowed_test_repositories": [
+        "cwru-non-academic/Unity_WSS_Integration_Lib"
+      ]
+    },
+    {
+      "id": "unity-gui",
+      "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+      "default_test_repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+      "allowed_test_repositories": [
+        "cwru-non-academic/GUI_Unity_WSS_Application"
+      ]
+    },
+    {
+      "id": "python-wrapper",
+      "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "default_test_repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "allowed_test_repositories": [
+        "cwru-non-academic/Python_WSS_Integration_Lib"
+      ]
+    },
+    {
+      "id": "python-cli",
+      "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+      "default_test_repository": "cwru-non-academic/CLI_Python_WSS_Application",
+      "allowed_test_repositories": [
+        "cwru-non-academic/CLI_Python_WSS_Application"
+      ]
+    },
+    {
+      "id": "python-ros",
+      "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+      "default_test_repository": "cwru-non-academic/ROS_Python_WSS_Application",
+      "allowed_test_repositories": [
+        "cwru-non-academic/ROS_Python_WSS_Application"
+      ]
+    },
+    {
+      "id": "matlab-wrapper",
+      "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "default_test_repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "allowed_test_repositories": [
+        "cwru-non-academic/Matlab_WSS_Integration_Lib"
+      ]
+    },
+    {
+      "id": "matlab-cli",
+      "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+      "default_test_repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+      "allowed_test_repositories": [
+        "cwru-non-academic/CLI_Matlab_WSS_Application"
+      ]
+    }
+  ]
+}
