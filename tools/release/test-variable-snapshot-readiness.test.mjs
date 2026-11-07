@@ -7,7 +7,7 @@ import {join,dirname} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {CORE} from './verify.mjs';
-import {readinessAuthority,prepareReadiness,loadReadinessIntent,dispatchReadiness,collectReadiness,loadReadinessReport,WORKFLOW,REGISTRY,INTENT,REPORT} from './test-variable-snapshot-readiness.mjs';
+import {readinessAuthority,prepareReadiness,loadReadinessIntent,dispatchReadiness,collectReadiness,loadReadinessReport,correlateReadiness,WORKFLOW,REGISTRY,INTENT,REPORT} from './test-variable-snapshot-readiness.mjs';
 import {captureLocalTestVariables,SNAPSHOT_WORKFLOW,SNAPSHOT_JOB,snapshotName,snapshotTitle} from './local-test-variable-readiness.mjs';
 const sha=n=>String(n).repeat(40);
 function fixture(channel='dev') {
@@ -80,4 +80,15 @@ test('workflow wiring is closed, credential-free on receiver, and never calls pr
  assert.match(core,/repositories: Python_WSS_Integration_Lib/);assert.match(core,/permission-actions: write/);assert.match(core,/permission-contents: read/);
  assert.equal((local.match(/vars\./g)||[]).length,3);assert.ok(core.indexOf('Authenticate controller')<core.indexOf('actions/create-github-app-token'));
  const registry=JSON.parse(readFileSync(new URL('../ci/test-variable-readiness-sources.json',import.meta.url)));assert.equal(registry.dev,null);assert.equal(registry.main,null);
+});
+
+test('read-only uncertain recovery correlates original capture without requiring or publishing a report',()=>{
+ const f=fixture();f.publish(INTENT,f.d);f.state.localRuns=[f.localRun];f.auth.attempt=2;f.state.first={...f.run,status:'completed'};
+ const intent=loadReadinessIntent(f.g,f.auth);f.reader.command=()=>assert.fail('no POST');
+ const report=correlateReadiness(f.g,f.reader,f.auth,intent);assert.equal(report.capture.binding.run_id,'20');assert.equal(f.state.artifacts.length,1);
+ f.publish(REPORT,report);assert.deepEqual(correlateReadiness(f.g,f.reader,f.auth,intent),report);
+ f.state.documents[REPORT].purpose='tampered';assert.throws(()=>correlateReadiness(f.g,f.reader,f.auth,intent));
+});
+for(const kind of ['missing','duplicate','unfinished','failed'])test(`uncertain recovery rejects ${kind} capture without redispatch`,()=>{
+ const f=fixture();f.state.localRuns=kind==='missing'?[]:kind==='duplicate'?[f.localRun,f.localRun]:[f.localRun];if(kind==='unfinished')f.localRun.status='in_progress';if(kind==='failed')f.localRun.conclusion='failure';f.reader.command=()=>assert.fail('no POST');assert.throws(()=>correlateReadiness(f.g,f.reader,{...f.auth,attempt:2},f.d));assert.equal(f.state.posts,0);
 });
