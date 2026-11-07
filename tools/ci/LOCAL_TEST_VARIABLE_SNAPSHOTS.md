@@ -22,7 +22,9 @@ settings, run/artifact IDs, authenticated ZIP digest and document digest. Existi
 wss-test-selection-artifact/v1 remains readable as historical repository-only
 capture and is never reinterpreted. Selection payload wss-test-selection/v1 and
 paired plan protocols are unchanged. Recovery loads the saved producer selection;
-it never reads current settings, branches or snapshot source registry again.
+it never rereads current settings, resolves selected-test branches, or reloads the
+snapshot source registry. Required live receiver-authority head checks still run,
+including recovery, and reject source movement before either plan is emitted.
 Ordinary contexts are now wss-ci-test-context/v2 with effective-variable semantics;
 legacy v1 contexts remain readable and reusable without recapture.
 
@@ -122,3 +124,4 @@ the deferred capture callback. Family fragments are NOT activated by this change
 Remaining hosted proof and deployed registry values are real rollout dependencies,
 not synthetic test successes. The old Variables-read diagnostic workflow is now
 credential-free protocol contracts and cannot retry the denied permission probe.
+
