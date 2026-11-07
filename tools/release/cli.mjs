@@ -52,8 +52,9 @@ try {
     requireThat(activation[context.channel]===true&&process.env.GITHUB_ACTIONS==='true'&&process.env.GITHUB_REPOSITORY===CORE&&process.env.GITHUB_REF===context.ref&&process.env.GITHUB_EVENT_NAME==='push'&&process.env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/artifacts.yml@${context.ref}`&&process.env.GITHUB_WORKFLOW_SHA===process.env.GITHUB_SHA&&c.commit===process.env.GITHUB_SHA&&c.run_id===process.env.GITHUB_RUN_ID,'Paired freeze requires this activated exact canonical channel push producer');
     archive(g,c);
     const stagePolicy=JSON.parse(readFileSync(new URL('../ci/'+context.channel+'-propagation.json',import.meta.url)));
-    const testSelection=testSelectionPolicy(m)?loadProducerTestSelection(g,m,stagePolicy,c):undefined;
-    const pair=freezeCampaign(g,m,stagePolicy,c,{testSelection,verificationOnly:process.env[publicationControls()[m.channel]]!=='true'});
+    let captureDocument;
+    const testSelection=testSelectionPolicy(m)?loadProducerTestSelection(g,m,stagePolicy,c,{onDocument:d=>{captureDocument=d;}}):undefined;
+    const pair=freezeCampaign(g,m,stagePolicy,c,{testSelection,captureDocument,verificationOnly:process.env[publicationControls()[m.channel]]!=='true'});
     // No artifact is emitted and no initial handoff occurs unless BOTH plans
     // pass the shared observation/recheck boundary above.
     for(const [directory,p] of [[acceptanceDirectory,pair.acceptance],[stageDirectory,pair.stage]]){

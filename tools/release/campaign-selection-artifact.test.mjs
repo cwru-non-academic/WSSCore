@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 import {CORE} from './verify.mjs';
 import {CAMPAIGN_TEST_POLICY} from './campaign-test-selection.mjs';
 import {freezeCampaign} from './campaign-freeze.mjs';
-import {prepareProducerTestSelection,loadProducerTestSelection,TEST_SELECTION_ARTIFACT} from './campaign-selection-artifact.mjs';
+import {prepareProducerTestSelection,loadProducerTestSelection,TEST_SELECTION_ARTIFACT,assertSnapshotSourcesMatchPlans} from './campaign-selection-artifact.mjs';
 const sha=n=>String(n).padStart(40,'0');
 function fixture(channel='dev') {
   const m=JSON.parse(readFileSync(new URL(`./targets.${channel}.json`,import.meta.url))),policy=JSON.parse(readFileSync(new URL(`../ci/${channel}-propagation.json`,import.meta.url)));
@@ -80,4 +80,24 @@ for(const channel of ['dev','main'])test(`${channel} effective v2 captures persi
  assert.equal(result.created,false);assert.equal(result.selection.selection_id,prepared.selection.selection_id);assert.equal(f.state.heads,1);
  f.state.document.captures[f.m.targets[0].id].binding.request_id='d'.repeat(64);
  assert.throws(()=>loadProducerTestSelection(f.g,f.m,f.policy,f.c,{env:f.env}),/capture binding/);
+});
+
+for(const channel of ['dev','main'])test(`${channel} new snapshot sources cannot move between capture and paired freeze; historical v1 remains readable`,()=>{
+ const document={schema:'wss-test-selection-artifact/v2',selection:{selection_id:'a'.repeat(64)},captures:{'python-wrapper':{request:{source:{commit:sha(2)},target:{repository:'owner/python'},channel}}}};
+ const pair={acceptance:{test_selection_id:'a'.repeat(64),target_snapshots:{'python-wrapper':{head_sha:sha(2)}}},stage:{test_selection_id:'a'.repeat(64),policy:{libraries:[{id:'python',repository:'owner/python'}]},receivers:{python:{heads:{[channel]:sha(2)}}}}};
+ assertSnapshotSourcesMatchPlans(document,pair);
+ pair.acceptance.target_snapshots['python-wrapper'].head_sha=sha(3);
+ assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair),/Receiver moved/);
+ pair.acceptance.target_snapshots['python-wrapper'].head_sha=sha(2);pair.stage.receivers.python.heads[channel]=sha(3);
+ assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair),/Stage receiver moved/);
+ assert.doesNotThrow(()=>assertSnapshotSourcesMatchPlans({schema:'wss-test-selection-artifact/v1'},pair));
+});
+
+for(const channel of ['dev','main'])test(`${channel} application source movement with unchanged workflow cannot pass paired source binding`,()=>{
+ const id='python-cli',document={schema:'wss-test-selection-artifact/v2',selection:{selection_id:'a'.repeat(64)},captures:{[id]:{request:{source:{commit:sha(2),workflow_blob:sha(9)},target:{repository:'owner/python-cli'},channel}}}};
+ const pair={acceptance:{test_selection_id:'a'.repeat(64),target_snapshots:{[id]:{head_sha:sha(2),trusted:{'.github/workflows':sha(9)}}}},stage:{test_selection_id:'a'.repeat(64),policy:{libraries:[]},receivers:{}}};
+ assertSnapshotSourcesMatchPlans(document,pair);
+ pair.acceptance.target_snapshots[id].head_sha=sha(3);
+ assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair),/Receiver moved/);
+ assert.equal(pair.acceptance.target_snapshots[id].trusted['.github/workflows'],sha(9));
 });

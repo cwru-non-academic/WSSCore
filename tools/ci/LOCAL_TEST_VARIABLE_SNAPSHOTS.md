@@ -32,7 +32,10 @@ Reviewed `test-variable-snapshot-sources.json` binds each channel/target to the
 full receiver commit, exact workflow blob, branch ref, and authenticated dispatch
 actor numeric ID. Do not derive these fields from an untrusted request or selected
 test checkout. Current source race fails before POST; actual run/source/actor,
-workflow registration and blob are authenticated after dispatch. Request JSON in
+workflow registration and blob are authenticated after dispatch. The independently
+loaded capture source must also equal both paired plans' receiver snapshots after
+workflow freeze/recheck and before either plan is emitted; source-only movement
+with unchanged workflow bytes still fails. Request JSON in
 an artifact alone proves nothing. Fork/PR/wrong actor/source/channel, duplicate
 run/job/artifact, missing/expired/corrupt artifact and changed bindings fail closed.
 

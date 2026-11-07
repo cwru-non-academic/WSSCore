@@ -52,9 +52,10 @@ export function prepareProducerTestSelection(g,m,policy,c,{resolveSnapshots,env=
 }
 // Independent post-upload read. Do not pass prepare's in-memory result directly
 // to freeze: uploading, then loading authenticates durable publication first.
-export function loadProducerTestSelection(g,m,policy,c,{env=process.env}={}) {
+export function loadProducerTestSelection(g,m,policy,c,{env=process.env,onDocument}={}) {
   const attempt=authority(g,m,policy,c,env),saved=existing(g,m,c,attempt);
   requireThat(saved,'Required durable producer test selection artifact is missing');
+  if(onDocument)onDocument(saved.document);
   return saved.selection;
 }
 
@@ -71,5 +72,20 @@ export function validateCaptures(document,m,c) {
     requireThat(r.channel===m.channel&&same(r.target,{id:t.id,repository:t.repository})&&same(r.producer,{repository:CORE,commit:c.commit,run_id:c.run_id,attempt:1}),'Capture belongs to another producer/target');
     requireThat(same(normalizeEffectiveTestVariables(capture.settings),capture.settings)&&b?.request_id===r.request_id&&decimal(b.run_id)&&decimal(b.artifact_id)&&/^sha256:[a-f0-9]{64}$/.test(b.archive_digest)&&/^[a-f0-9]{64}$/.test(b.document_digest),'Invalid effective capture binding');
     requireThat(capture.settings.WSS_USE_PIN_TESTS==='true'?(s.mode==='pinned'&&s.tests.repository===capture.settings.WSS_PIN_TEST_REPOSITORY&&s.tests.commit===capture.settings.WSS_PIN_TEST_COMMIT):s.mode==='latest','Selection differs from captured effective settings');
+  }
+}
+
+// Compare only against independently loaded capture provenance and freshly
+// frozen plans. A receiver moving after capture must not become a new authority.
+export function assertSnapshotSourcesMatchPlans(document,pair) {
+  if(document.schema==='wss-test-selection-artifact/v1')return;
+  requireThat(document.schema==='wss-test-selection-artifact/v2','Unknown selection envelope');
+  requireThat(document.selection.selection_id===pair.acceptance.test_selection_id&&document.selection.selection_id===pair.stage.test_selection_id,'Captured settings differ from paired selection');
+  for(const [id,capture] of Object.entries(document.captures)) {
+    const r=capture.request,a=pair.acceptance.target_snapshots[id];
+    requireThat(a?.head_sha===r.source.commit,'Receiver moved between variable capture and paired freeze');
+    const libraries=pair.stage.policy.libraries.filter(l=>l.repository===r.target.repository);
+    requireThat(libraries.length<=1,'Ambiguous captured stage receiver');
+    if(libraries.length)requireThat(pair.stage.receivers[libraries[0].id]?.heads?.[r.channel]===r.source.commit,'Stage receiver moved after variable capture');
   }
 }
