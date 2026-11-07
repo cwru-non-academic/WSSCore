@@ -74,9 +74,16 @@ export function loadReadinessReport(g,reader,auth,d) {
   requireThat(same(saved,collectReadiness(reader,d,auth)),'Readiness report differs from authenticated local capture');
   return saved;
 }
+// Recovery is read-only correlation of the original request and capture. A missing
+// initial report is not permission to republish, redispatch or read current vars.
+export function correlateReadiness(g,reader,auth,d) {
+  const reports=g.pages(`repos/${CORE}/actions/runs/${auth.controller.run_id}/artifacts`,'artifacts').filter(a=>a.name===REPORT);
+  requireThat(reports.length<=1,'Duplicate readiness reports');
+  return reports.length?loadReadinessReport(g,reader,auth,d):collectReadiness(reader,d,auth);
+}
 if(isEntrypoint(import.meta.url)) {
   const [operation,output,...extra]=process.argv.slice(2);
-  requireThat(['prepare','dispatch','collect','load'].includes(operation)&&output&&!extra.length,'Expected readiness operation output');
+  requireThat(['prepare','dispatch','collect','load','correlate'].includes(operation)&&output&&!extra.length,'Expected readiness operation output');
   const g=new GitHub(),auth=readinessAuthority(g);
   requireThat(process.env.WSS_READINESS_TOKEN,'Existing narrowly scoped App Actions/Contents token required');
   const reader=new GitHub(process.env.WSS_READINESS_TOKEN);
@@ -86,6 +93,7 @@ if(isEntrypoint(import.meta.url)) {
   else {
     const d=loadReadinessIntent(g,auth);
     if(operation==='dispatch') {dispatchReadiness(reader,d,auth);}
+    else if(operation==='correlate'){value=correlateReadiness(g,reader,auth,d);file='correlated-report.json';console.log(JSON.stringify({purpose:value.purpose,request_id:d.request.request_id,...value.capture.binding}));}
     else if(operation==='load'){value=loadReadinessReport(g,reader,auth,d);file='verified-report.json';}
     else {
       requireThat(auth.attempt===1,'Recovery must load the existing readiness report, never republish');

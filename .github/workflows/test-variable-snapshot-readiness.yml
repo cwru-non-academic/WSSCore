@@ -67,7 +67,14 @@ jobs:
           overwrite: false
           retention-days: 90
       - name: Independently reload readiness report (never production evidence)
+        if: github.run_attempt == 1
         env:
           GH_TOKEN: ${{ github.token }}
           WSS_READINESS_TOKEN: ${{ steps.snapshot.outputs.token }}
         run: node tools/release/test-variable-snapshot-readiness.mjs load "$env:RUNNER_TEMP/readiness-verified"
+      - name: Read-only correlation after uncertainty (no dispatch or republication)
+        if: github.run_attempt > 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_READINESS_TOKEN: ${{ steps.snapshot.outputs.token }}
+        run: node tools/release/test-variable-snapshot-readiness.mjs correlate "$env:RUNNER_TEMP/readiness-correlated"

@@ -25,9 +25,13 @@ these documents. The report states `readiness-only-not-campaign-evidence`.
 The controller persists a create-only intent, independently authenticates its ZIP,
 then acquires a fixed initial-run marker before POST. Duplicate/uncertain writes
 fail closed. Later attempts never prepare, dispatch, collect anew or republish;
-they only load the existing report and reauthenticate its original capture.
-Missing report after an uncertain first attempt requires investigation, not a
-blind rerun. Existing matching capture runs are correlated without another POST.
+they only correlate the original intent and already-existing capture. If a report
+exists it must authenticate and match; otherwise `correlate` produces a local
+correlation result plus original artifact IDs/digests in the job log, without
+uploading/replacing the first-attempt report. Missing, duplicate, unfinished or
+failed capture runs remain errors; correlation never reads current vars or causes
+a new capture. An uncertain first attempt can therefore be inspected with a real
+read-only rerun, not a redispatch. Existing matching capture runs are correlated without another POST.
 This is the same trusted-job execution model, not an arbitrary-client exactly-once
 service. Both current and retained source identities and final receiver head are
 checked. No missing retained anchor may be replaced by the live source.
