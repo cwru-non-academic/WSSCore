@@ -50,9 +50,10 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
       GitHub.prototype.command=function(){throw Error('Real network transport is forbidden by this test');};
     `);
     const script=fileURLToPath(new URL('./ci-test-selection.mjs',import.meta.url)),output=join(dir,'selection'),githubOutput=join(dir,'github-output');
-    const env={...process.env,GH_TOKEN:'',WSS_TEST_VARIABLE_READ_TOKEN:campaign?'':'read-only-test-token',WSS_CONSUMER_TEST_FIXTURE:dataPath,GITHUB_ACTIONS:'true',GITHUB_REPOSITORY:repository,GITHUB_SHA:productSha,GITHUB_RUN_ID:'99',GITHUB_RUN_ATTEMPT:'1',GITHUB_REF:'refs/heads/dev',GITHUB_WORKFLOW_REF:`${repository}/.github/workflows/ci.yml@refs/heads/dev`,GITHUB_WORKFLOW_SHA:productSha,GITHUB_EVENT_NAME:campaign?'workflow_dispatch':'pull_request',GITHUB_OUTPUT:githubOutput,WSS_CI_CHANNEL:'dev'};
+    const env={...process.env,GH_TOKEN:'',WSS_TEST_VARIABLE_READ_TOKEN:campaign?'':'read-only-test-token',WSS_CONSUMER_TEST_FIXTURE:dataPath,GITHUB_ACTIONS:'true',GITHUB_REPOSITORY:repository,GITHUB_SHA:productSha,GITHUB_RUN_ID:'99',GITHUB_RUN_ATTEMPT:'1',GITHUB_REF:campaign?'refs/heads/dev':'refs/pull/7/merge',GITHUB_BASE_REF:campaign?'':'dev',GITHUB_WORKFLOW_REF:`${repository}/.github/workflows/ci.yml@${campaign?'refs/heads/dev':'refs/pull/7/merge'}`,GITHUB_WORKFLOW_SHA:productSha,GITHUB_EVENT_NAME:campaign?'workflow_dispatch':'pull_request',GITHUB_OUTPUT:githubOutput,WSS_CI_CHANNEL:'dev'};
     const invoke=(args,extra={})=>execFileSync(process.execPath,['--import',pathToFileURL(stub).href,script,...args],{encoding:'utf8',env:{...env,...extra},stdio:['ignore','pipe','pipe']});
     const candidatePath=join(dir,'candidate.json');writeFileSync(candidatePath,JSON.stringify(candidate));
+    assert.throws(()=>invoke(['select',targetId,campaign?candidatePath:'-',join(dir,'wrong-channel'),campaign?'candidate':'committed'],{WSS_CI_CHANNEL:'main'}),/actual target branch/);
     invoke(['select',targetId,campaign?candidatePath:'-',output,campaign?'candidate':'committed']);
     assert.doesNotMatch(readFileSync(githubOutput,'utf8'),/selection_id=/);
     writeFileSync(data.saved,readFileSync(join(output,'context.json')));

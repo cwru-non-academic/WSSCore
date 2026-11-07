@@ -6,6 +6,7 @@ function authority(g,input,env) {
   const {run,policy,targetId,channel}=input,attempt=Number(env.GITHUB_RUN_ATTEMPT);
   const prefix=`${run.repository}/`,ref=env.GITHUB_WORKFLOW_REF;
   requireThat(env.GITHUB_ACTIONS==='true'&&env.GITHUB_REPOSITORY===run.repository&&env.GITHUB_SHA===run.commit&&env.GITHUB_RUN_ID===run.run_id&&env.GITHUB_EVENT_NAME===run.event&&decimal(env.GITHUB_RUN_ATTEMPT)&&Number.isSafeInteger(attempt)&&typeof ref==='string'&&ref.startsWith(prefix),'Invalid CI context runner authority');
+  requireThat(run.event==='pull_request'?env.GITHUB_BASE_REF===channel:env.GITHUB_REF===`refs/heads/${channel}`,'CI context channel differs from the actual target branch');
   const workflow=ref.slice(prefix.length).split('@')[0];
   requireThat(/^\.github\/workflows\/[^/@]+\.ya?ml$/.test(workflow)&&ref===`${prefix}${workflow}@${env.GITHUB_REF}`&&env.GITHUB_WORKFLOW_SHA===run.commit,'CI context workflow source mismatch');
   const current=g.run(run.repository,run.run_id);
