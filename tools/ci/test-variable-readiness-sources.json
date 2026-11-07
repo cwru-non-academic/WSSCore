@@ -1,5 +1,29 @@
 {
   "schema": "wss-test-variable-readiness-sources/v1",
-  "dev": null,
-  "main": null
+  "dev": {
+    "controller_actor_ids": [
+      "25409955"
+    ],
+    "source": {
+      "ref": "refs/heads/dev",
+      "commit": "d73ccd34f541b640b63d39726dd337c99252b3fc",
+      "workflow": ".github/workflows/test-variable-readiness-capture.yml",
+      "workflow_blob": "c8e8260afaac8baab84cf91482728a1f4bb68db0",
+      "tooling_tree": "9e131377717c5f1493f79e1bcb2fbf445687e75d",
+      "actor_id": "326213682"
+    }
+  },
+  "main": {
+    "controller_actor_ids": [
+      "25409955"
+    ],
+    "source": {
+      "ref": "refs/heads/main",
+      "commit": "5624c044e653b74826413bcf4586da711043bde5",
+      "workflow": ".github/workflows/test-variable-readiness-capture.yml",
+      "workflow_blob": "c8e8260afaac8baab84cf91482728a1f4bb68db0",
+      "tooling_tree": "9e131377717c5f1493f79e1bcb2fbf445687e75d",
+      "actor_id": "326213682"
+    }
+  }
 }

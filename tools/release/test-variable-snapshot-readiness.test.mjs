@@ -79,7 +79,7 @@ test('workflow wiring is closed, credential-free on receiver, and never calls pr
  assert.doesNotMatch(local,/secrets\.|create-github-app-token|environment:|WSS_LOCAL_TEST_VARIABLES_SCHEMA/);
  assert.match(core,/repositories: Python_WSS_Integration_Lib/);assert.match(core,/permission-actions: write/);assert.match(core,/permission-contents: read/);
  assert.equal((local.match(/vars\./g)||[]).length,3);assert.ok(core.indexOf('Authenticate controller')<core.indexOf('actions/create-github-app-token'));
- const registry=JSON.parse(readFileSync(new URL('../ci/test-variable-readiness-sources.json',import.meta.url)));assert.equal(registry.dev,null);assert.equal(registry.main,null);
+ const production=JSON.parse(readFileSync(new URL('../ci/test-variable-snapshot-sources.json',import.meta.url)));assert.deepEqual(production,{schema:'wss-local-test-variable-sources/v1',dev:{},main:{}});
 });
 
 test('read-only uncertain recovery correlates original capture without requiring or publishing a report',()=>{
@@ -91,4 +91,13 @@ test('read-only uncertain recovery correlates original capture without requiring
 });
 for(const kind of ['missing','duplicate','unfinished','failed'])test(`uncertain recovery rejects ${kind} capture without redispatch`,()=>{
  const f=fixture();f.state.localRuns=kind==='missing'?[]:kind==='duplicate'?[f.localRun,f.localRun]:[f.localRun];if(kind==='unfinished')f.localRun.status='in_progress';if(kind==='failed')f.localRun.conclusion='failure';f.reader.command=()=>assert.fail('no POST');assert.throws(()=>correlateReadiness(f.g,f.reader,{...f.auth,attempt:2},f.d));assert.equal(f.state.posts,0);
+});
+
+for(const [channel,anchor] of Object.entries({dev:'d73ccd34f541b640b63d39726dd337c99252b3fc',main:'5624c044e653b74826413bcf4586da711043bde5'}))test(`${channel} readiness registry authorizes only reviewed representative sources and controller`,()=>{
+ const registry=JSON.parse(readFileSync(new URL('../ci/test-variable-readiness-sources.json',import.meta.url)));
+ assert.deepEqual(Object.keys(registry).sort(),['dev','main','schema']);assert.equal(registry.schema,'wss-test-variable-readiness-sources/v1');
+ const expected={controller_actor_ids:['25409955'],source:{ref:`refs/heads/${channel}`,commit:anchor,workflow:SNAPSHOT_WORKFLOW,workflow_blob:'c8e8260afaac8baab84cf91482728a1f4bb68db0',tooling_tree:'9e131377717c5f1493f79e1bcb2fbf445687e75d',actor_id:'326213682'}};
+ assert.deepEqual(registry[channel],expected);
+ const f=fixture(channel);f.registry[channel]=registry[channel];f.run.actor.id=25409955;f.run.triggering_actor.id=25409955;f.env.GITHUB_ACTOR_ID='25409955';assert.equal(readinessAuthority(f.g,f.env).source.commit,anchor);
+ f.run.triggering_actor.id=326213682;f.env.GITHUB_ACTOR_ID='326213682';assert.throws(()=>readinessAuthority(f.g,f.env),/actor/);
 });
