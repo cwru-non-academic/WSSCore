@@ -88,7 +88,7 @@ function runnerFixture(event='push') {
   const payload={before:base,pull_request:{base:{ref:'dev',sha:base,repo:{full_name:CORE}}}};
   const state={diff:`A\t${restartPath(r)}`,parent:base,record:r};
   f.state.core=event==='push'?head:base;
-  const git=(...args)=>{if(args[0]==='diff')return state.rawChanges??(state.diff?state.diff.replaceAll('\\t','\t').split('\n').flatMap(line=>line.split('\t')).join('\0')+'\0':'');if(args[0]==='ls-tree')return '100644 blob '+sha(7)+'\t'+restartPath(r);if(args[0]==='show')return JSON.stringify(state.record);if(args[0]==='rev-parse')return state.parent;throw Error('Unexpected git '+args);};
+  const git=(...args)=>{if(args[0]==='diff')return state.rawChanges??(state.diff?state.diff.replaceAll('\\t','\t').split('\n').flatMap(line=>line.split('\t')).join('\0')+'\0':'');if(args[0]==='ls-tree')return (state.mode??'100644')+' blob '+sha(7)+'\t'+restartPath(r);if(args[0]==='show')return JSON.stringify(state.record);if(args[0]==='rev-parse')return state.parent;throw Error('Unexpected git '+args);};
   return {...f,r,env,payload,state,git,check:()=>checkRestartRunner(f.g,{env,event:payload,git})};
 }
 for(const event of ['push','pull_request'])test(`${event}: runner authenticates the exact new record and immutable source`,()=>{
@@ -115,8 +115,8 @@ test('ordinary code pushes and build-only dispatch do not become restarts',()=>{
 });
 test('cross-channel promotion imports only the exact historical origin record',()=>{
   const f=runnerFixture(),foreign=seal({...f.r,channel:'main'});f.state.record=foreign;f.state.diff=`A\t${restartPath(foreign)}`;
-  f.g.object=()=>({type:'blob',sha:f.state.parent});assert.equal(f.check(),null);
-  f.g.object=()=>({type:'blob',sha:sha(8)});assert.throws(f.check,/origin channel/);
+  f.g.object=()=>({type:'blob',mode:'100644',sha:f.state.parent});assert.equal(f.check(),null);
+  f.g.object=()=>({type:'blob',mode:'100644',sha:sha(8)});assert.throws(f.check,/origin channel/);
 });
 test('trusted-base validation is deployed separately from request records',()=>{
   const workflow=readFileSync(new URL('../../.github/workflows/artifacts.yml',import.meta.url),'utf8');
@@ -173,5 +173,15 @@ test('malformed restart namespace paths fail closed before any API lookup',()=>{
     const f=runnerFixture();f.state.rawChanges=`A\0tools/ci/campaign-restarts/dev/${name}\0`;
     f.g.object=()=>assert.fail('no malformed path API read');f.g.get=()=>assert.fail('no malformed path API read');
     assert.throws(f.check,/exact channel\/digest/);
+  }
+});
+
+test('cross-channel imports reject executable and symlink modes at both origins and destination',()=>{
+  for(const mode of ['100755','120000'])for(const location of ['origin','destination']) {
+    const f=runnerFixture(),foreign=seal({...f.r,channel:'main'});
+    f.state.record=foreign;f.state.diff=`A\t${restartPath(foreign)}`;
+    f.state.mode=location==='destination'?mode:'100644';
+    f.g.object=()=>({type:'blob',mode:location==='origin'?mode:'100644',sha:f.state.parent});
+    assert.throws(f.check,/regular file|origin channel/);
   }
 });

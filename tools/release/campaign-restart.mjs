@@ -139,16 +139,16 @@ export function checkRestartRunner(g,{env,event:e,git}) {
   const changes=changed(git,base,head),allRecords=changes.filter(c=>c.path.startsWith(RESTART_DIRECTORY));
   requireThat(allRecords.every(c=>RECORD_PATH.test(c.path)),'Restart namespace requires exact channel/digest record paths');
   requireThat(allRecords.every(c=>c.status==='A'),'Restart records are immutable; modification/deletion is forbidden');
+  for(const entry of allRecords)requireThat(git('ls-tree',head,'--',entry.path).startsWith('100644 blob '),'Restart record must be a regular file');
   const records=allRecords.filter(c=>c.path.startsWith(`${RESTART_DIRECTORY}${channel}/`));
   for(const entry of allRecords.filter(c=>!records.includes(c))) {
     const imported=restartRequest(JSON.parse(git('show',`${head}:${entry.path}`)));
     requireThat(entry.path===restartPath(imported)&&imported.channel!==channel,'Invalid cross-channel restart record');
     const source=g.object(CORE,g.head(CORE,imported.channel),entry.path);
-    requireThat(source.type==='blob'&&source.sha===git('rev-parse',`${head}:${entry.path}`),'Cross-channel record must already exist unchanged on its origin channel');
+    requireThat(source.type==='blob'&&source.mode==='100644'&&source.sha===git('rev-parse',`${head}:${entry.path}`),'Cross-channel record must already exist unchanged on its origin channel');
   }
   if(!records.length)return null;
   requireThat(records.length===1&&records[0].status==='A','Restart records are append-only and singular');
-  requireThat(git('ls-tree',head,'--',records[0].path).startsWith('100644 blob '),'Restart record must be a regular file');
   const r=restartRequest(JSON.parse(git('show',`${head}:${records[0].path}`)));
   requireThat(records[0].path===restartPath(r),'Restart record path differs from digest');
   assertRequestChange(r,{channel,base,changes});
