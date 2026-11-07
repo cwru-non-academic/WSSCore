@@ -1,7 +1,6 @@
 // Opt-in campaign extension. No live policy or token permission is changed here.
-import {readFileSync} from 'node:fs';
 import {canonical,requireThat,TARGETS} from './verify.mjs';
-import {resolveOrReuseTestSelection,verifyTestSelection,verifySelectedTestEvidence} from '../ci/test-selection.mjs';
+import {verifyTestSelection,verifySelectedTestEvidence} from './test-selection-contract.mjs';
 
 export const CAMPAIGN_TEST_POLICY='wss-campaign-test-selection/v1';
 const same=(a,b)=>canonical(a)===canonical(b);
@@ -28,17 +27,6 @@ export function selectionRequest(m,c,snapshots) {
   requireThat(policy,'Campaign does not opt into test selection');
   if(snapshots!==undefined)requireThat(keys(snapshots,policy.targets.map(t=>t.id)),'Missing or extra effective variable snapshots');
   return {channel:m.channel,campaign:{repository:c.repository,commit:c.commit,run_id:c.run_id},targets:policy.targets.map(t=>({...t,variables:snapshots===undefined?{}:snapshots[t.id]}))};
-}
-// resolveSnapshots is injected by the authenticated controller. Access failures
-// must throw, never become an empty snapshot. Existing locks never invoke it.
-export function resolveCampaignTestSelection(g,m,c,path,resolveSnapshots) {
-  const expected=selectionRequest(m,c);
-  try {
-    const selection=JSON.parse(readFileSync(path,'utf8'));
-    return verifyTestSelection(selection,expected,selection.selection_id);
-  } catch(error) {if(error.code!=='ENOENT')throw error;}
-  requireThat(typeof resolveSnapshots==='function','An authenticated effective variable snapshot reader is required');
-  return resolveOrReuseTestSelection(selectionRequest(m,c,resolveSnapshots(testSelectionPolicy(m).targets)),g,path);
 }
 export function selectionFields(m,c,selection) {
   if(!testSelectionPolicy(m)) {

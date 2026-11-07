@@ -1,8 +1,10 @@
+import {readFileSync} from 'node:fs';
+import {resolveOrReuseTestSelection,verifyTestSelection} from '../ci/test-selection.mjs';
 import {freeze} from './github.mjs';
 import {freezeStage} from '../ci/dev-propagation.mjs';
 import {freezeWorkflows,freezeWorkflowPair} from '../ci/workflow-freeze.mjs';
 import {canonical,requireThat} from './verify.mjs';
-import {testSelectionPolicy,resolveCampaignTestSelection,assertPairedTestSelection} from './campaign-test-selection.mjs';
+import {testSelectionPolicy,selectionRequest,assertPairedTestSelection} from './campaign-test-selection.mjs';
 
 // resolveSnapshots is supplied by a controller with authenticated repository-var
 // access. No permissions are expanded and no failed read means "unset".
@@ -22,4 +24,16 @@ export function freezeCampaign(g,manifest,policy,candidate,{selectionPath,resolv
   const pair={acceptance:freezeWorkflows(g,a,'acceptance'),stage:freezeWorkflows(g,s,'stage')};
   assertPairedTestSelection(pair.acceptance,pair.stage);
   return pair;
+}
+
+// resolveSnapshots is injected by the authenticated controller. Access failures
+// must throw, never become an empty snapshot. Existing locks never invoke it.
+export function resolveCampaignTestSelection(g,m,c,path,resolveSnapshots) {
+  const expected=selectionRequest(m,c);
+  try {
+    const selection=JSON.parse(readFileSync(path,'utf8'));
+    return verifyTestSelection(selection,expected,selection.selection_id);
+  } catch(error) {if(error.code!=='ENOENT')throw error;}
+  requireThat(typeof resolveSnapshots==='function','An authenticated effective variable snapshot reader is required');
+  return resolveOrReuseTestSelection(selectionRequest(m,c,resolveSnapshots(testSelectionPolicy(m).targets)),g,path);
 }

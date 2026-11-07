@@ -1,3 +1,4 @@
+import {resolveCampaignTestSelection} from './campaign-freeze.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,mkdtempSync,rmSync} from 'node:fs';
@@ -6,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {CORE,digest,plan} from './verify.mjs';
 import {freeze} from './github.mjs';
 import {freezeStage} from '../ci/dev-propagation.mjs';
-import {CAMPAIGN_TEST_POLICY,selectionFields,testSelectionPolicy,resolveCampaignTestSelection,planTestSelection,targetTestEvidence,verifySelectedTestArtifact,selectedTestArtifactName} from './campaign-test-selection.mjs';
+import {CAMPAIGN_TEST_POLICY,selectionFields,testSelectionPolicy,planTestSelection,targetTestEvidence,verifySelectedTestArtifact,selectedTestArtifactName} from './campaign-test-selection.mjs';
 const sha=n=>String(n).padStart(40,'0');
 function fixture() {
   const m=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));

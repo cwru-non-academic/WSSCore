@@ -20,6 +20,14 @@
     }
   },
   "files": {
+    ".github/scripts/wss-ci/campaign-test-selection.mjs": {
+      "origin": "core",
+      "path": "tools/release/campaign-test-selection.mjs"
+    },
+    ".github/scripts/wss-ci/test-selection-contract.mjs": {
+      "origin": "core",
+      "path": "tools/release/test-selection-contract.mjs"
+    },
     ".github/scripts/wss-ci/verify.mjs": {
       "origin": "core",
       "path": "tools/release/verify.mjs"
