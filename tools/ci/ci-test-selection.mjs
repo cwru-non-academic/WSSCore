@@ -41,12 +41,12 @@ export async function selectCiTests({channel,targetId,policy,variables={},run,pr
   return {scope:'run',selection,request,selection_id:selection.selection_id};
 }
 
-export async function verifyCiTestBinding(value,policy,targetId,run,expectedId,g,{loadCampaign=loadCampaignTestBinding}={}) {
+export async function verifyCiTestBinding(value,policy,targetId,run,expectedId,g,{loadCampaign=loadCampaignTestBinding,expectedCandidate}={}) {
   requireThat(value&&['run','campaign'].includes(value.scope)&&/^[a-f0-9]{64}$/.test(expectedId)&&value.selection_id===expectedId,'CI test context differs from trusted prerequisite output');
   const targets=policy.targets.filter(t=>t.id===targetId);
   requireThat(targets.length===1&&targets[0].repository===run.repository,'CI target policy differs from actual run');
   if(value.scope==='campaign') {
-    const binding=await loadCampaign(g,{kind:'acceptance',runId:value.selection.campaign.run_id,channel:value.selection.channel,targetId});
+    const binding=await loadCampaign(g,{kind:'acceptance',runId:value.selection.campaign.run_id,channel:value.selection.channel,targetId,expectedCandidate});
     requireThat(binding.selection_id===expectedId&&canonical(binding.selection)===canonical(value.selection),'CI context differs from authenticated frozen campaign');
     return binding;
   }
@@ -68,7 +68,7 @@ if(isEntrypoint(import.meta.url)) {
     // environment variables must not silently choose a different test source.
     const variables=()=>{requireThat(process.env.WSS_TEST_VARIABLE_READ_TOKEN,'Repository variable read token unavailable');return readRepositoryTestVariables(new GitHub(process.env.WSS_TEST_VARIABLE_READ_TOKEN),run.repository);};
     const input={channel,targetId,policy,variables,run,productCandidate,mode:third||'committed'};
-    const verify=value=>{requireThat(value.selection.channel===channel,'Durable CI channel mismatch');return verifyCiTestBinding(value,policy,targetId,run,value.selection_id,g);};
+    const verify=value=>{requireThat(value.selection.channel===channel,'Durable CI channel mismatch');requireThat(value.scope!=='campaign'||productCandidate,'Durable campaign context requires the exact product candidate');return verifyCiTestBinding(value,policy,targetId,run,value.selection_id,g,{expectedCandidate:productCandidate||undefined});};
     requireThat(process.env.GITHUB_OUTPUT,'CI selection requires runner output context');
     if(operation==='select') {
       const prepared=await prepareCiContext(g,input,{select:()=>selectCiTests(input,g),verify});

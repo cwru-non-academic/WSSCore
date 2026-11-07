@@ -28,7 +28,7 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
       const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:productSha,trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,'c'.repeat(40)]))}])),...selectionFields(manifest,candidate,selection)};
       plan={...body,plan_id:digest(body)};
     }
-    const data={fault:null,campaign,manifest,plan,candidate,testSha,productSha,saved:join(dir,'saved.json'),log:join(dir,'network.log')},dataPath=join(dir,'fixture.json');writeFileSync(dataPath,JSON.stringify(data));
+    const data={fault:null,campaign,manifest,plan,candidate,testSha,productSha,apiHeadSha:campaign?productSha:'e'.repeat(40),saved:join(dir,'saved.json'),log:join(dir,'network.log')},dataPath=join(dir,'fixture.json');writeFileSync(dataPath,JSON.stringify(data));
     const stub=join(dir,'mock-network.mjs');writeFileSync(stub,`
       import {readFileSync,appendFileSync} from 'node:fs';
       import {GitHub} from ${JSON.stringify(new URL('../release/github.mjs',import.meta.url).href)};
@@ -36,9 +36,9 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
       GitHub.prototype.head=function(repo,branch){if(branch!=='dev')throw Error('Wrong branch');if(repo===${JSON.stringify(core)})return f.candidate.commit;if(repo===${JSON.stringify(repository)})return f.testSha;throw Error('Unexpected head read');};
       GitHub.prototype.pages=function(){return f.fault==='missing'?[]:requireSaved()?(f.fault==='duplicate'?[artifact(),artifact()]:[artifact()]):[];};
       function requireSaved(){try{return JSON.parse(readFileSync(f.saved,'utf8'));}catch(e){if(e.code==='ENOENT')return null;throw e;}}
-      function artifact(){return {id:123,name:'wss-ci-test-context-python-wrapper',expired:f.fault==='expired',created_at:f.fault==='late'?'2026-01-02T00:01:00Z':'2026-01-01T00:01:00Z',workflow_run:{id:f.fault==='artifact-run'?98:99,head_sha:f.fault==='artifact-head'?'e'.repeat(40):f.productSha}};}
+      function artifact(){return {id:123,name:'wss-ci-test-context-python-wrapper',expired:f.fault==='expired',created_at:f.fault==='late'?'2026-01-02T00:01:00Z':'2026-01-01T00:01:00Z',workflow_run:{id:f.fault==='artifact-run'?98:99,head_sha:f.fault==='artifact-head'?'d'.repeat(40):f.apiHeadSha}};}
       GitHub.prototype.artifact=function(){return artifact();};
-      function run(){return {id:99,repository:{full_name:${JSON.stringify(repository)}},head_sha:f.productSha,path:f.fault==='workflow'?'.github/workflows/other.yml':'.github/workflows/ci.yml',event:f.campaign?'workflow_dispatch':'pull_request',run_attempt:f.fault==='attempt'?7:Number(process.env.GITHUB_RUN_ATTEMPT),status:'in_progress'};}
+      function run(){return {id:99,repository:{full_name:${JSON.stringify(repository)}},head_sha:f.apiHeadSha,path:f.fault==='workflow'?'.github/workflows/other.yml':'.github/workflows/ci.yml',event:f.campaign?'workflow_dispatch':'pull_request',run_attempt:f.fault==='attempt'?7:Number(process.env.GITHUB_RUN_ATTEMPT),status:'in_progress'};}
       GitHub.prototype.get=function(path){
         if(path.endsWith('/attempts/1'))return {...run(),run_attempt:1,status:'completed',run_started_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-01T00:02:00Z'};
         if(path===${JSON.stringify(`repos/${repository}/actions/variables?per_page=30&page=1`)}&&!f.campaign){appendFileSync(f.log,'variables\\n');return {total_count:0,variables:[]};}
@@ -75,6 +75,13 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
     }
     writeFileSync(dataPath,JSON.stringify(data));
     const original=JSON.parse(readFileSync(data.saved));
+    if(campaign){
+      const wrongCandidate={...candidate,sha256:'c'.repeat(64)},forged=structuredClone(original);
+      forged.identity.productCandidate=wrongCandidate;
+      writeFileSync(candidatePath,JSON.stringify(wrongCandidate));writeFileSync(data.saved,JSON.stringify(forged));
+      assert.throws(()=>invoke(['load',targetId,candidatePath,join(dir,'wrong-campaign-candidate'),'candidate'],{GITHUB_RUN_ATTEMPT:'2'}),/Product candidate differs/);
+      writeFileSync(candidatePath,JSON.stringify(candidate));writeFileSync(data.saved,JSON.stringify(original));
+    }
     for(const field of ['policy','commit','event','channel','targetId','mode']) {
       const forged=structuredClone(original);forged.identity[field]='tampered';writeFileSync(data.saved,JSON.stringify(forged));
       assert.throws(()=>invoke(['load',targetId,campaign?candidatePath:'-',join(dir,`bad-envelope-${field}`),campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2'}),/envelope/);
@@ -82,6 +89,6 @@ for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evid
     writeFileSync(data.saved,JSON.stringify({...original,attempt:2}));
     assert.throws(()=>invoke(['select',targetId,campaign?candidatePath:'-',join(dir,'bad-creator'),campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2'}),/envelope/);
     writeFileSync(data.saved,JSON.stringify(original));
-    const calls=readFileSync(data.log,'utf8').trim().split('\n');assert.deepEqual(calls,campaign?['plan','plan','plan','plan','plan']:['variables']);
+    const calls=readFileSync(data.log,'utf8').trim().split('\n');assert.deepEqual(calls,campaign?['plan','plan','plan','plan','plan','plan']:['variables']);
   } finally {rmSync(dir,{recursive:true,force:true});}
 });
