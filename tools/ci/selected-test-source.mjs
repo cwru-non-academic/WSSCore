@@ -45,12 +45,13 @@ export function writeSelectedTestEvidence(binding,targetId,roots,expectedProduct
   writeFileSync(path,canonical(checked.evidence)+'\n',{encoding:'utf8',flag:'wx'});
   return checked.evidence;
 }
-export async function loadCampaignTestBinding(g,{kind='acceptance',runId,channel,targetId}) {
+export async function loadCampaignTestBinding(g,{kind='acceptance',runId,channel,targetId,expectedCandidate}) {
   channelContext(channel);
   requireThat(['acceptance','stage'].includes(kind)&&typeof runId==='string'&&/^[1-9][0-9]*$/.test(runId),'Invalid selected-test campaign source');
   const {planTestSelection}=await import('../release/campaign-test-selection.mjs');
   const plan=kind==='acceptance'?loadPlan(g,runId):(await import('./dev-propagation.mjs')).loadStage(g,runId,{channel});
   requireThat((kind==='acceptance'?plan.channel:plan.policy.channel)===channel,'Selected-test campaign channel differs');
+  if(expectedCandidate)requireThat(canonical(plan.candidate)===canonical(expectedCandidate),'Product candidate differs from the authenticated test campaign');
   const binding=planTestSelection(plan,kind);
   requireThat(binding&&Object.hasOwn(binding.selection.targets,targetId),'Campaign has no frozen selection for this target');
   return binding;
