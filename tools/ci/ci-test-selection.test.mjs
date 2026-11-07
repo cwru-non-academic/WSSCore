@@ -69,7 +69,7 @@ function executorFixture({campaign=false}={}) {
   const context={scope:campaign?'campaign':'run',selection,request,selection_id:selection.selection_id};
   const env={GITHUB_ACTIONS:'true',GITHUB_REPOSITORY:repository,GITHUB_SHA:run.commit,GITHUB_RUN_ID:run.run_id,GITHUB_EVENT_NAME:run.event,GITHUB_RUN_ATTEMPT:'1',GITHUB_REF:'refs/heads/dev',GITHUB_BASE_REF:'',GITHUB_WORKFLOW_REF:`${repository}/.github/workflows/ci.yml@refs/heads/dev`,GITHUB_WORKFLOW_SHA:run.commit,WSS_CI_CHANNEL:channel,GH_TOKEN:'private-auth-only',WSS_GITHUB_APP_PRIVATE_KEY:'private-key-auth-only'};
   const identity={...run,api_head_sha:run.commit,workflow:'.github/workflows/ci.yml',workflow_ref:env.GITHUB_WORKFLOW_REF,workflow_sha:run.commit,channel,targetId,policy,mode:campaign?'candidate':'committed',productCandidate:campaign?producer:null};
-  const saved={document:{schema:'wss-ci-test-context/v2',identity,context:{...context,secret:'do-not-export-raw-context'}},context,binding:context,artifact:{id:'123',name:`wss-ci-test-context-${targetId}`,created_at:'2026-01-01T00:01:00Z'}};
+  const saved={document:{schema:'wss-ci-test-context/v2',identity,context:{...context,secret:'do-not-export-raw-context'}},context,binding:context,artifact:{id:'123',name:`wss-ci-test-context-${targetId}`,created_at:'2026-01-01T00:01:00Z',digest:'sha256:'+'a'.repeat(64)}};
   const handoff=createCiExecutorHandoff(saved,campaign?{kind:'acceptance',producer,plan_id:'c'.repeat(64),policy_sha256:'d'.repeat(64)}:null,env);
   const verify=(value=handoff,expectedDigest=digest(value),other={})=>verifyCiExecutorHandoff(value,policy,targetId,run,selection.selection_id,expectedDigest,{env:{...env,...other}});
   return {handoff,verify,env,selection};
@@ -101,6 +101,8 @@ for(const [name,mutate,pattern] of [
   ['origin extra credentials',x=>x.origin.token='secret',/origin/],
   ['origin foreign artifact',x=>x.origin.artifact_name='wss-ci-test-context-matlab-cli',/origin/],
   ['origin invented artifact ID',x=>x.origin.artifact_id='not-an-id',/origin/],
+  ['origin missing archive digest',x=>delete x.origin.archive_digest,/origin/],
+  ['origin invalid archive digest',x=>x.origin.archive_digest='invented',/origin/],
   ['origin second attempt',x=>x.origin.attempt=2,/origin/],
   ['context credentials',x=>x.context.token='secret',/selection differs/],
   ['context selection-ID substitution',x=>x.context.selection_id='f'.repeat(64),/selection differs/],
@@ -114,7 +116,7 @@ for(const [name,mutate,pattern] of [
 ])test(`executor rejects ${name} even with a transport-matching digest`,()=>{
   const {handoff,verify}=executorFixture();mutate(handoff);assert.throws(()=>verify(handoff),pattern);
 });
-test('executor does not accept its own digest or selection ID as authentication',()=>{
+test('executor rejects a missing trusted prerequisite digest',()=>{
   const {handoff,verify}=executorFixture();assert.throws(()=>verify(handoff,''),/trusted prerequisite/);
 });
 for(const name of ['GH_TOKEN','GITHUB_TOKEN','GH_ENTERPRISE_TOKEN','GITHUB_ENTERPRISE_TOKEN','WSS_GITHUB_APP_PRIVATE_KEY','WSS_TEST_VARIABLE_READ_TOKEN','INPUT_TOKEN','INPUT_PRIVATE-KEY','ACTIONS_ID_TOKEN_REQUEST_TOKEN'])test(`executor rejects bootstrap credential ${name}`,()=>{
