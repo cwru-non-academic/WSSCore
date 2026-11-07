@@ -27,19 +27,22 @@ function existing(g,input,auth) {
   requireThat(Number.isFinite(created)&&Number.isFinite(start)&&created>=start&&(auth.attempt===1||(first.status==='completed'&&Number.isFinite(end)&&created<=end)),'CI context artifact was not published in first attempt');
   const document=JSON.parse(g.download(run.repository,run.run_id,name,['context.json'])['context.json']);
   requireThat(['wss-ci-test-context/v1','wss-ci-test-context/v2'].includes(document.schema)&&document.attempt===1&&same(document.identity,auth.identity)&&same(Object.keys(document).sort(),document.schema==='wss-ci-test-context/v2'?['attempt','context','identity','schema','variable_semantics']:['attempt','context','identity','schema'])&&(document.schema!=='wss-ci-test-context/v2'||document.variable_semantics==='effective-org-repository/no-environment/v1'),'CI context envelope/policy/run mismatch');
-  return {created:false,artifact_name:name,document,context:document.context};
+  return {created:false,artifact_name:name,document,context:document.context,artifact:{id:String(a.id),name,created_at:a.created_at}};
 }
 // No token writes. The workflow uploads once with overwrite:false, then calls
 // load independently before exporting any trusted prerequisite selection outputs.
 export async function prepareCiContext(g,input,{env=process.env,select,verify}={}) {
   const auth=authority(g,input,env),saved=existing(g,input,auth);
-  if(saved){await verify(saved.context);return saved;}
+  if(saved){await verify(saved.context);const {artifact,...recovered}=saved;return recovered;}
   requireThat(auth.attempt===1,'Previous CI attempt has no durable test context; inspect recovery');
   const context=await select();
   return {created:true,artifact_name:ciContextArtifact(input.targetId),context,document:{schema:input.variableSemantics?'wss-ci-test-context/v2':'wss-ci-test-context/v1',...(input.variableSemantics?{variable_semantics:input.variableSemantics}:{}),attempt:1,identity:auth.identity,context}};
 }
-export async function loadCiContext(g,input,{env=process.env,verify}={}) {
+export async function loadVerifiedCiContext(g,input,{env=process.env,verify}={}) {
   const saved=existing(g,input,authority(g,input,env));
   requireThat(saved,'Required durable CI test context artifact is missing');
-  await verify(saved.context);return saved.context;
+  const binding=await verify(saved.context);return {...saved,binding};
+}
+export async function loadCiContext(g,input,options) {
+  return (await loadVerifiedCiContext(g,input,options)).context;
 }
