@@ -80,3 +80,11 @@ for(const anchor of [sha(2),sha(5)])test(`changed executable tree at reviewed/cu
  f.g.object=(repo,commit,path)=>commit===anchor&&path==='.github/scripts/wss-ci'?{type:'tree',mode:'040000',sha:sha(8)}:original(repo,commit,path);
  assert.throws(()=>verifySnapshotSource(f.g,r),/executable tooling/);
 });
+
+test('missing reviewed authority anchor fails closed without substituting current product source',()=>{
+ const f=fixture(),{request_id,...body}=f.r,r=createSnapshotRequest({...body,source:{...body.source,commit:sha(5)}}),original=f.g.object;
+ f.g.object=(repo,commit,path)=>{if(commit===r.source.reviewed_commit)throw Error('404 retained authority missing');return original(repo,commit,path);};
+ assert.throws(()=>verifySnapshotSource(f.g,r),/retained authority missing/);
+ f.state.runs=[];f.g.head=()=>sha(5);
+ assert.throws(()=>dispatchSnapshotOnce(f.g,r,{newIntent:true,authenticatedIntent:r,dispatch:()=>assert.fail('must not dispatch')}),/retained authority missing/);
+});

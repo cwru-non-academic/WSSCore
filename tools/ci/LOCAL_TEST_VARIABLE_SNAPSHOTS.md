@@ -36,7 +36,10 @@ match that reviewed anchor, then records the actual full head in the immutable
 request. Legitimate product-only commits therefore need no registry edit; changed
 workflow/tooling requires new review. The registry fields are ref, commit (reviewed
 anchor), workflow, workflow_blob, tooling_tree and actor_id; the request adds
-reviewed_commit and uses commit for the actual campaign source. Do not derive these fields from an untrusted request or selected
+reviewed_commit and uses commit for the actual campaign source. The reviewed
+receiver authority anchor must remain reachable through protected history or an
+approved retained ref. Missing/unavailable anchors and anchor-tree mismatch fail
+closed; never substitute current source or create a new anchor automatically. Do not derive these fields from an untrusted request or selected
 test checkout. Current source race fails before POST; actual run/source/actor,
 workflow registration and blob are authenticated after dispatch. The independently
 loaded capture source must also equal both paired plans' receiver snapshots after
