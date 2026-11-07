@@ -29,8 +29,14 @@ legacy v1 contexts remain readable and reusable without recapture.
 ## Authority and dispatch
 
 Reviewed `test-variable-snapshot-sources.json` binds each channel/target to the
-full receiver commit, exact workflow blob, branch ref, and authenticated dispatch
-actor numeric ID. Do not derive these fields from an untrusted request or selected
+reviewed authority anchor commit, exact workflow blob, executable shared-tooling
+tree, branch ref, and authenticated dispatch actor numeric ID. Preparation reads
+the then-current channel head and requires its workflow/tooling identities to
+match that reviewed anchor, then records the actual full head in the immutable
+request. Legitimate product-only commits therefore need no registry edit; changed
+workflow/tooling requires new review. The registry fields are ref, commit (reviewed
+anchor), workflow, workflow_blob, tooling_tree and actor_id; the request adds
+reviewed_commit and uses commit for the actual campaign source. Do not derive these fields from an untrusted request or selected
 test checkout. Current source race fails before POST; actual run/source/actor,
 workflow registration and blob are authenticated after dispatch. The independently
 loaded capture source must also equal both paired plans' receiver snapshots after
@@ -89,10 +95,12 @@ the deferred capture callback. Family fragments are NOT activated by this change
    baseline/native gates. Register the dispatch workflow on each default branch.
    Merge in the coordinated window only, never during a frozen campaign. Do not
    freeze a new producer against a half-updated receiver fleet.
-4. Independently verify exact full receiver heads, workflow blobs, App actor ID,
+4. Independently verify reviewed receiver anchor heads, workflow blobs, executable
+   shared-tooling trees, App actor ID,
    common locks and required pins; populate the reviewed source registry for both
-   channels. Source pins cannot be predicted before receiver merges. Re-audit any
-   later receiver movement and update through review, never weaken source checks.
+   channels. Authority anchors cannot be predicted before receiver merges. Future
+   product-only movement is observed and frozen per campaign; executable changes
+   require registry review. Never weaken protected source or freeze checks.
 5. Review main controller compatibility separately: main must read both historical
    selection v1 and effective v2 and retain existing plan/receipt guards. Port the
    functional controller changes through a held main PR without assuming dev/main

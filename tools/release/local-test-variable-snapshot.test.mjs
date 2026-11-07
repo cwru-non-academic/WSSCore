@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {CORE,digest} from './verify.mjs';
-import {createSnapshotRequest,captureLocalTestVariables,collectLocalTestVariables,normalizeEffectiveTestVariables,dispatchSnapshotOnce,snapshotName,snapshotTitle,SNAPSHOT_WORKFLOW,SNAPSHOT_JOB} from './local-test-variable-snapshot.mjs';
+import {createSnapshotRequest,captureLocalTestVariables,collectLocalTestVariables,normalizeEffectiveTestVariables,dispatchSnapshotOnce,verifySnapshotSource,snapshotName,snapshotTitle,SNAPSHOT_WORKFLOW,SNAPSHOT_JOB} from './local-test-variable-snapshot.mjs';
 const sha=n=>String(n).repeat(40),repository='cwru-non-academic/TestReceiver';
 function fixture(channel='dev') {
- const r=createSnapshotRequest({schema:'wss-local-test-variable-request/v1',channel,producer:{repository:CORE,commit:sha(1),run_id:'10',attempt:1},target:{id:'test-target',repository},source:{ref:`refs/heads/${channel}`,commit:sha(2),workflow:SNAPSHOT_WORKFLOW,workflow_blob:sha(3),actor_id:'123'},nonce:'a'.repeat(64)});
+ const r=createSnapshotRequest({schema:'wss-local-test-variable-request/v1',channel,producer:{repository:CORE,commit:sha(1),run_id:'10',attempt:1},target:{id:'test-target',repository},source:{ref:`refs/heads/${channel}`,commit:sha(2),workflow:SNAPSHOT_WORKFLOW,workflow_blob:sha(3),tooling_tree:sha(4),reviewed_commit:sha(2),actor_id:'123'},nonce:'a'.repeat(64)});
  const env={GITHUB_ACTIONS:'true',GITHUB_REPOSITORY:repository,GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:r.source.ref,GITHUB_SHA:sha(2),GITHUB_WORKFLOW_SHA:sha(2),GITHUB_WORKFLOW_REF:`${repository}/${SNAPSHOT_WORKFLOW}@${r.source.ref}`,GITHUB_ACTOR_ID:'123',GITHUB_RUN_ATTEMPT:'1',GITHUB_RUN_ID:'20',WSS_USE_PIN_TESTS:'false'};
  const document=captureLocalTestVariables(r,env);
  const run={id:20,repository:{full_name:repository},head_repository:{full_name:repository,fork:false},event:'workflow_dispatch',path:SNAPSHOT_WORKFLOW,head_branch:channel,head_sha:sha(2),run_attempt:1,actor:{id:123},triggering_actor:{id:123},pull_requests:[],display_title:snapshotTitle(r),workflow_id:30,status:'completed',conclusion:'success'};
  const artifact={id:40,name:snapshotName(r),expired:false,workflow_run:{id:20,head_sha:sha(2)},digest:'sha256:'+'b'.repeat(64)};
  const job={name:SNAPSHOT_JOB,status:'completed',conclusion:'success',run_id:20,head_sha:sha(2)};
  const state={runs:[run],artifacts:[artifact],jobs:[job],posts:0};
- const g={head:()=>sha(2),get:()=>({path:SNAPSHOT_WORKFLOW,state:'active'}),object:()=>({sha:sha(3),mode:'100644',type:'blob'}),pages:path=>path.includes('/artifacts')?state.artifacts:state.runs,run:()=>run,jobs:()=>state.jobs,artifact:()=>artifact,downloadVerified:()=>({'snapshot.json':Buffer.from(JSON.stringify(document))})};
+ const g={head:()=>sha(2),get:()=>({path:SNAPSHOT_WORKFLOW,state:'active'}),object:(_repo,_commit,path)=>path==='.github/scripts/wss-ci'?{sha:sha(4),mode:'040000',type:'tree'}:{sha:sha(3),mode:'100644',type:'blob'},pages:path=>path.includes('/artifacts')?state.artifacts:state.runs,run:()=>run,jobs:()=>state.jobs,artifact:()=>artifact,downloadVerified:()=>({'snapshot.json':Buffer.from(JSON.stringify(document))})};
  return {r,env,document,run,artifact,job,state,g};
 }
 for(const channel of ['dev','main'])test(`${channel} local capture and authenticated collection`,()=>{
@@ -65,3 +65,18 @@ test('dispatch requires durable intent and never retries uncertainty',()=>{
 });
 test('source movement after intent blocks dispatch',()=>{const f=fixture();f.state.runs=[];f.g.head=()=>sha(4);assert.throws(()=>dispatchSnapshotOnce(f.g,f.r,{newIntent:true,authenticatedIntent:f.r,dispatch:()=>assert.fail('write')}),/moved/);});
 for(const key of ['GITHUB_SHA','GITHUB_WORKFLOW_SHA','GITHUB_ACTOR_ID','GITHUB_REF','GITHUB_RUN_ATTEMPT','GITHUB_EVENT_NAME'])test(`capture rejects ${key} mismatch`,()=>{const f=fixture();assert.throws(()=>captureLocalTestVariables(f.r,{...f.env,[key]:'wrong'}));});
+
+test('product-only receiver movement retains reviewed tooling authority and records actual source',()=>{
+ const f=fixture(),{request_id,...body}=f.r;
+ const r=createSnapshotRequest({...body,source:{...body.source,commit:sha(5)}});
+ assert.equal(r.source.reviewed_commit,sha(2));assert.equal(r.source.commit,sha(5));
+ verifySnapshotSource(f.g,r);
+ f.state.runs=[];f.g.head=()=>sha(5);let writes=0;
+ dispatchSnapshotOnce(f.g,r,{newIntent:true,authenticatedIntent:r,dispatch:()=>writes++});
+ assert.equal(writes,1);
+});
+for(const anchor of [sha(2),sha(5)])test(`changed executable tree at reviewed/current source ${anchor} is rejected`,()=>{
+ const f=fixture(),{request_id,...body}=f.r,r=createSnapshotRequest({...body,source:{...body.source,commit:sha(5)}}),original=f.g.object;
+ f.g.object=(repo,commit,path)=>commit===anchor&&path==='.github/scripts/wss-ci'?{type:'tree',mode:'040000',sha:sha(8)}:original(repo,commit,path);
+ assert.throws(()=>verifySnapshotSource(f.g,r),/executable tooling/);
+});

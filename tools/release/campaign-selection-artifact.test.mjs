@@ -69,7 +69,7 @@ test('paired freeze cannot resolve an active policy from current variables impli
 for(const channel of ['dev','main'])test(`${channel} effective v2 captures persist and recover without settings/source reread`,()=>{
  const f=fixture(channel),variables={},captures={};
  for(const t of f.m.targets){
-  const request=createSnapshotRequest({schema:'wss-local-test-variable-request/v1',channel,producer:{repository:CORE,commit:f.c.commit,run_id:f.c.run_id,attempt:1},target:{id:t.id,repository:t.repository},source:{ref:`refs/heads/${channel}`,commit:sha(2),workflow:SNAPSHOT_WORKFLOW,workflow_blob:sha(3),actor_id:'123'},nonce:'a'.repeat(64)});
+  const request=createSnapshotRequest({schema:'wss-local-test-variable-request/v1',channel,producer:{repository:CORE,commit:f.c.commit,run_id:f.c.run_id,attempt:1},target:{id:t.id,repository:t.repository},source:{ref:`refs/heads/${channel}`,commit:sha(2),workflow:SNAPSHOT_WORKFLOW,workflow_blob:sha(3),tooling_tree:sha(4),reviewed_commit:sha(2),actor_id:'123'},nonce:'a'.repeat(64)});
   variables[t.id]={WSS_USE_PIN_TESTS:'false'};
   captures[t.id]={request,settings:variables[t.id],binding:{request_id:request.request_id,run_id:'99',artifact_id:'100',archive_digest:'sha256:'+'b'.repeat(64),document_digest:'c'.repeat(64)}};
  }

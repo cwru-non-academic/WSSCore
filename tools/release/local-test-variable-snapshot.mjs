@@ -24,7 +24,7 @@ export function validateSnapshotRequest(r) {
   requireThat(['dev','main'].includes(r.channel),'Invalid snapshot channel');
   requireThat(keys(r.producer,['repository','commit','run_id','attempt'])&&r.producer.repository===CORE&&sha(r.producer.commit)&&decimal(r.producer.run_id)&&r.producer.attempt===1,'Invalid snapshot producer');
   requireThat(keys(r.target,['id','repository'])&&/^[a-z][a-z0-9-]*$/.test(r.target.id)&&repo(r.target.repository),'Invalid snapshot target');
-  requireThat(keys(r.source,['ref','commit','workflow','workflow_blob','actor_id'])&&r.source.ref===`refs/heads/${r.channel}`&&sha(r.source.commit)&&sha(r.source.workflow_blob)&&r.source.workflow===SNAPSHOT_WORKFLOW&&decimal(r.source.actor_id),'Unreviewed snapshot source');
+  requireThat(keys(r.source,['ref','commit','reviewed_commit','workflow','workflow_blob','tooling_tree','actor_id'])&&r.source.ref===`refs/heads/${r.channel}`&&sha(r.source.commit)&&sha(r.source.reviewed_commit)&&sha(r.source.tooling_tree)&&sha(r.source.workflow_blob)&&r.source.workflow===SNAPSHOT_WORKFLOW&&decimal(r.source.actor_id),'Unreviewed snapshot source');
   return r;
 }
 export function createSnapshotRequest(body) {
@@ -48,9 +48,19 @@ export function verifySnapshotRun(g,r,run) {
   requireThat(decimal(String(run.id))&&run.repository?.full_name===r.target.repository&&run.head_repository?.full_name===r.target.repository&&run.head_repository?.fork===false&&run.event==='workflow_dispatch'&&run.path===r.source.workflow&&run.head_branch===r.channel&&run.head_sha===r.source.commit&&run.run_attempt===1&&String(run.actor?.id)===r.source.actor_id&&String(run.triggering_actor?.id)===r.source.actor_id&&Array.isArray(run.pull_requests)&&run.pull_requests.length===0&&run.display_title===snapshotTitle(r),'Untrusted snapshot run/source/actor');
   const workflow=g.get(`repos/${r.target.repository}/actions/workflows/${run.workflow_id}`);
   requireThat(workflow.path===r.source.workflow&&workflow.state==='active','Wrong snapshot workflow registration');
-  const object=g.object(r.target.repository,r.source.commit,r.source.workflow);
-  requireThat(object.type==='blob'&&object.mode==='100644'&&object.sha===r.source.workflow_blob,'Snapshot workflow source changed');
+  verifySnapshotSource(g,r);
   return run;
+}
+export function verifySnapshotSource(g,r) {
+  validateSnapshotRequest(r);
+  // A reviewed authority anchor constrains executable bytes, not future product
+  // history. Each campaign separately records and freezes the actual live head.
+  for(const commit of new Set([r.source.reviewed_commit,r.source.commit])) {
+    const workflow=g.object(r.target.repository,commit,r.source.workflow);
+    requireThat(workflow.type==='blob'&&workflow.mode==='100644'&&workflow.sha===r.source.workflow_blob,'Snapshot workflow source changed');
+    const tooling=g.object(r.target.repository,commit,'.github/scripts/wss-ci');
+    requireThat(tooling.type==='tree'&&tooling.mode==='040000'&&tooling.sha===r.source.tooling_tree,'Snapshot executable tooling source changed');
+  }
 }
 export function collectLocalTestVariables(g,r) {
   const runs=matchingSnapshotRuns(g,r);
@@ -80,6 +90,7 @@ export function dispatchSnapshotOnce(g,r,{newIntent,authenticatedIntent,dispatch
   requireThat(g.head(r.target.repository,r.channel)===r.source.commit,'Snapshot dispatch ref moved');
   const workflow=g.get(`repos/${r.target.repository}/actions/workflows/test-variable-snapshot.yml`);
   requireThat(workflow.path===r.source.workflow&&workflow.state==='active','Snapshot workflow is not registered');
+  verifySnapshotSource(g,r);
   requireThat(typeof dispatch==='function','Missing scoped dispatch transport');
   dispatch(r.target.repository,'test-variable-snapshot.yml',{ref:r.channel,inputs:{request:canonical(r)}});
   return {dispatched:true};

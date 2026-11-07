@@ -19,7 +19,8 @@ test('snapshot token uses existing Actions grant and durable intent precedes dis
   assert.match(block,/permission-contents: read/);
   assert.doesNotMatch(workflow,/permission-variables:/);
   assert.match(cli,/collectCampaignVariableSnapshots/);
-  assert.ok(workflow.indexOf('name: wss-test-variable-intents')<start);
+  assert.ok(workflow.indexOf('name: wss-test-variable-intents')<workflow.indexOf('Dispatch local snapshots once'));
+  assert.ok(start<workflow.indexOf('Prepare immutable local variable requests'));
 });
 test('legacy channel flow remains separate and selected campaigns require both plans',()=>{
   assert.match(workflow,/Main or selected-test campaign requires both frozen acceptance and stage plans/);

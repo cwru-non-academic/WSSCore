@@ -6,7 +6,7 @@ import {downloadVerifiedJsonArtifact} from './verified-json-artifact.mjs';
 import {CORE,canonical,requireThat} from './verify.mjs';
 import {testSelectionPolicy} from './campaign-test-selection.mjs';
 import {channelContext} from './channels.mjs';
-import {createSnapshotRequest,validateSnapshotRequest,dispatchSnapshotOnce,collectLocalTestVariables,matchingSnapshotRuns,verifySnapshotRun} from './local-test-variable-snapshot.mjs';
+import {createSnapshotRequest,validateSnapshotRequest,dispatchSnapshotOnce,collectLocalTestVariables,matchingSnapshotRuns,verifySnapshotRun,verifySnapshotSource} from './local-test-variable-snapshot.mjs';
 import {isEntrypoint} from './entrypoint.mjs';
 export const INTENT_NAME='wss-test-variable-intents';
 const same=(a,b)=>canonical(a)===canonical(b);
@@ -33,7 +33,7 @@ export function loadSnapshotIntents(g,c,channel,targets) {
   const sources=sourcePolicy(g,c,channel,targets);
   for(let i=0;i<targets.length;i++) {
     const r=validateSnapshotRequest(d.requests[i]),t=targets[i];
-    requireThat(r.channel===channel&&same(r.producer,{repository:CORE,commit:c.commit,run_id:c.run_id,attempt:1})&&same(r.target,{id:t.id,repository:t.repository})&&same(r.source,sources[t.id]),'Snapshot intent target/source/producer mismatch');
+    requireThat(r.channel===channel&&same(r.producer,{repository:CORE,commit:c.commit,run_id:c.run_id,attempt:1})&&same(r.target,{id:t.id,repository:t.repository})&&same(r.source,{...sources[t.id],reviewed_commit:sources[t.id].commit,commit:r.source.commit}),'Snapshot intent target/source/producer mismatch');
   }
   return d;
 }
@@ -69,7 +69,13 @@ if(isEntrypoint(import.meta.url)) {
     const found=g.pages(`repos/${CORE}/actions/runs/${c.run_id}/artifacts`,'artifacts').filter(a=>a.name===INTENT_NAME);
     requireThat(found.length===0,'Existing snapshot intents require correlation, not replacement or redispatch');
     const sources=sourcePolicy(g,c,m.channel,policy.targets);
-    const requests=policy.targets.map(t=>createSnapshotRequest({schema:'wss-local-test-variable-request/v1',channel:m.channel,producer:{repository:CORE,commit:c.commit,run_id:c.run_id,attempt:1},target:{id:t.id,repository:t.repository},source:sources[t.id],nonce:randomBytes(32).toString('hex')}));
+    requireThat(process.env.WSS_TEST_SNAPSHOT_READ_TOKEN,'Existing Actions/Contents-read source token required');
+    const reader=new GitHub(process.env.WSS_TEST_SNAPSHOT_READ_TOKEN);
+    const requests=policy.targets.map(t=>{
+      const source={...sources[t.id],reviewed_commit:sources[t.id].commit,commit:reader.head(t.repository,m.channel)};
+      const r=createSnapshotRequest({schema:'wss-local-test-variable-request/v1',channel:m.channel,producer:{repository:CORE,commit:c.commit,run_id:c.run_id,attempt:1},target:{id:t.id,repository:t.repository},source,nonce:randomBytes(32).toString('hex')});
+      verifySnapshotSource(reader,r);return r;
+    });
     mkdirSync(output,{recursive:true});writeFileSync(join(output,'intents.json'),canonical({schema:'wss-test-variable-intents/v1',requests})+'\n',{flag:'wx'});
   } else if(operation==='dispatch') {
     requireThat(process.env.GITHUB_RUN_ATTEMPT==='1','No dispatch on recovery');

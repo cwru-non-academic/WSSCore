@@ -584,11 +584,23 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_ENV,`WSS_ACCEPTANCE_PLAN=${process.env.RUNNER_TEMP}/release-plan/plan.json\n`);
             fs.appendFileSync(process.env.GITHUB_OUTPUT,`stage_artifact=${c.stageArtifact}\npublication_variable=${publicationControls()[c.channel]}\n`);
           '
+      - name: Create existing Actions-write snapshot dispatch token
+        if: steps.channel.outputs.test_selection_enabled == 'true' && github.run_attempt == 1
+        id: test-snapshot-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: ${{ steps.channel.outputs.test_selection_repositories }}
+          permission-actions: write
+          permission-contents: read
       - name: Prepare immutable local variable requests
         if: steps.channel.outputs.test_selection_enabled == 'true' && github.run_attempt == 1
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          WSS_TEST_SNAPSHOT_READ_TOKEN: ${{ steps.test-snapshot-token.outputs.token }}
         run: |
           . ./tools/ci/shared/Channel.ps1
           $context=Get-WssCiChannelContext
@@ -603,17 +615,6 @@ jobs:
           if-no-files-found: error
           overwrite: false
           retention-days: 90
-      - name: Create existing Actions-write snapshot dispatch token
-        if: steps.channel.outputs.test_selection_enabled == 'true' && github.run_attempt == 1
-        id: test-snapshot-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
-          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
-          owner: cwru-non-academic
-          repositories: ${{ steps.channel.outputs.test_selection_repositories }}
-          permission-actions: write
-          permission-contents: read
       - name: Dispatch local snapshots once and await immutable evidence
         if: steps.channel.outputs.test_selection_enabled == 'true' && github.run_attempt == 1
         shell: pwsh
