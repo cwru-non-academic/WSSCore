@@ -1,10 +1,10 @@
 name: Common CI contracts
 on:
   pull_request:
-    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml']
+    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml', '.github/workflows/test-variable-snapshot-readiness.yml']
   push:
     branches: [dev, main]
-    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml']
+    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml', '.github/workflows/test-variable-snapshot-readiness.yml']
 permissions:
   contents: read
 jobs:
@@ -47,7 +47,7 @@ jobs:
             $display=if($value -ceq '') {'<unset>'} else {$value}
             Write-Output "$name=$display"
           }
-      - run: node --test tools/release/*.test.mjs tools/ci/sync-tooling.test.mjs tools/ci/adapter-pins.test.mjs tools/ci/workflow-freeze-receiver.test.mjs
+      - run: node --test tools/release/*.test.mjs tools/ci/test-selection.test.mjs tools/ci/selected-test-source.test.mjs tools/ci/ci-test-selection.test.mjs tools/ci/ci-test-selection-cli.test.mjs tools/ci/producer-test-selection.test.mjs tools/ci/sync-tooling.test.mjs tools/ci/adapter-pins.test.mjs tools/ci/workflow-freeze-receiver.test.mjs
       - name: Reject independently edited channel controller workflows
         run: node tools/ci/channel-workflows.mjs check
       - shell: pwsh
