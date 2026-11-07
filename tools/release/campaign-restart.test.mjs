@@ -71,6 +71,16 @@ for(const channel of ['dev','main'])test(`${channel}: newly frozen plans bind al
   const wrong=structuredClone(a);wrong.target_snapshots['python-cli'].head_sha=sha(8);assert.throws(()=>assertRestartPlans(r,rehash(wrong),s),/snapshot/);
   const wrongStage=structuredClone(s);wrongStage.receivers.python.heads.main=sha(8);assert.throws(()=>assertRestartPlans(r,a,rehash(wrongStage)),/snapshots/);
 });
+test('restart validation job has only repository contents and Actions read permissions',()=>{
+  const workflow=readFileSync(new URL('../../.github/workflows/artifacts.yml',import.meta.url),'utf8').replaceAll('\r\n','\n');
+  const core=workflow.match(/^  core-tests:\n([\s\S]*?)(?=^  [\w-]+:|$(?![\s\S]))/m)?.[1];
+  assert.ok(core,'Required restart validation job must exist');
+  const permissions=core.match(/^    permissions:\n((?:^      [^\n]*\n)+)/m)?.[1];
+  assert.equal(permissions,'      contents: read\n      actions: read\n','Job token needs both reads, with no additional or write grants');
+  assert.equal((core.match(/^    permissions:/gm)||[]).length,1,'Exactly one explicit job permission map');
+  assert.match(core,/GH_TOKEN: \$\{\{ github.token \}\}/);
+});
+
 test('workflow guards run in a required check and before selection/write credentials and plan upload',()=>{
   const workflow=readFileSync(new URL('../../.github/workflows/artifacts.yml',import.meta.url),'utf8');
   const core=workflow.slice(workflow.indexOf('  core-tests:'),workflow.indexOf('  ble-linux-tests:'));
