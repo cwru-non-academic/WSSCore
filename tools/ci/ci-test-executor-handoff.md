@@ -11,7 +11,10 @@ in an executor without that authority.
 `select` prepares/reuses the durable first-attempt context. The reviewed workflow
 uploads it once, with overwrite disabled. `load` authenticates the run, immutable
 workflow source, exact input policy/mode/candidate, unique unexpired first-attempt
-artifact, and its envelope. Campaign verification then calls the existing
+artifact, and its envelope. It downloads the already-validated artifact ID's ZIP
+endpoint directly, verifies GitHub's authenticated SHA-256 digest, and reads only
+the exact bounded context.json member. No second name lookup or name-based
+extraction is allowed. A deleted/recreated artifact cannot replace those bytes. Campaign verification then calls the existing
 `loadPlan`: canonical Core artifacts.yml push producer, plan digest, exact reviewed
 producer policy, candidate, and frozen selection. These rules are unchanged.
 
@@ -24,7 +27,9 @@ calling a separate readiness protocol does not resolve this boundary.
 ## Trust model
 
 The trust anchor is a **reviewed prerequisite job output in the same workflow**,
-not a digest printed by the downloaded file. GitHub supports passing producer job
+not a digest printed by the downloaded file. Supplying the expected digest from
+that trusted output is a caller precondition, not a signature or something the
+offline function can prove about an arbitrary supplied environment value. GitHub supports passing producer job
 outputs to dependent jobs through `needs.<job>.outputs`:
 https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/pass-job-outputs
 
@@ -76,11 +81,13 @@ This still performs all remote `load` and campaign checks. It writes exactly
 
 The closed handoff contains current run/attempt/ref/workflow/source identity,
 reviewed local target policy, actual complete candidate identity (or null),
-durable context artifact identity and context digest, a sanitized verified test
+durable context artifact identity, verified ZIP digest and context digest, a sanitized verified test
 binding, and campaign producer/plan ID/policy digest when applicable. It never
 serializes process.env, a GitHub client, raw API state, token action outputs, or
 raw unverified context fields. Campaign scope stays campaign scope. Both legacy
-v1 and effective-local-variable v2 durable contexts remain recoverable.
+v1 and effective-local-variable v2 durable contexts remain recoverable when their
+authenticated GitHub artifact metadata supplies the ZIP SHA-256 digest. Missing
+or malformed archive digests fail closed; there is no legacy name-download fallback.
 
 Upload only the handoff as a separate create-only artifact with an attempt-specific
 name such as `wss-ci-test-executor-<target>-a<attempt>`. Retain the returned artifact

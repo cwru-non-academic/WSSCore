@@ -15,6 +15,16 @@ function source(path) {
   mkdirSync(path);git(path,'init');git(path,'config','user.name','Bootstrap test');git(path,'config','user.email','test@example.invalid');git(path,'remote','add','origin',`https://github.com/${repository}.git`);
   writeFileSync(join(path,'source.txt'),'immutable source\n');git(path,'add','.');git(path,'commit','-m','source');return git(path,'rev-parse','HEAD');
 }
+// Deterministic stored ZIP fixture: real downloader and bounded ZIP reader run
+// unchanged; only the external gh transport is replaced in each child process.
+function contextZip(text) {
+  const data=Buffer.from(text),name=Buffer.from('context.json');
+  let crc=0xffffffff;for(const byte of data){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}crc=(crc^0xffffffff)>>>0;
+  const local=Buffer.alloc(30);local.writeUInt32LE(0x04034b50);local.writeUInt16LE(20,4);local.writeUInt32LE(crc,14);local.writeUInt32LE(data.length,18);local.writeUInt32LE(data.length,22);local.writeUInt16LE(name.length,26);
+  const central=Buffer.alloc(46);central.writeUInt32LE(0x02014b50);central.writeUInt16LE(20,4);central.writeUInt16LE(20,6);central.writeUInt32LE(crc,16);central.writeUInt32LE(data.length,20);central.writeUInt32LE(data.length,24);central.writeUInt16LE(name.length,28);
+  const end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50);end.writeUInt16LE(1,8);end.writeUInt16LE(1,10);end.writeUInt32LE(central.length+name.length,12);end.writeUInt32LE(local.length+name.length+data.length,16);
+  return Buffer.concat([local,name,data,central,name,end]);
+}
 for(const channel of ['dev','main'])for(const campaign of [false,true])test(`actual consumer CLI select/inspect/evidence (${channel}, ${campaign?'campaign reload':'ordinary run'})`,()=>{
   const dir=mkdtempSync(join(tmpdir(),'wss-consumer-cli-'));
   try {
@@ -31,24 +41,39 @@ for(const channel of ['dev','main'])for(const campaign of [false,true])test(`act
     }
     const data={fault:null,campaign,manifest,plan,candidate,testSha,productSha,apiHeadSha:campaign?productSha:'e'.repeat(40),saved:join(dir,'saved.json'),log:join(dir,'network.log')},dataPath=join(dir,'fixture.json');writeFileSync(dataPath,JSON.stringify(data));
     const stub=join(dir,'mock-network.mjs');writeFileSync(stub,`
-      import {readFileSync,appendFileSync} from 'node:fs';
+      import {readFileSync,appendFileSync,writeFileSync} from 'node:fs';
+      import cp from 'node:child_process';
+      import {syncBuiltinESMExports} from 'node:module';
+      import {join} from 'node:path';
+      import {bytesDigest,digest} from ${JSON.stringify(new URL('../release/verify.mjs',import.meta.url).href)};
       import {GitHub} from ${JSON.stringify(new URL('../release/github.mjs',import.meta.url).href)};
       const f=JSON.parse(readFileSync(process.env.WSS_CONSUMER_TEST_FIXTURE,'utf8'));
+      const zip=${contextZip.toString()};let replaced=false;
+      function savedDocument(){const value=requireSaved();if(replaced){value.context.selection.targets[${JSON.stringify(targetId)}].tests.commit='f'.repeat(40);const {selection_id,...body}=value.context.selection;value.context.selection.selection_id=digest(body);value.context.selection_id=value.context.selection.selection_id;}return value;}
+      const archive=()=>zip(JSON.stringify(savedDocument()));
+      const external=cp.execFileSync;cp.execFileSync=function(file,args,options){
+        if(file!=='gh')return external(file,args,options);
+        if(process.env.WSS_EXECUTOR_OFFLINE_TEST==='true')throw Error('Executor attempted forbidden gh access');
+        if(JSON.stringify(args)!==JSON.stringify(['api',${JSON.stringify(`repos/${repository}/actions/artifacts/123/zip`)}]))throw Error('Expected exact artifact 123 archive endpoint');
+        if(f.fault==='recreated'&&replaced)throw Error('Artifact 123 was deleted; no fallback to recreated 456');
+        return f.fault==='archive-digest'?Buffer.from('changed archive bytes'):archive();
+      };syncBuiltinESMExports();
+      const originalDownload=GitHub.prototype.download;
       GitHub.prototype.head=function(repo,branch){if(branch!==${JSON.stringify(channel)})throw Error('Wrong branch');if(repo===${JSON.stringify(core)})return f.candidate.commit;if(repo===${JSON.stringify(repository)})return f.testSha;throw Error('Unexpected head read');};
       GitHub.prototype.pages=function(){return f.fault==='missing'?[]:requireSaved()?(f.fault==='duplicate'?[artifact(),artifact()]:[artifact()]):[];};
       function requireSaved(){try{return JSON.parse(readFileSync(f.saved,'utf8'));}catch(e){if(e.code==='ENOENT')return null;throw e;}}
-      function artifact(){return {id:123,name:'wss-ci-test-context-python-wrapper',expired:f.fault==='expired',created_at:f.fault==='late'?'2026-01-02T00:01:00Z':'2026-01-01T00:01:00Z',workflow_run:{id:f.fault==='artifact-run'?98:99,head_sha:f.fault==='artifact-head'?'d'.repeat(40):f.apiHeadSha}};}
+      function artifact(){return {id:replaced?456:123,digest:f.fault==='missing-digest'?null:'sha256:'+bytesDigest(archive()),name:'wss-ci-test-context-python-wrapper',expired:f.fault==='expired',created_at:f.fault==='late'||replaced?'2026-01-02T00:01:00Z':'2026-01-01T00:01:00Z',workflow_run:{id:f.fault==='artifact-run'?98:99,head_sha:f.fault==='artifact-head'?'d'.repeat(40):f.apiHeadSha}};}
       GitHub.prototype.artifact=function(){return artifact();};
       function run(){return {id:99,repository:{full_name:${JSON.stringify(repository)}},head_sha:f.apiHeadSha,path:f.fault==='workflow'?'.github/workflows/other.yml':'.github/workflows/ci.yml',event:f.campaign?'workflow_dispatch':'pull_request',run_attempt:f.fault==='attempt'?7:Number(process.env.GITHUB_RUN_ATTEMPT),status:'in_progress'};}
       GitHub.prototype.get=function(path){
-        if(path.endsWith('/attempts/1'))return {...run(),run_attempt:1,status:'completed',run_started_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-01T00:02:00Z'};
+        if(path.endsWith('/attempts/1')){if(['recreated','recreated-bytes'].includes(f.fault))replaced=true;return {...run(),run_attempt:1,status:'completed',run_started_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-01T00:02:00Z'};}
         if(path===${JSON.stringify(`repos/${repository}/actions/variables?per_page=30&page=1`)}&&!f.campaign){appendFileSync(f.log,'variables\\n');return {total_count:0,variables:[]};}
         if(path===${JSON.stringify(`repos/${core}/contents/tools/release/targets.${channel}.json?ref=`)}+f.candidate.commit)return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(f.manifest)).toString('base64')};
         throw Error('Unexpected API read: '+path);
       };
       GitHub.prototype.run=function(repo,id){if(id==='99')return run();if(repo!==${JSON.stringify(core)}||id!=='42')throw Error('Wrong producer');return {id:42,repository:{full_name:repo},head_repository:{full_name:repo},path:'.github/workflows/artifacts.yml',head_sha:f.candidate.commit,head_branch:${JSON.stringify(channel)},event:'push'};};
-      GitHub.prototype.download=function(repo,id,name,files){if(id==='99')return {'context.json':Buffer.from(JSON.stringify(requireSaved()))};if(!f.campaign||repo!==${JSON.stringify(core)}||id!=='42'||name!=='wss-propagation-plan'||JSON.stringify(files)!=='["plan.json"]')throw Error('Unexpected artifact download');appendFileSync(f.log,'plan\\n');return {'plan.json':Buffer.from(JSON.stringify(f.plan))};};
-      GitHub.prototype.command=function(){throw Error('Real network transport is forbidden by this test');};
+      GitHub.prototype.download=function(repo,id,name,files){if(id==='99')return originalDownload.call(this,repo,id,name,files);if(!f.campaign||repo!==${JSON.stringify(core)}||id!=='42'||name!=='wss-propagation-plan'||JSON.stringify(files)!=='["plan.json"]')throw Error('Unexpected artifact download');appendFileSync(f.log,'plan\\n');return {'plan.json':Buffer.from(JSON.stringify(f.plan))};};
+      GitHub.prototype.command=function(args){if(args[0]==='run'&&args[1]==='download'){writeFileSync(join(args[args.indexOf('--dir')+1],'context.json'),JSON.stringify(savedDocument()));return '';}throw Error('Real network transport is forbidden by this test');};
       if(process.env.WSS_EXECUTOR_OFFLINE_TEST==='true')for(const name of Object.getOwnPropertyNames(GitHub.prototype))if(name!=='constructor')GitHub.prototype[name]=function(){throw Error('Executor attempted forbidden GitHub access: '+name);};
     `);
     const script=fileURLToPath(new URL('./ci-test-selection.mjs',import.meta.url)),output=join(dir,'selection'),githubOutput=join(dir,'github-output');
@@ -86,7 +111,7 @@ for(const channel of ['dev','main'])for(const campaign of [false,true])test(`act
     const auth=JSON.parse(invoke(['load-executor',targetId,campaign?candidatePath:'-',executorDir,campaign?'candidate':'committed'],{GH_TOKEN:'fixture-auth-token-never-export',WSS_GITHUB_APP_PRIVATE_KEY:'fixture-private-key-never-export'}));
     const handoffPath=join(executorDir,'executor-handoff.json'),handoff=JSON.parse(readFileSync(handoffPath,'utf8'));
     assert.equal(auth.executor_handoff_sha256,digest(handoff));
-    assert.equal(handoff.context.scope,context.scope);assert.equal(handoff.origin.attempt,1);assert.equal(handoff.origin.artifact_id,'123');
+    assert.equal(handoff.context.scope,context.scope);assert.equal(handoff.origin.attempt,1);assert.equal(handoff.origin.artifact_id,'123');assert.match(handoff.origin.archive_digest,/^sha256:[a-f0-9]{64}$/);
     assert.doesNotMatch(readFileSync(handoffPath,'utf8'),/fixture-auth-token|fixture-private-key|GH_TOKEN|PRIVATE_KEY/);
     if(campaign){assert.deepEqual(handoff.campaign.producer,candidate);assert.equal(handoff.campaign.plan_id,plan.plan_id);assert.equal(handoff.campaign.policy_sha256,plan.manifest_sha256);}
     else assert.equal(handoff.campaign,null);
@@ -126,9 +151,13 @@ for(const channel of ['dev','main'])for(const campaign of [false,true])test(`act
     assert.equal(recovered.selection_id,auth.selection_id);assert.notEqual(recovered.executor_handoff_sha256,auth.executor_handoff_sha256);
     assert.deepEqual(recoveredDoc.origin,handoff.origin);assert.equal(recoveredDoc.execution.attempt,2);
     invoke(['inspect-executor',targetId,recoveredPath,rootsPath],{...offlineEnv,GITHUB_RUN_ATTEMPT:'2',WSS_TEST_EXECUTOR_HANDOFF_SHA256:recovered.executor_handoff_sha256});
-    for(const fault of ['missing','duplicate','expired','late','artifact-run','artifact-head','workflow','attempt']) {
+    for(const fault of ['missing','duplicate','expired','late','artifact-run','artifact-head','workflow','attempt','missing-digest','archive-digest']) {
       writeFileSync(dataPath,JSON.stringify({...data,fault}));
       assert.throws(()=>invoke(['select',targetId,campaign?candidatePath:'-',join(dir,`bad-${fault}`),campaign?'candidate':'committed'],{GITHUB_RUN_ATTEMPT:'2',WSS_LOCAL_TEST_VARIABLES_SCHEMA:'',WSS_USE_PIN_TESTS:'invalid'}),undefined,fault);
+    }
+    if(!campaign)for(const fault of ['recreated','recreated-bytes']) {
+      writeFileSync(dataPath,JSON.stringify({...data,fault}));
+      for(const operation of ['select','load','load-executor'])assert.throws(()=>invoke([operation,targetId,'-',join(dir,`${fault}-${operation}`),'committed'],{GITHUB_RUN_ATTEMPT:'2'}),fault==='recreated'?/Artifact 123 was deleted/:/ZIP digest mismatch/,`${fault}: ${operation}`);
     }
     writeFileSync(dataPath,JSON.stringify(data));
     const original=JSON.parse(readFileSync(data.saved));

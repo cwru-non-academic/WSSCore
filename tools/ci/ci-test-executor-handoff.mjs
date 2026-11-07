@@ -18,7 +18,7 @@ export function createCiExecutorHandoff(saved,campaignAuthority,env) {
   return {
     schema:EXECUTOR_HANDOFF_SCHEMA,
     execution:{attempt:Number(env.GITHUB_RUN_ATTEMPT),ref:env.GITHUB_REF,base_ref:env.GITHUB_BASE_REF||''},
-    origin:{schema:saved.document.schema,attempt:1,artifact_id:saved.artifact.id,artifact_name:saved.artifact.name,created_at:saved.artifact.created_at,context_sha256:digest(saved.document.context)},
+    origin:{schema:saved.document.schema,attempt:1,artifact_id:saved.artifact.id,artifact_name:saved.artifact.name,created_at:saved.artifact.created_at,archive_digest:saved.artifact.digest,context_sha256:digest(saved.document.context)},
     identity:structuredClone(saved.document.identity),
     context:{scope:saved.context.scope,selection:structuredClone(saved.binding.selection),request:structuredClone(saved.binding.request),selection_id:saved.binding.selection_id},
     campaign:campaignAuthority?structuredClone(campaignAuthority):null
@@ -40,7 +40,7 @@ export function verifyCiExecutorHandoff(value,policy,targetId,run,expectedId,exp
   requireThat(/^\.github\/workflows\/[^/@]+\.ya?ml$/.test(i.workflow)&&i.workflow_ref===`${run.repository}/${i.workflow}@${e.ref}`&&i.workflow_ref===env.GITHUB_WORKFLOW_REF&&i.workflow_sha===run.commit&&i.workflow_sha===env.GITHUB_WORKFLOW_SHA&&sha(i.api_head_sha)&&(run.event==='pull_request'||i.api_head_sha===run.commit),'Executor handoff workflow/source differs');
   requireThat(['committed','candidate'].includes(i.mode)&&(i.mode!=='candidate'||run.event==='workflow_dispatch'&&i.productCandidate),'Executor handoff mode differs');
   if(i.productCandidate!==null)candidate(i.productCandidate);
-  requireThat(keys(o,['schema','attempt','artifact_id','artifact_name','created_at','context_sha256'])&&['wss-ci-test-context/v1','wss-ci-test-context/v2'].includes(o.schema)&&o.attempt===1&&decimal(o.artifact_id)&&o.artifact_name===`wss-ci-test-context-${targetId}`&&typeof o.created_at==='string'&&Number.isFinite(Date.parse(o.created_at))&&hash(o.context_sha256),'Invalid durable executor handoff origin');
+  requireThat(keys(o,['schema','attempt','artifact_id','artifact_name','created_at','archive_digest','context_sha256'])&&['wss-ci-test-context/v1','wss-ci-test-context/v2'].includes(o.schema)&&o.attempt===1&&decimal(o.artifact_id)&&o.artifact_name===`wss-ci-test-context-${targetId}`&&typeof o.created_at==='string'&&Number.isFinite(Date.parse(o.created_at))&&/^sha256:[a-f0-9]{64}$/.test(o.archive_digest)&&hash(o.context_sha256),'Invalid durable executor handoff origin');
   requireThat(keys(c,['scope','selection','request','selection_id'])&&['run','campaign'].includes(c.scope)&&hash(expectedId)&&c.selection_id===expectedId,'Executor handoff selection differs from trusted prerequisite output');
   verifyTestSelection(c.selection,c.request,expectedId);
   requireThat(c.selection.channel===i.channel&&c.selection.targets[targetId]?.repository===run.repository&&c.request.targets.every(t=>keys(t.variables,[])),'Executor handoff selected context differs');
