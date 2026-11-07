@@ -1,10 +1,11 @@
+import {createSnapshotRequest,SNAPSHOT_WORKFLOW} from './local-test-variable-snapshot.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {CORE} from './verify.mjs';
 import {CAMPAIGN_TEST_POLICY} from './campaign-test-selection.mjs';
 import {freezeCampaign} from './campaign-freeze.mjs';
-import {prepareProducerTestSelection,loadProducerTestSelection,TEST_SELECTION_ARTIFACT} from './campaign-selection-artifact.mjs';
+import {prepareProducerTestSelection,loadProducerTestSelection,TEST_SELECTION_ARTIFACT,assertSnapshotSourcesMatchPlans} from './campaign-selection-artifact.mjs';
 const sha=n=>String(n).padStart(40,'0');
 function fixture(channel='dev') {
   const m=JSON.parse(readFileSync(new URL(`./targets.${channel}.json`,import.meta.url))),policy=JSON.parse(readFileSync(new URL(`../ci/${channel}-propagation.json`,import.meta.url)));
@@ -63,4 +64,52 @@ for(const [name,mutate] of Object.entries({
 });
 test('paired freeze cannot resolve an active policy from current variables implicitly',()=>{
   const f=fixture();assert.throws(()=>freezeCampaign({},f.m,f.policy,f.c,{verificationOnly:true}),/authenticated durable/);
+});
+
+for(const channel of ['dev','main'])test(`${channel} effective v2 captures persist and recover without settings/source reread`,()=>{
+ const f=fixture(channel),variables={},captures={};
+ for(const t of f.m.targets){
+  const request=createSnapshotRequest({schema:'wss-local-test-variable-request/v1',channel,producer:{repository:CORE,commit:f.c.commit,run_id:f.c.run_id,attempt:1},target:{id:t.id,repository:t.repository},source:{ref:`refs/heads/${channel}`,commit:sha(2),workflow:SNAPSHOT_WORKFLOW,workflow_blob:sha(3),tooling_tree:sha(4),reviewed_commit:sha(2),actor_id:'123'},nonce:'a'.repeat(64)});
+  variables[t.id]={WSS_USE_PIN_TESTS:'false'};
+  captures[t.id]={request,settings:variables[t.id],binding:{request_id:request.request_id,run_id:'99',artifact_id:'100',archive_digest:'sha256:'+'b'.repeat(64),document_digest:'c'.repeat(64)}};
+ }
+ const prepared=prepareProducerTestSelection(f.g,f.m,f.policy,f.c,{env:f.env,resolveSnapshots:()=>({schema:'wss-authenticated-effective-variables/v1',variables,captures})});
+ assert.equal(prepared.document.schema,'wss-test-selection-artifact/v2');assert.equal(f.state.heads,1);
+ f.state.document=prepared.document;f.state.artifacts=[f.artifact];f.env.GITHUB_RUN_ATTEMPT='2';f.run.run_attempt=2;
+ const result=prepareProducerTestSelection(f.g,f.m,f.policy,f.c,{env:f.env,resolveSnapshots:()=>assert.fail('recaptured settings')});
+ assert.equal(result.created,false);assert.equal(result.selection.selection_id,prepared.selection.selection_id);assert.equal(f.state.heads,1);
+ f.state.document.captures[f.m.targets[0].id].binding.request_id='d'.repeat(64);
+ assert.throws(()=>loadProducerTestSelection(f.g,f.m,f.policy,f.c,{env:f.env}),/capture binding/);
+});
+
+for(const channel of ['dev','main'])test(`${channel} new snapshot sources cannot move between capture and paired freeze; historical v1 remains readable`,()=>{
+ const document={schema:'wss-test-selection-artifact/v2',selection:{selection_id:'a'.repeat(64)},captures:{'python-wrapper':{request:{source:{commit:sha(2)},target:{repository:'owner/python'},channel}}}};
+ const pair={acceptance:{test_selection_id:'a'.repeat(64),target_snapshots:{'python-wrapper':{head_sha:sha(2)}}},stage:{test_selection_id:'a'.repeat(64),policy:{libraries:[{id:'python',repository:'owner/python'}]},receivers:{python:{heads:{[channel]:sha(2)}}}}};
+ assertSnapshotSourcesMatchPlans(document,pair,{head:()=>sha(2)});
+ pair.acceptance.target_snapshots['python-wrapper'].head_sha=sha(3);
+ assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair,{head:()=>sha(2)}),/Receiver moved/);
+ pair.acceptance.target_snapshots['python-wrapper'].head_sha=sha(2);pair.stage.receivers.python.heads[channel]=sha(3);
+ assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair,{head:()=>sha(2)}),/Stage receiver moved/);
+ assert.doesNotThrow(()=>assertSnapshotSourcesMatchPlans({schema:'wss-test-selection-artifact/v1'},pair));
+});
+
+for(const channel of ['dev','main'])test(`${channel} application source movement with unchanged workflow cannot pass paired source binding`,()=>{
+ const id='python-cli',document={schema:'wss-test-selection-artifact/v2',selection:{selection_id:'a'.repeat(64)},captures:{[id]:{request:{source:{commit:sha(2),workflow_blob:sha(9)},target:{repository:'owner/python-cli'},channel}}}};
+ const pair={acceptance:{test_selection_id:'a'.repeat(64),target_snapshots:{[id]:{head_sha:sha(2),trusted:{'.github/workflows':sha(9)}}}},stage:{test_selection_id:'a'.repeat(64),policy:{libraries:[]},receivers:{}}};
+ assertSnapshotSourcesMatchPlans(document,pair,{head:()=>sha(2)});
+ pair.acceptance.target_snapshots[id].head_sha=sha(3);
+ assert.throws(()=>assertSnapshotSourcesMatchPlans(document,pair,{head:()=>sha(2)}),/Receiver moved/);
+ assert.equal(pair.acceptance.target_snapshots[id].trusted['.github/workflows'],sha(9));
+});
+
+for(const channel of ['dev','main'])for(const kind of ['wrapper','cli'])test(`${channel} ${kind} movement after pair snapshot observation aborts before returning plans`,()=>{
+ let live=sha(2),returned=false;
+ const id=`python-${kind}`,repository=`owner/python-${kind}`;
+ const document={schema:'wss-test-selection-artifact/v2',selection:{selection_id:'a'.repeat(64)},captures:{[id]:{request:{source:{commit:sha(2),workflow_blob:sha(9)},target:{repository},channel}}}};
+ const pair={acceptance:{test_selection_id:'a'.repeat(64),target_snapshots:{[id]:{head_sha:sha(2),trusted:{'.github/workflows':sha(9)}}}},stage:{test_selection_id:'a'.repeat(64),policy:{libraries:kind==='wrapper'?[{id:'python',repository}]:[]},receivers:kind==='wrapper'?{python:{heads:{[channel]:sha(2)}}}:{}}};
+ const g={head:(repo,branch)=>{assert.equal(repo,repository);assert.equal(branch,channel);return live;}};
+ assertSnapshotSourcesMatchPlans(document,pair,g);
+ live=sha(3); // move AFTER both snapshots, without modifying either executable tree
+ assert.throws(()=>{assertSnapshotSourcesMatchPlans(document,pair,g);returned=true;},/after paired source observation/);
+ assert.equal(returned,false);
 });

@@ -1,3 +1,4 @@
+import {assertSnapshotSourcesMatchPlans} from './campaign-selection-artifact.mjs';
 import {readFileSync} from 'node:fs';
 import {resolveOrReuseTestSelection,verifyTestSelection} from '../ci/test-selection.mjs';
 import {freeze} from './github.mjs';
@@ -8,7 +9,7 @@ import {testSelectionPolicy,selectionRequest,assertPairedTestSelection} from './
 
 // testSelection must come from loadProducerTestSelection after durable upload.
 // This entrypoint never resolves current settings or branch tips itself.
-export function freezeCampaign(g,manifest,policy,candidate,{testSelection,verificationOnly=false}={}) {
+export function freezeCampaign(g,manifest,policy,candidate,{testSelection,captureDocument,verificationOnly=false}={}) {
   requireThat(manifest.channel===policy.channel,'Campaign policies use different channels');
   const required=testSelectionPolicy(manifest);
   requireThat(canonical(required)===canonical(testSelectionPolicy(policy)),'Campaign policies must share one reviewed test source policy');
@@ -16,9 +17,9 @@ export function freezeCampaign(g,manifest,policy,candidate,{testSelection,verifi
   // Selection is locked before either receiver snapshot or workflow freeze.
   const a=freeze(g,manifest,candidate,{verificationOnly,testSelection});
   const s=freezeStage(g,policy,candidate,{freeze:false,testSelection});
-  if(manifest.channel==='main')return freezeWorkflowPair(g,a,s);
-  const pair={acceptance:freezeWorkflows(g,a,'acceptance'),stage:freezeWorkflows(g,s,'stage')};
+  const pair=manifest.channel==='main'?freezeWorkflowPair(g,a,s):{acceptance:freezeWorkflows(g,a,'acceptance'),stage:freezeWorkflows(g,s,'stage')};
   assertPairedTestSelection(pair.acceptance,pair.stage);
+  if(captureDocument)assertSnapshotSourcesMatchPlans(captureDocument,pair,g);
   return pair;
 }
 

@@ -159,6 +159,39 @@
     ".github/scripts/wss-ci/entrypoint.mjs": {
       "origin": "core",
       "path": "tools/release/entrypoint.mjs"
+    },
+    ".github/scripts/wss-ci/local-test-variable-snapshot.mjs": {
+      "origin": "core",
+      "path": "tools/release/local-test-variable-snapshot.mjs"
+    },
+    ".github/scripts/wss-ci/capture-test-variables.mjs": {
+      "origin": "core",
+      "path": "tools/ci/shared/capture-test-variables.mjs"
+    },
+    ".github/workflows/test-variable-snapshot.yml": {
+      "origin": "core",
+      "path": "tools/ci/shared/test-variable-snapshot.yml"
+    },
+    ".github/scripts/wss-ci/local-test-variable-readiness.mjs": {
+      "origin": "core",
+      "path": "tools/release/local-test-variable-readiness.mjs",
+      "repositories": [
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/capture-test-variable-readiness.mjs": {
+      "origin": "core",
+      "path": "tools/ci/shared/capture-test-variable-readiness.mjs",
+      "repositories": [
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/workflows/test-variable-readiness-capture.yml": {
+      "origin": "core",
+      "path": "tools/ci/shared/test-variable-readiness-capture.yml",
+      "repositories": [
+        "Python_WSS_Integration_Lib"
+      ]
     }
   }
 }

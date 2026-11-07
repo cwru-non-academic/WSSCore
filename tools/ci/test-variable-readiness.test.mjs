@@ -34,16 +34,9 @@ test('probe cannot expand, omit, duplicate or redirect the reviewed scope',()=>{
   }
   assert.equal(readinessTargets(policy).length,9);
 });
-test('hosted probe uses existing App only, no PR secrets or write grants',()=>{
-  assert.match(workflow,/workflow_dispatch:/);assert.doesNotMatch(workflow,/pull_request/);
-  assert.match(workflow,/branches: \[dev, main\]/);
-  assert.match(workflow,/github\.ref == 'refs\/heads\/dev'.*github\.ref == 'refs\/heads\/main'/);
-  assert.deepEqual([...workflow.matchAll(/INPUT_PERMISSION-([A-Z-]+):\s*(\w+)/g)].map(m=>m.slice(1)),[['VARIABLES','read']]);
-  assert.match(workflow,/actions\/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349/);
-  assert.doesNotMatch(workflow,/permission-[a-z]+:/);
+test('replacement diagnostic never requests Variables permission or dispatches',()=>{
+  assert.match(workflow,/not hosted readiness/);
+  assert.match(workflow,/node --test/);
+  assert.doesNotMatch(workflow,/create-github-app-token|WSS_GITHUB_APP_PRIVATE_KEY|INPUT_PERMISSION|permission-variables|gh api/);
   assert.match(workflow,/permissions:\n  contents: read/);
-  assert.match(workflow,/persist-credentials: false/);
-  assert.match(workflow,/app-id: \$\{\{ vars.WSS_GITHUB_APP_ID \}\}/);
-  assert.match(workflow,/repositories: \$\{\{ steps.targets.outputs.repositories \}\}/);
-  assert.doesNotMatch(workflow,/gh api|--method|upload-artifact|overwrite:|write|continue-on-error|skip-token-revoke: true/);
 });

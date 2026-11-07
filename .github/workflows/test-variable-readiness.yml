@@ -1,21 +1,19 @@
-name: Repository test variable readiness
+name: Local test variable protocol contracts
 on:
   workflow_dispatch:
   push:
     branches: [dev, main]
     paths:
       - '.github/workflows/test-variable-readiness.yml'
-      - 'tools/ci/test-variable-readiness.mjs'
-      - 'tools/ci/repository-test-variables.mjs'
-      - 'tools/ci/test-source-targets.json'
+      - 'tools/release/local-test-variable-snapshot*'
+      - 'tools/release/campaign-variable-snapshots*'
+      - 'tools/release/verified-json-artifact*'
 permissions:
   contents: read
 jobs:
-  readiness:
-    name: Existing App Variables read capability
-    if: github.repository == 'cwru-non-academic/WSSCore' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+  contracts:
+    name: Local snapshot contracts (not hosted readiness)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,22 +21,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Validate the exact reviewed target scope
-        id: targets
-        run: node tools/ci/test-variable-readiness.mjs repositories
-      - name: Request only the existing repository Variables read grant
-        id: variables
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2, reviewed permission parser
-        env:
-          # The pinned parser handles explicit permission environment inputs even
-          # when the action metadata has not listed this API permission yet.
-          INPUT_PERMISSION-VARIABLES: read
-        with:
-          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
-          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
-          owner: cwru-non-academic
-          repositories: ${{ steps.targets.outputs.repositories }}
-      - name: Verify repository-only reads without publishing settings
-        env:
-          GH_TOKEN: ${{ steps.variables.outputs.token }}
-        run: node tools/ci/test-variable-readiness.mjs check
+      - run: node --test tools/release/local-test-variable-snapshot.test.mjs tools/release/campaign-variable-snapshots.test.mjs tools/release/verified-json-artifact.test.mjs
+      - run: echo 'Contract tests do not establish App or receiver deployment readiness. No snapshot workflow is dispatched.'

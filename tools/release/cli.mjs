@@ -1,7 +1,7 @@
 import {freezeCampaign} from './campaign-freeze.mjs';
 import {testSelectionPolicy} from './campaign-test-selection.mjs';
 import {prepareProducerTestSelection,loadProducerTestSelection} from './campaign-selection-artifact.mjs';
-import {readTestVariableSnapshots} from '../ci/repository-test-variables.mjs';
+import {collectCampaignVariableSnapshots} from './campaign-variable-snapshots.mjs';
 import {appendFileSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {GitHub,archive,collect,freeze,loadPlan,publish} from './github.mjs';
@@ -28,9 +28,8 @@ try {
     const c=JSON.parse(readFileSync(candidateFile)),m=JSON.parse(readFileSync(manifestFile)),context=channelContext(m.channel);
     requireThat(activation[context.channel]===true&&testSelectionPolicy(m),'Test selection policy must be explicitly activated by the producer');
     const policy=JSON.parse(readFileSync(new URL('../ci/'+context.channel+'-propagation.json',import.meta.url)));
-    const prepared=prepareProducerTestSelection(g,m,policy,c,{resolveSnapshots:targets=>{
-      requireThat(process.env.WSS_TEST_VARIABLE_READ_TOKEN,'Repository variable read token is unavailable; no unset-variable fallback');
-      return readTestVariableSnapshots(new GitHub(process.env.WSS_TEST_VARIABLE_READ_TOKEN),{targets});
+    const prepared=prepareProducerTestSelection(g,m,policy,c,{resolveGitHub:new GitHub(process.env.WSS_TEST_SNAPSHOT_READ_TOKEN),resolveSnapshots:targets=>{
+      return collectCampaignVariableSnapshots(g,c,m.channel,targets);
     }});
     if(prepared.created){mkdirSync(destination,{recursive:true});writeFileSync(join(destination,'selection.json'),JSON.stringify(prepared.document,null,2)+'\n',{flag:'wx'});}
     requireThat(process.env.GITHUB_OUTPUT,'Producer selection requires runner output context');
@@ -53,8 +52,9 @@ try {
     requireThat(activation[context.channel]===true&&process.env.GITHUB_ACTIONS==='true'&&process.env.GITHUB_REPOSITORY===CORE&&process.env.GITHUB_REF===context.ref&&process.env.GITHUB_EVENT_NAME==='push'&&process.env.GITHUB_WORKFLOW_REF===`${CORE}/.github/workflows/artifacts.yml@${context.ref}`&&process.env.GITHUB_WORKFLOW_SHA===process.env.GITHUB_SHA&&c.commit===process.env.GITHUB_SHA&&c.run_id===process.env.GITHUB_RUN_ID,'Paired freeze requires this activated exact canonical channel push producer');
     archive(g,c);
     const stagePolicy=JSON.parse(readFileSync(new URL('../ci/'+context.channel+'-propagation.json',import.meta.url)));
-    const testSelection=testSelectionPolicy(m)?loadProducerTestSelection(g,m,stagePolicy,c):undefined;
-    const pair=freezeCampaign(g,m,stagePolicy,c,{testSelection,verificationOnly:process.env[publicationControls()[m.channel]]!=='true'});
+    let captureDocument;
+    const testSelection=testSelectionPolicy(m)?loadProducerTestSelection(g,m,stagePolicy,c,{onDocument:d=>{captureDocument=d;}}):undefined;
+    const pair=freezeCampaign(g,m,stagePolicy,c,{testSelection,captureDocument,verificationOnly:process.env[publicationControls()[m.channel]]!=='true'});
     // No artifact is emitted and no initial handoff occurs unless BOTH plans
     // pass the shared observation/recheck boundary above.
     for(const [directory,p] of [[acceptanceDirectory,pair.acceptance],[stageDirectory,pair.stage]]){
