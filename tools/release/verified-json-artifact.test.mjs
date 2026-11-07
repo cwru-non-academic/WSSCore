@@ -29,3 +29,17 @@ for(const [name,entries] of Object.entries({
  missing:[]
 }))test(`real ZIP decoder rejects ${name}`,()=>assert.throws(()=>decode(archive(entries))));
 test('real ZIP decoder rejects corrupt archive even if transport digest matches',()=>assert.throws(()=>decode(Buffer.from('not a zip'))));
+
+test('actual decompressed bytes remain bounded even when ZIP metadata understates size',()=>{
+ const bytes=archive([{name:'snapshot.json',value:'x'.repeat(1048577)}]);
+ const central=bytes.indexOf(Buffer.from([0x50,0x4b,0x01,0x02]));
+ const local=bytes.indexOf(Buffer.from([0x50,0x4b,0x03,0x04]));
+ assert.ok(central>=0&&local>=0);bytes.writeUInt32LE(10,central+24);bytes.writeUInt32LE(10,local+22);
+ let decoded;
+ try {decoded=decode(bytes)['snapshot.json'];}
+ catch(error){assert.match(error.message,/Expanded JSON|invalid|corrupt|length/i);return;}
+ assert.ok(decoded.length<=1048576);
+ // .NET clamps to the stated length on this runtime; truncated data still cannot
+ // become a valid snapshot document. The reader also independently bounds reads.
+ assert.throws(()=>JSON.parse(decoded));
+});
