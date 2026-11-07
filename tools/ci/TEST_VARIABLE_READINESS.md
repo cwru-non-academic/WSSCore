@@ -2,7 +2,8 @@
 
 Production selection remains OFF. This controller does not invoke a producer,
 resolve a campaign, emit a selection artifact, freeze plans, or run selected tests.
-The closed registry is intentionally null for both channels. No App grant,
+The closed readiness registry now binds only the reviewed Python pilot on both
+channels; the production registry remains empty. No App grant,
 variable write, credential creation or settings change is part of this patch.
 
 ## Isolation and actual proof
@@ -13,7 +14,10 @@ and closed registry before using the existing App. The only allowed target is
 Python_WSS_Integration_Lib, target ID python-wrapper. There are no ref, repository,
 settings, candidate or producer inputs. Its reviewed registry entry carries the
 source anchor/workflow blob/tooling tree/App actor plus allowed controller actor
-IDs. Until a separately reviewed entry exists, the workflow fails before App use.
+IDs. The reviewed controller allowlist is only lemfn64 (25409955); the dispatch
+bot is cwru-wss-release-automation[bot] (326213682), whose public App metadata
+identifies App 4864404. No other controller or target is authorized. Empty or
+malformed registry entries still fail before App use.
 
 The generated receiver workflow is `test-variable-readiness-capture.yml`, not the
 production snapshot workflow. It reads exactly the three effective vars, has no
@@ -93,3 +97,23 @@ existing scoped read authority, create-only context upload followed by independe
 load, and all mandatory baseline/native barriers. Preserve frozen campaign reuse.
 Do not expose App credentials to selected executors or untrusted PR code. Do not
 activate inactive fragments merely to get readiness coverage.
+
+## Prepared pilot identities (no controller publication or dispatch)
+
+Verified Python dev 0487cb6019dc82a67501ad94498344620be4496b and
+main 6aeaa3693a8dacc2deea0bc61ec8421c7f875282 after pilot PR 74/75 merged.
+Both default-main local capture workflows are registered active. The readiness
+workflow blob is c8e8260afaac8baab84cf91482728a1f4bb68db0 and the complete
+wss-ci tree is 9e131377717c5f1493f79e1bcb2fbf445687e75d on both live heads and
+the independently reviewed sources. Retained source anchors are
+d73ccd34f541b640b63d39726dd337c99252b3fc (dev) and
+5624c044e653b74826413bcf4586da711043bde5 (main), each under
+refs/heads/ci/tooling/<fullSHA>. The registry binds these reviewed executable
+identities, not permanently fixed product heads. The actual current receiver
+head is authenticated and recorded when a readiness request is prepared.
+
+Public App and bot metadata plus the authenticated gh user endpoint established
+the numeric identities; no installation expansion or repository enumeration was
+used. These are source-registration prerequisites, not a real App capture proof.
+The controller changes remain held for independent review and coordinated
+publication. Core merge and readiness dispatch are separate actions.
