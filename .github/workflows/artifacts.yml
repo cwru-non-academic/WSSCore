@@ -45,6 +45,28 @@ jobs:
       - name: Check out source
         id: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate explicit campaign restart intent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
+          REQUEST_BASE: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            # Request PRs use the deployed base validator, never PR-supplied code.
+            if ! git diff --quiet "$REQUEST_BASE" "$GITHUB_SHA" -- tools/ci/campaign-restarts; then
+              git worktree add --detach "$RUNNER_TEMP/restart-validator" "$REQUEST_BASE"
+              node "$RUNNER_TEMP/restart-validator/tools/release/campaign-restart-cli.mjs" check
+            fi
+          else
+            node tools/release/campaign-restart-cli.mjs check
+          fi
       - name: Install .NET SDKs
         id: setup_dotnet
         uses: actions/setup-dotnet@v4
@@ -515,6 +537,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: universal-release-assets
@@ -537,6 +560,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Recheck explicit restart before freeze and write credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
+        run: node tools/release/campaign-restart-cli.mjs check
       - name: Select closed channel and Core-owned publication control
         id: channel
         run: |
@@ -616,6 +644,14 @@ jobs:
               if($LASTEXITCODE -ne 0){throw 'Required receiver receipt tooling is unavailable; no handoff.'}
             }
           }
+      - name: Bind restarted plans to requested receiver snapshots
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
+        run: >-
+          node tools/release/campaign-restart-cli.mjs check-frozen
+          '${{ runner.temp }}/release-plan/plan.json'
+          '${{ runner.temp }}/propagation-plan/plan.json'
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.channel.outputs.stage_artifact }}
@@ -661,6 +697,14 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.projection-token.outputs.token }}
         run: node tools/ci/workflow-freeze.mjs check-initial csharp '${{ runner.temp }}/propagation-plan/plan.json'
+      - name: Recheck requested receiver heads immediately before write credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
+        run: >-
+          node tools/release/campaign-restart-cli.mjs check-frozen
+          '${{ runner.temp }}/release-plan/plan.json'
+          '${{ runner.temp }}/propagation-plan/plan.json'
       - name: Create Integration dispatch-only App token
         id: integration-token
         uses: actions/create-github-app-token@v2
