@@ -13,8 +13,9 @@ export function detachAdmission(x) {
 const same=(a,b)=>canonical(a)===canonical(b);
 const runIdentity=r=>[String(r.id),r.run_attempt,r.repository?.full_name,r.head_repository?.full_name,r.path,r.head_sha,r.head_branch,r.event,r.status,r.conclusion];
 export function createAdmissionRefresh(g) {
-  const runs=new Map();
+  const runs=new Map(),attempts=new Map();
   return {preflights:new Map(),bracket(repository,captured,{identityOnly=false}={}){
+    const physical=`${repository}:${captured.id}`;requireThat(!attempts.has(physical)||attempts.get(physical)===captured.run_attempt,'Conflicting captured run attempts');attempts.set(physical,captured.run_attempt);
     const key=`${repository}:${captured.id}:${captured.run_attempt}`,prior=runs.get(key),project=r=>identityOnly?runIdentity(r).slice(0,8):runIdentity(r);
     requireThat(!prior||same(prior.project(prior.captured),project(captured)),'Conflicting captured run expectations');
     const live=detachAdmission(g.run(repository,String(captured.id)));
@@ -41,7 +42,7 @@ export function refreshNormalMetadata(g,p,target,captured,{session=createAdmissi
 }
 export function refreshPreflightMetadata(g,p,captured,{session=createAdmissionRefresh(g)}={}) {
   const d=captured.descriptor,key=`${d.repository}:${d.run_id}:${d.attempt}`,prior=session.preflights.get(key);
-  const expectation={descriptor:d,candidate:captured.candidate,selected_tests:captured.selected_tests};
+  const expectation={descriptor:d,proof:captured.proof,candidate:captured.candidate,selected_tests:captured.selected_tests};
   if(prior){requireThat(same(prior.expectation,expectation),'Conflicting shared preflight expectations');return detachAdmission(prior.result);}
   session.bracket(d.repository,captured.proof.run);
   const proof=refreshPreflightProof(g,d,captured.proof),target=p.manifest.targets.find(t=>t.repository===d.repository);

@@ -203,6 +203,7 @@ export function publish(g,p,accepted,directory,reader=g) {
   // Re-collect live proof immediately before the only publication mutation.
   const fresh=collect(reader,p);
   requireThat(canonical(fresh.record)===canonical(accepted.record),'Acceptance evidence changed during publication');
+  requireThat(canonical(Object.keys(fresh.files).sort())===canonical(Object.keys(accepted.files).sort())&&Object.entries(fresh.files).every(([name,bytes])=>Buffer.isBuffer(accepted.files[name])&&bytesDigest(bytes)===bytesDigest(accepted.files[name])),'Captured publication bytes changed');
   checkTagGuard(reader,p.manifest);
   const paths=Object.entries(expected).map(([name,bytes])=>{const path=join(directory,name);writeFileSync(path,bytes);return path;});
   g.command(['release','create',tag,'--repo',CORE,'--target',p.candidate.commit,...(context.kind==='beta'?['--prerelease']:[]),'--title',tag,
