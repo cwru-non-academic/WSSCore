@@ -161,6 +161,15 @@ export function receiverAuthorization(g,producerId,repository,{loadFrozenPlan=lo
   return {schema:'wss-receiver-workflow-authorization/v1',channel:'main',plan_id:p.plan_id,target_id:matches[0].id,repository,candidate:p.candidate};
 }
 
+// Common receipt admission reuses the producer-owned frozen workflow policy on
+// both channels. Unlike the older adapter bridge, DEV is never a bypass.
+export function receiptAuthorization(g,p,id) {
+  const target=p.manifest.targets.filter(t=>t.id===id);
+  requireThat(target.length===1&&p.candidate.run_id&&['dev','main'].includes(p.channel),'Invalid receipt authority target/channel');
+  requireThat(assertWorkflows(g,p,'acceptance',{ids:[id]}),'Receipt requires producer-bound workflow snapshots');
+  return {plan_id:p.plan_id,target_id:id,channel:p.channel};
+}
+
 // Preserve the existing publisher/dispatchers. The only additional write client
 // checks run at their command boundary, using a separate read-only credential.
 export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,acceptedHeads,initialAuthority}={}) {

@@ -15,11 +15,19 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "5caa943d5472a4709e4eb77176650acbef52d8a4",
-      "ref": "refs/heads/ci/tooling/5caa943d5472a4709e4eb77176650acbef52d8a4"
+      "commit": "15c4358190f82b9cbca3e2f14b42d9121b36c287",
+      "ref": "refs/heads/ci/tooling/15c4358190f82b9cbca3e2f14b42d9121b36c287"
     }
   },
   "files": {
+    ".github/scripts/wss-ci/campaign-test-selection.mjs": {
+      "origin": "core",
+      "path": "tools/release/campaign-test-selection.mjs"
+    },
+    ".github/scripts/wss-ci/test-selection-contract.mjs": {
+      "origin": "core",
+      "path": "tools/release/test-selection-contract.mjs"
+    },
     ".github/scripts/wss-ci/verify.mjs": {
       "origin": "core",
       "path": "tools/release/verify.mjs"
@@ -152,14 +160,6 @@
       "origin": "core",
       "path": "tools/release/entrypoint.mjs"
     },
-    ".github/scripts/wss-ci/campaign-test-selection.mjs": {
-      "origin": "core",
-      "path": "tools/release/campaign-test-selection.mjs"
-    },
-    ".github/scripts/wss-ci/test-selection-contract.mjs": {
-      "origin": "core",
-      "path": "tools/release/test-selection-contract.mjs"
-    },
     ".github/scripts/wss-ci/local-test-variable-snapshot.mjs": {
       "origin": "core",
       "path": "tools/release/local-test-variable-snapshot.mjs"
@@ -191,6 +191,23 @@
       "path": "tools/ci/shared/test-variable-readiness-capture.yml",
       "repositories": [
         "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/receipt-workflows.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-workflows.mjs"
+    },
+    ".github/scripts/wss-ci/receipt-workflow.yml": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-workflow.yml"
+    },
+    ".github/scripts/Write-ReleaseReceipt.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/Write-ReleaseReceipt.mjs",
+      "repositories": [
+        "Python_WSS_Integration_Lib",
+        "Matlab_WSS_Integration_Lib",
+        "CLI_Matlab_WSS_Application"
       ]
     }
   }

@@ -72,3 +72,15 @@ test('a reviewed Core native fixture stays distinct from the canonical CI toolin
   assert.equal(refreshWorkflowPins(wrong)['wss-compatibility.yml'],fixtureText);
   assert.throws(()=>verifyWorkflowPins({...data,roles:{runtime_fixtures:[...data.roles.runtime_fixtures,...data.roles.runtime_fixtures]}},g),/Ambiguous executable fixture role/);
 });
+
+test('generated receipt separates immutable bootstrap, Core and native validator locks',()=>{
+  const integration={repository:parent,commit:sha(7),ref:`refs/heads/ci/tooling/${sha(7)}`};
+  const locked={...lock,origins:{integration}};
+  const generated=`repository: ${parent}\nref: ${sha(7)}\npath: bootstrap/Python_WSS_Integration_Lib\nrepository: ${core}\nref: ${sha(1)}\npath: core\nrepository: ${parent}\nref: ${sha(3)}\npath: validator\n`;
+  const data={repository,profiles,lock:locked,files:{'release-receipt.yml':generated}};
+  const reader={...g,get:()=>({encoding:'base64',content:Buffer.from(JSON.stringify({...locked,repository:parent})).toString('base64')})};
+  assert.equal(verifyWorkflowPins(data,reader).references,3);
+  assert.throws(()=>verifyWorkflowPins({...data,files:{'release-receipt.yml':generated.replace(sha(7),sha(8))}},reader),/bootstrap differs/);
+  assert.throws(()=>verifyWorkflowPins(data,{...reader,get:()=>({encoding:'base64',content:Buffer.from(JSON.stringify({...locked,repository:parent,source_commit:sha(8)})).toString('base64')})}),/another canonical source/);
+  assert.equal(refreshWorkflowPins({...data,adapter:sha(8),adapterLock:{...locked,repository:parent}})['release-receipt.yml'],generated);
+});

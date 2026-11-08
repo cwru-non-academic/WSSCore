@@ -272,3 +272,9 @@ for(const [name,mutate] of Object.entries({
 }))test(`selected tests reject ${name}`,()=>{
   const f=selectedFixture();mutate(f.e.targets['python-cli']);sync(f.e);assert.throws(()=>allClear(f.p,f.e));
 });
+
+for(const channel of ['dev','main'])for(const id of TARGETS)test(`independent Core ${channel}/${id} rejects plausible receiver proof from another frozen source`,()=>{
+  const {p,e}=fixture(channel),t=e.targets[id];
+  t.receipt.preflights[0].source_sha=sha(99);t.preflights[0].run.head_sha=sha(99);sync(e);
+  assert.throws(()=>allClear(p,e),/Preflight source differs/);
+});
