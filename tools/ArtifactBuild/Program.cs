@@ -323,16 +323,7 @@ internal static partial class Program
             throw new InvalidDataException("Package override paths must be relative; assets must remain inside the package.");
         }
         using var assets = JsonDocument.Parse(File.ReadAllText(Path.Combine(manifest.ManifestDirectory, entry.AssetsFile)));
-        var library = assets.RootElement.GetProperty("libraries").GetProperty(entry.Package);
-        if (library.GetProperty("type").GetString() != "package" ||
-            !library.GetProperty("files").EnumerateArray().Any(asset => asset.GetString() == entry.Asset))
-        {
-            throw new InvalidDataException("Override asset is not declared by the restored package: " + entry.Asset);
-        }
-        var packagePath = library.GetProperty("path").GetString()!;
-        string ResolveAsset(string asset) => assets.RootElement.GetProperty("packageFolders").EnumerateObject()
-            .Select(folder => Path.Combine(folder.Name, packagePath, asset)).FirstOrDefault(File.Exists)
-            ?? throw new FileNotFoundException("Restored package asset was not found: " + asset);
+        string ResolveAsset(string asset) => Wss.BuildTools.RestoredPackageAssets.Resolve(assets.RootElement, entry.Package, asset);
         var runtimePath = ResolveAsset(entry.Asset);
         if (manifest.NativeFiles.Contains(file, PathComparer)) return runtimePath;
         var compileAsset = GetRestoredTarget(assets.RootElement.GetProperty("targets"), entry.Target)
