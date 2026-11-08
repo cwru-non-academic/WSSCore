@@ -229,7 +229,7 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,
         if(purpose==='publication') {
           requireThat(acceptedAdmission?.record&&acceptedAdmission?.admission,'Publication requires collected admission evidence');
           if(acceptedHeads)requireThat(same(acceptedHeads,Object.fromEntries(Object.entries(acceptedAdmission.record.targets).map(([id,t])=>[id,t.merge.sha]))),'Accepted publication heads differ from admission');
-          requireThat(same(refreshAdmission(reader,p,acceptedAdmission.admission),acceptedAdmission.record),'Acceptance evidence changed at publication boundary');
+          requireThat(same(refreshAdmission(reader,p,acceptedAdmission.admission,{publication:true}),acceptedAdmission.record),'Acceptance evidence changed at publication boundary');
         } else if(c.channel==='main') {
           const target=kind==='stage'?p.policy.libraries.find(t=>t.id===ids[0]):p.manifest.targets.find(t=>t.id===ids[0]);
           const expected=purpose==='initial'?p.receivers[target.id].heads.main:executionSource;
