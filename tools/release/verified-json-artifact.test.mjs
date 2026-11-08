@@ -43,3 +43,17 @@ test('actual decompressed bytes remain bounded even when ZIP metadata understate
  // become a valid snapshot document. The reader also independently bounds reads.
  assert.throws(()=>JSON.parse(decoded));
 });
+import {extractVerifiedProofArchive,downloadVerifiedArtifactBytes} from './verified-json-artifact.mjs';
+import {existsSync} from 'node:fs';
+test('rich proof transport fetches exact immutable ID and verifies raw ZIP digest',()=>{
+ const bytes=archive([{name:'evidence.json',value:'{}'}]),calls=[];
+ const g={artifactBytes:(repo,id,limit)=>{calls.push([repo,id,limit]);return bytes;}};
+ const a={id:'41',digest:'sha256:'+bytesDigest(bytes)};
+ assert.deepEqual(downloadVerifiedArtifactBytes(g,'owner/repo',a),bytes);assert.equal(calls[0][1],'41');
+ assert.throws(()=>downloadVerifiedArtifactBytes(g,'owner/repo',{...a,digest:'sha256:'+'0'.repeat(64)}),/digest/);
+});
+test('bounded native archive preserves exact nested Unicode proof bytes without executing them',()=>{
+ const root=mkdtempSync(join(tmpdir(),'native extraction Ω ')),destination=join(root,'evidence');
+ try{extractVerifiedProofArchive(archive([{name:'multi/evidence.json',value:'{"proof":"λ"}'},{name:'logs/test.log',value:'exact\r\nbytes\n'}]),destination);assert.equal(readFileSync(join(destination,'multi/evidence.json'),'utf8'),'{"proof":"λ"}');assert.equal(readFileSync(join(destination,'logs/test.log'),'utf8'),'exact\r\nbytes\n');assert.throws(()=>extractVerifiedProofArchive(archive([{name:'x',value:'x'}]),destination));}finally{rmSync(root,{recursive:true,force:true});}
+});
+for(const [name,entries] of Object.entries({traversal:[{name:'../outside.json',value:'{}'}],absolute:[{name:'/outside.json',value:'{}'}],trailingDot:[{name:'dir./proof.json',value:'{}'}],reserved:[{name:'NUL.json',value:'{}'}],backslash:[{name:'dir\\outside.json',value:'{}'}],alternateStream:[{name:'safe:stream',value:'{}'}],duplicateCase:[{name:'proof.json',value:'{}'},{name:'PROOF.json',value:'{}'}],dotSegment:[{name:'dir/./proof.json',value:'{}'}]}))test(`bounded native archive rejects ${name} before creating destination`,()=>{const root=mkdtempSync(join(tmpdir(),'native-bad-')),destination=join(root,'evidence');try{assert.throws(()=>extractVerifiedProofArchive(archive(entries),destination));assert.equal(existsSync(destination),false);}finally{rmSync(root,{recursive:true,force:true});}});

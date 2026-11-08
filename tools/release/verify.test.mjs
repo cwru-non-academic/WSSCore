@@ -1,3 +1,4 @@
+import {execFileSync} from 'node:child_process';
 import {resolveTestSelection} from '../ci/test-selection.mjs';
 import {CAMPAIGN_TEST_POLICY,selectionRequest,selectionFields,targetTestEvidence,selectedTestArtifactName} from './campaign-test-selection.mjs';
 import {test} from 'node:test';
@@ -10,6 +11,12 @@ import {collect,freeze,GitHub,publish} from './github.mjs';
 import {tagPolicy} from './policy.mjs';
 import {channelContext,releaseFingerprint} from './channels.mjs';
 
+const zipCache=new Map();
+function candidateZip(candidate) {
+ const text=JSON.stringify(candidate);if(zipCache.has(text))return zipCache.get(text);
+ const dir=mkdtempSync(join(tmpdir(),'receipt-candidate-zip-'));
+ try {writeFileSync(join(dir,'candidate.json'),text);writeFileSync(join(dir,'zip.ps1'),'param([string]$Source,[string]$Destination)\n$ErrorActionPreference="Stop"; Compress-Archive -LiteralPath $Source -DestinationPath $Destination');execFileSync('pwsh',['-NoProfile','-File',join(dir,'zip.ps1'),join(dir,'candidate.json'),join(dir,'proof.zip')]);const bytes=readFileSync(join(dir,'proof.zip'));zipCache.set(text,bytes);return bytes;}finally{rmSync(dir,{recursive:true,force:true});}
+}
 const sha=n=>n.toString(16).padStart(40,'0');
 const successful=names=>names.map(name=>({name,status:'completed',conclusion:'success'}));
 function tagRule() {return{id:123,target:'tag',enforcement:'active',source_type:'Repository',source:CORE,conditions:{ref_name:{include:['refs/tags/v*'],exclude:[]}},bypass_actors:[],rules:[{type:'creation'},{type:'update'},{type:'deletion'}]};}
@@ -29,13 +36,13 @@ function fixture(channel='dev') {
     const parents=Object.fromEntries(Object.keys(t.parents).map(id=>[id,sha(10+TARGETS.indexOf(id))]));
     const r={schema:context.receiptSchema,plan_id:p.plan_id,channel,target_id:t.id,candidate,mode:'merged-pr',
       merge:{pr_number:String(i+1),sha:merge,head_sha:head},normal_ci:{run_id:String(normal),attempt:1},
-      preflights:[{repository:t.repository,run_id:String(300+i),source_sha:sha(2),workflow:'.github/workflows/wss-preflight.yml'}],
+      preflights:[{repository:t.repository,run_id:String(300+i),source_sha:sha(2),workflow:'.github/workflows/wss-preflight.yml',attempt:1,jobs:[{id:'900',name:'Native required proof',status:'completed',conclusion:'success'}],artifacts:[{id:'901',name:'rich-proof',digest:'sha256:'+bytesDigest(Buffer.from('rich proof ZIP'))}],logs:[]}],
       parents,emitter:{run_id:String(emitter),attempt:1,source_sha:merge,workflow:'.github/workflows/release-receipt.yml'},coverage:t.coverage};
     e.targets[t.id]={receipt:r,receipt_bytes:Buffer.from(JSON.stringify(r)),pr:{number:i+1,merged:true,merged_at:'2026-10-29T00:00:00Z',user:{type:'Bot'},merged_by:{type:'User'},state:'closed',merge_commit_sha:merge,head:{sha:head,ref:'automation/candidate',repo:{full_name:t.repository}},base:{ref:'dev',repo:{full_name:t.repository}}},
       current_head:merge,merge_tree:sha(4),tested_tree:sha(4),trusted:p.target_snapshots[t.id].trusted,parent_gitlinks:parents,
       normal_run:{...run(t.repository,t.workflow,normal,merge),created_at:'2026-10-29T00:01:00Z',pull_requests:[]},normal_latest_run_id:String(normal),normal_jobs:successful(t.jobs),
       emitter_run:run(t.repository,r.emitter.workflow,emitter,merge),artifact:{id:500+i,name:`wss-acceptance-${t.id}-${p.plan_id}-a1`,expired:false,workflow_run:{id:emitter,head_sha:merge}},
-      preflights:[{run:run(t.repository,r.preflights[0].workflow,300+i,sha(2)),candidate}]};
+      preflights:[{run:run(t.repository,r.preflights[0].workflow,300+i,sha(2)),candidate,jobs:r.preflights[0].jobs,artifacts:r.preflights[0].artifacts,logs:[]}]};
     e.targets[t.id].receipt_sha256=bytesDigest(e.targets[t.id].receipt_bytes);
   });
   e.producer.run.head_branch=channel;
@@ -131,10 +138,13 @@ test('publication never overwrites a tag without a matching complete release',()
 
 function collectorFixture(f) {
   const {p,e}=f,entries=()=>Object.values(e.targets),target=repo=>entries().find(t=>t.normal_run.repository.full_name===repo);
+  const richBytes=Buffer.from('rich proof ZIP'),zip=candidateZip(p.candidate);
+  const artifacts=t=>[{id:901,name:'rich-proof',digest:'sha256:'+bytesDigest(richBytes),expired:false,workflow_run:{id:t.preflights[0].run.id,head_sha:t.preflights[0].run.head_sha}},{id:902,name:'wss-candidate-provenance',digest:'sha256:'+bytesDigest(zip),expired:false,workflow_run:{id:t.preflights[0].run.id,head_sha:t.preflights[0].run.head_sha}}];
   return {
+    artifactBytes:(repo,id)=>id==='901'?richBytes:zip,
     head:(repo,branch='dev')=>{assert.equal(branch,p.channel,'Collector must read the selected branch explicitly');return repo===CORE?e.producer.current_head:target(repo).current_head;},
     run:(repo,id)=>repo===CORE?e.producer.run:[...entries().flatMap(t=>[t.normal_run,t.emitter_run,...t.preflights.map(x=>x.run)])].find(r=>r.repository.full_name===repo&&String(r.id)===id),
-    jobs:(repo,r)=>repo===CORE?e.producer.jobs:target(repo).normal_jobs,
+    jobs:(repo,r)=>repo===CORE?e.producer.jobs:r.path==='.github/workflows/wss-preflight.yml'?target(repo).preflights[0].jobs:target(repo).normal_jobs,
     artifact:(repo,id)=>repo===CORE?e.producer.artifact:target(repo).artifact,
     download:(repo,id,name)=>{
       if(repo===CORE)return{[p.candidate.archive]:Buffer.from('zip'),'SHA256SUMS.txt':Buffer.from(`${p.candidate.sha256}  ${p.candidate.archive}\n`)};
@@ -143,11 +153,11 @@ function collectorFixture(f) {
     },
     pages:path=>{
       const repo=path.split('/').slice(1,3).join('/'),t=target(repo);
-      if(path.includes('/artifacts'))return[t.artifact];
+      if(path.includes('/artifacts'))return path.includes('/runs/'+t.preflights[0].run.id+'/')?artifacts(t):[t.artifact];
       if(path.includes('/release-receipt.yml/'))return[t.emitter_run];
       return[t.normal_run];
     },
-    get:path=>target(path.split('/').slice(1,3).join('/')).pr,
+    get:path=>{const t=target(path.split('/').slice(1,3).join('/'));return path.includes('/actions/artifacts/')?artifacts(t).find(a=>String(a.id)===path.split('/').at(-1)):t.pr;},
     tree:(repo,ref)=>ref===target(repo).receipt.merge.sha?target(repo).merge_tree:target(repo).tested_tree,
     object:(repo,ref,path)=>{const t=target(repo);if(path in t.trusted)return{sha:t.trusted[path]};const policy=p.manifest.targets.find(x=>x.repository===repo),parent=Object.keys(policy.parents).find(x=>policy.parents[x]===path);return{sha:t.parent_gitlinks[parent],type:'commit',mode:'160000'};}
   };
@@ -277,4 +287,15 @@ for(const channel of ['dev','main'])for(const id of TARGETS)test(`independent Co
   const {p,e}=fixture(channel),t=e.targets[id];
   t.receipt.preflights[0].source_sha=sha(99);t.preflights[0].run.head_sha=sha(99);sync(e);
   assert.throws(()=>allClear(p,e),/Preflight source differs/);
+});
+
+for(const channel of ['dev','main'])for(const id of TARGETS)for(const mutation of ['attempt','jobs','artifacts','logs'])test(`independent ${id}/${channel} rejects replaced native ${mutation}`,()=>{
+ const {p,e}=fixture(channel),a=e.targets[id].preflights[0];
+ if(mutation==='attempt')a.run.run_attempt=2;else a[mutation]=mutation==='logs'?[{job_id:'900',sha256:'2'.repeat(64)}]:[];
+ assert.throws(()=>allClear(p,e));
+});
+for(const channel of ['dev','main'])test(`${channel} collector rejects native attempt movement after other receivers were collected`,()=>{
+ const f=fixture(channel),g=collectorFixture(f),run=g.run;let firstReads=0;
+ g.run=(repo,id)=>{const r=run(repo,id);return id==='300'&&++firstReads>=3?{...r,run_attempt:2}:r;};
+ assert.throws(()=>collect(g,f.p),/attempt/);
 });
