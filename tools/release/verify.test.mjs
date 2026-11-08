@@ -392,3 +392,16 @@ for(const channel of ['dev','main'])test(`publication admission ${channel} retai
  const args=['release','create',releaseFingerprint(channel,f.p.candidate.run_id,f.p.plan_id),'--repo',CORE,'--target',f.p.candidate.commit,...(channel==='dev'?['--prerelease']:[]),'--title','fixture','--notes','synthetic'];
  assert.throws(()=>writer.command(args),/Producer attempt/);assert.equal(writes.length,0);
 });
+for(const channel of ['dev','main'])for(const field of ['run_attempt','status'])test(`publication admission ${channel} rejects producer ${field} moving during final artifact metadata`,()=>{
+ const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[],artifact=f.g.artifact;
+ let fired=false;
+ f.g.artifact=(repo,...args)=>{const value=artifact(repo,...args);if(repo===CORE&&!fired){fired=true;f.e.producer.run[field]=field==='run_attempt'?2:'in_progress';}return value;};
+ const writer=guardedWriter({command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const args=['release','create',releaseFingerprint(channel,f.p.candidate.run_id,f.p.plan_id),'--repo',CORE,'--target',f.p.candidate.commit,...(channel==='dev'?['--prerelease']:[]),'--title','fixture','--notes','synthetic'];
+ assert.throws(()=>writer.command(args),/Producer attempt|Run repository\/workflow\/status/);assert.equal(fired,true);assert.equal(writes.length,0);
+});
+for(const channel of ['dev','main'])for(const field of ['run_attempt','status'])test(`final collection ${channel} rejects producer ${field} moving during admission artifact metadata`,()=>{
+ const f=boundaryFixture(channel),artifact=f.g.artifact;let reads=0,fired=false;
+ f.g.artifact=(repo,...args)=>{const value=artifact(repo,...args);if(repo===CORE&&++reads===2){fired=true;f.e.producer.run[field]=field==='run_attempt'?2:'in_progress';}return value;};
+ assert.throws(()=>collect(f.g,f.p),/Producer attempt|Run repository\/workflow\/status/);assert.equal(fired,true);
+});
