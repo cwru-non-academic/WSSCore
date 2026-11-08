@@ -4,6 +4,7 @@ $ErrorActionPreference='Stop'
 Add-Type -Path $HelperPath
 $scratch=Join-Path ([IO.Path]::GetTempPath()) ('wss-assets-restore-'+[guid]::NewGuid().ToString('N'))
 $null=New-Item -ItemType Directory $scratch
+if(!$IsWindows){Push-Location $scratch;try{$scratch=(& /bin/pwd -P).Trim()}finally{Pop-Location}}
 function Put([string]$Path,[string]$Text){$null=New-Item -ItemType Directory (Split-Path -Parent $Path) -Force;[IO.File]::WriteAllText($Path,$Text)}
 function Xml([string]$Value){[Security.SecurityElement]::Escape($Value)}
 try {
@@ -31,6 +32,7 @@ try {
 } finally {
  Pop-Location
  $resolved=[IO.Path]::GetFullPath($scratch);$temp=[IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+ if(!$IsWindows){Push-Location $temp;try{$temp=(& /bin/pwd -P).Trim()}finally{Pop-Location}}
  if(!$resolved.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($resolved) -cnotmatch '^wss-assets-restore-[a-f0-9]{32}$'){throw 'Unsafe fixture cleanup path'}
  Remove-Item -LiteralPath $resolved -Recurse -Force
 }
