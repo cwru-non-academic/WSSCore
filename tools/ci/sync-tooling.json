@@ -225,6 +225,10 @@
     ".github/scripts/wss-ci/tests/receipt-gh-preload.mjs": {
       "origin": "integration",
       "path": ".github/scripts/wss-ci/tests/receipt-gh-preload.mjs"
+    },
+    ".github/scripts/wss-ci/admission-context.mjs": {
+      "origin": "core",
+      "path": "tools/release/admission-context.mjs"
     }
   }
 }
