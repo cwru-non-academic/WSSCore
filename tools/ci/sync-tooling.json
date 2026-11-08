@@ -15,8 +15,8 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "a75dbb508487e6fcd30bbd862ef400ec639f0930",
-      "ref": "refs/heads/ci/tooling/a75dbb508487e6fcd30bbd862ef400ec639f0930"
+      "commit": "0770de43e773578a5fdc0cb568bc1d34f2c19a63",
+      "ref": "refs/heads/ci/tooling/0770de43e773578a5fdc0cb568bc1d34f2c19a63"
     }
   },
   "files": {
@@ -209,6 +209,22 @@
         "Matlab_WSS_Integration_Lib",
         "CLI_Matlab_WSS_Application"
       ]
+    },
+    ".github/scripts/wss-ci/preflight-proof.mjs": {
+      "origin": "core",
+      "path": "tools/release/preflight-proof.mjs"
+    },
+    ".github/scripts/wss-ci/verified-json-artifact.mjs": {
+      "origin": "core",
+      "path": "tools/release/verified-json-artifact.mjs"
+    },
+    ".github/scripts/wss-ci/receipt-proof-cli.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-proof-cli.mjs"
+    },
+    ".github/scripts/wss-ci/tests/receipt-gh-preload.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/tests/receipt-gh-preload.mjs"
     }
   }
 }

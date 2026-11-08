@@ -97,3 +97,36 @@ all nine DEV/MAIN roles. Do not substitute stub adapter success for this native
 history regression.
 Core workflow-freeze, source-copy, executable-pin, renderer and independent
 acceptance suites must also pass. Hosted normal checks follow reviewed adoption.
+
+## Native attempt and evidence binding
+
+The native validator observes the successful run attempt before reading its
+attempt-specific jobs. Receipt-only capture preserves that exact observation,
+not a later current-attempt value. Existing family helpers remain the sole
+owners of required job names, native release/runtime assertions, paired source
+checks and actual merged-wrapper proof semantics.
+
+A strict preflight descriptor carries repository, run ID, source SHA, workflow,
+positive integer attempt, the complete canonical attempt job snapshot (job ID,
+name, status and conclusion), exact validated artifact ID/name/ZIP SHA256 bindings,
+and any validated job-log ID/raw-byte SHA256 bindings. The common capture bridge
+records actual reads automatically. Native helpers complete the descriptor only
+after their existing rich checks succeed. The common engine and independent Core
+collector authenticate the same attempt and bindings again; Core rechecks all
+nine targets before producing acceptance. A successful later rerun cannot inherit
+an earlier attempt's native validation. Failed, skipped or duplicated required
+jobs remain rejected by the existing native policy, not a second Core job table.
+
+Exact artifact-ID transport verifies GitHub's ZIP digest before bounded safe
+extraction (64 MiB ZIP/file, 256 MiB expanded, 512 entries). Native inventory and
+content checks remain mandatory. Job logs use the exact job endpoint and raw
+bytes, never trimmed console output or regenerated run-log ZIPs. Artifact names
+are checked for unique current identity, so deletion/recreation fails closed.
+These are execution-proof bindings; durable first-attempt campaign input context
+and the canonical six-field candidate keep their existing distinct contracts.
+
+Core-owned proof/transport modules are source-copied into the integration owner
+along with verify/github before retaining a new P. The final C references P and
+must prove exact raw Git blob equality for that executable closure. New wrapper
+and app adoption sources follow; old receipts without the binding are not valid
+under the new implementation. No unpublished anchor needs a compatibility path.
