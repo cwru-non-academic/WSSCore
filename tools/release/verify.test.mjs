@@ -152,6 +152,7 @@ function collectorFixture(f) {
       return{'receipt.json':target(repo).receipt_bytes};
     },
     pages:path=>{
+      if(path.includes('/git/matching-refs/')||path.endsWith('/releases'))return [];
       const repo=path.split('/').slice(1,3).join('/'),t=target(repo);
       if(path.includes('/artifacts'))return path.includes('/runs/'+t.preflights[0].run.id+'/')?artifacts(t):[t.artifact];
       if(path.includes('/release-receipt.yml/'))return[t.emitter_run];
@@ -302,8 +303,8 @@ for(const channel of ['dev','main'])test(`${channel} collector rejects native at
 import {freezeWorkflows,collectWithWorkflows,guardedWriter} from '../ci/workflow-freeze.mjs';
 // All reads and writes below are synthetic. Return detached metadata so a late
 // mutation cannot accidentally update an earlier evidence observation by alias.
-function boundaryFixture(channel) {
- const f=fixture(channel),g=collectorFixture(f),get=g.get,object=g.object,head=g.head;
+function boundaryFixture(channel,selected=false) {
+ const f=selected?selectedFixture(channel):fixture(channel),g=selected?selectedCollector(f):collectorFixture(f),get=g.get,object=g.object,head=g.head;
  let freezing=true;
  g.get=path=>path.includes('/rulesets/')?tagRule():path===`repos/${CORE}/contents/${channelContext(channel).targetPolicy}?ref=${f.p.candidate.commit}`?{type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(f.p.manifest)).toString('base64')}:get(path);
  g.object=(repo,ref,path)=>path==='.github/workflows'?{type:'tree',sha:sha(777)}:object(repo,ref,path);
@@ -404,4 +405,46 @@ for(const channel of ['dev','main'])for(const field of ['run_attempt','status'])
  const f=boundaryFixture(channel),artifact=f.g.artifact;let reads=0,fired=false;
  f.g.artifact=(repo,...args)=>{const value=artifact(repo,...args);if(repo===CORE&&++reads===2){fired=true;f.e.producer.run[field]=field==='run_attempt'?2:'in_progress';}return value;};
  assert.throws(()=>collect(f.g,f.p),/Producer attempt|Run repository\/workflow\/status/);assert.equal(fired,true);
+});
+
+const completeChanges={
+ emitterAttempt:f=>f.e.targets['csharp-wrapper'].emitter_run.run_attempt++,
+ emitterStatus:f=>f.e.targets['csharp-wrapper'].emitter_run.conclusion='failure',
+ receiptExpired:f=>f.e.targets['csharp-wrapper'].artifact.expired=true,
+ receiptReplaced:f=>f.e.targets['csharp-wrapper'].artifact.id++,
+ preflightAttempt:f=>f.e.targets['csharp-wrapper'].preflights[0].run.run_attempt++,
+ preflightStatus:f=>f.e.targets['csharp-wrapper'].preflights[0].run.conclusion='failure',
+ preflightJobs:f=>f.e.targets['csharp-wrapper'].preflights[0].jobs[0].conclusion='failure',
+ nativeExpired:f=>{const get=f.g.get;f.g.get=p=>{const v=get(p);return p.endsWith('/actions/artifacts/901')?{...v,expired:true}:v;};},
+ tagRule:f=>{const get=f.g.get;f.g.get=p=>{const v=get(p);return p.includes('/rulesets/')?{...v,enforcement:'disabled'}:v;};},
+ tagAppears:f=>{const pages=f.g.pages;f.g.pages=p=>p.includes('/git/matching-refs/')?[{ref:`refs/tags/${releaseFingerprint(f.p.channel,f.p.candidate.run_id,f.p.plan_id)}`}]:pages(p);},
+ releaseAppears:f=>{const pages=f.g.pages;f.g.pages=p=>p.endsWith('/releases')?[{tag_name:releaseFingerprint(f.p.channel,f.p.candidate.run_id,f.p.plan_id)}]:pages(p);}
+};
+for(const channel of ['dev','main'])for(const [name,mutate]of Object.entries(completeChanges))test(`V7 complete publication ${channel} rejects late ${name}`,()=>{
+ const f=boundaryFixture(channel),pages=f.g.pages;f.g.pages=p=>p.includes('/git/matching-refs/')||p.endsWith('/releases')?[]:pages(p);
+ const accepted=collectWithWorkflows(f.g,f.p,collect),writes=[],writer=guardedWriter({pages:()=>[],command:a=>writes.push(a)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const fired=lateHook(f,'workflow',mutate),dir=mkdtempSync(join(tmpdir(),'v7-complete-'));
+ try{assert.throws(()=>publish(writer,f.p,accepted,dir,f.g));fired();assert.equal(writes.length,0);}finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+for(const channel of ['dev','main'])for(const selected of [false,true])for(const change of ['stable','nativeDuplicate','nativeReplaced','nativeDigest','receiptDuplicate','competingEmitter','normalSelectedExpired','preflightSelectedExpired','normalSelectedReplaced','preflightSelectedReplaced','unrelatedArtifacts','historicalCandidate','historicalPR','metadataRunChange'])test(`V7 full ${channel} selected=${selected} ${change}`,()=>{
+ if(!selected&&change.includes('Selected'))return;
+ const f=boundaryFixture(channel,selected),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
+ const writer=guardedWriter({pages:()=>[],command:a=>writes.push(a)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const positive=['stable','unrelatedArtifacts','historicalCandidate','historicalPR'].includes(change);
+ const fired=lateHook(f,'workflow',()=>{
+   const t=f.e.targets['csharp-wrapper'],get=f.g.get,pages=f.g.pages,artifact=f.g.artifact;
+   if(change==='nativeReplaced'||change==='nativeDigest')f.g.get=p=>{const a=get(p);return p.endsWith('/actions/artifacts/901')?{...a,...(change==='nativeReplaced'?{id:999}:{digest:'sha256:'+'0'.repeat(64)})}:a;};
+   if(change==='nativeDuplicate'||change==='unrelatedArtifacts')f.g.pages=p=>{const a=pages(p);return p.includes('/runs/300/artifacts')?[...a,change==='nativeDuplicate'?a[0]:{id:999,name:'unrelated'}]:a;};
+   if(change==='receiptDuplicate')f.g.artifact=(repo,id,name)=>{if(repo===t.normal_run.repository.full_name&&name.startsWith('wss-acceptance-'))throw Error('duplicate receipt artifact');return artifact(repo,id,name);};
+   if(change==='competingEmitter')f.g.pages=p=>p.includes('/release-receipt.yml/runs?')&&p.includes(t.normal_run.repository.full_name)?[...pages(p),{...t.emitter_run,id:999}]:pages(p);
+   if(change.includes('Selected')){const proof=change.startsWith('normal')?t.selected_tests:t.preflights[0].selected_tests;if(change.endsWith('Expired'))proof.artifact.expired=true;else proof.artifact.id++;}
+   if(change==='historicalCandidate')f.g.get=p=>{const a=get(p);return p.endsWith('/actions/artifacts/902')?{...a,expired:true}:a;};
+   if(change==='historicalPR'){t.pr.title='unrelated';t.pr.body='new commentary';}
+   if(change==='metadataRunChange'){const jobs=f.g.jobs;f.g.jobs=(repo,r)=>{const a=jobs(repo,r);if(String(r.id)==='300')t.preflights[0].run.run_attempt++;return a;};}
+   // No body acquisition is allowed after the final workflow observation.
+   for(const name of ['download','artifactBytes','jobLogBytes'])f.g[name]=()=>assert.fail('Final refresh downloaded bytes');
+ });
+ const dir=mkdtempSync(join(tmpdir(),'v7-full-'));
+ try{if(positive){assert.equal(publish(writer,f.p,accepted,dir,f.g).state,'created');assert.equal(writes.length,1);}else{assert.throws(()=>publish(writer,f.p,accepted,dir,f.g));assert.equal(writes.length,0);}fired();}finally{rmSync(dir,{recursive:true,force:true});}
 });
