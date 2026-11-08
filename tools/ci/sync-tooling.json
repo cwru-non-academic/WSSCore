@@ -265,6 +265,15 @@
         "CLI_CSharp_WSS_Application",
         "Python_WSS_Integration_Lib"
       ]
+    },
+    ".github/scripts/wss-ci/restored-assets/RestoredAssets.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/restored-assets/RestoredAssets.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Python_WSS_Integration_Lib"
+      ]
     }
   }
 }

@@ -34,3 +34,6 @@ try {
  if(!$resolved.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($resolved) -cnotmatch '^wss-assets-restore-[a-f0-9]{32}$'){throw 'Unsafe fixture cleanup path'}
  Remove-Item -LiteralPath $resolved -Recurse -Force
 }
+
+& pwsh -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'PackageRootSelection.Tests.ps1') -HelperPath $HelperPath
+if($LASTEXITCODE -ne 0){throw 'SDK package-root selection comparison failed'}
