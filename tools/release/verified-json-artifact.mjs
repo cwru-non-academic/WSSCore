@@ -27,7 +27,7 @@ export function readVerifiedJsonArchive(bytes,expectedDigest,files) {
 export function downloadVerifiedArtifactBytes(g,repository,artifact,maxBytes=64*1024*1024) {
   requireThat(/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repository)&&/^[1-9][0-9]*$/.test(String(artifact.id))&&/^sha256:[a-f0-9]{64}$/.test(artifact.digest)&&Number.isSafeInteger(maxBytes)&&maxBytes>0&&maxBytes<=64*1024*1024,'Invalid bounded exact artifact request');
   const bytes=g.artifactBytes?g.artifactBytes(repository,String(artifact.id),maxBytes):execFileSync('gh',['api',`repos/${repository}/actions/artifacts/${artifact.id}/zip`],{env:g.environment,maxBuffer:maxBytes});
-  requireThat(Buffer.isBuffer(bytes)&&bytes.length<=maxBytes&&`sha256:${bytesDigest(bytes)}`===artifact.digest,'Artifact ZIP bytes/digest mismatch');
+  requireThat(Buffer.isBuffer(bytes)&&bytes.length<=maxBytes&&`sha256:${bytesDigest(bytes)}`===artifact.digest,'Artifact ZIP digest mismatch');
   return bytes;
 }
 // Rich native proof archives: bounded safe extraction; native owners still check
