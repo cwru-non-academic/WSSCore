@@ -155,10 +155,10 @@ export function refreshAdmission(g,p,evidence) {
     e.normal_run=normal;e.normal_latest_run_id=String(latest.id);e.normal_jobs=normalJobs;
   }
   const source=structuredClone(g.run(CORE,p.candidate.run_id));
-  evidence.producer.jobs=g.jobs(CORE,source);
-  evidence.producer.run=g.run(CORE,p.candidate.run_id);
+  evidence.producer.jobs=structuredClone(g.jobs(CORE,source));
+  evidence.producer.artifact=structuredClone(g.artifact(CORE,p.candidate.run_id,'universal-release-assets'));
+  evidence.producer.run=structuredClone(g.run(CORE,p.candidate.run_id));
   requireThat(String(source.id)===p.candidate.run_id&&source.run_attempt===acceptedAttempt&&source.run_attempt===evidence.producer.run.run_attempt,'Producer attempt changed during admission');
-  evidence.producer.artifact=g.artifact(CORE,p.candidate.run_id,'universal-release-assets');
   for(const t of p.manifest.targets)evidence.targets[t.id].current_head=g.head(t.repository,t.branch);
   evidence.producer.current_head=g.head(CORE,p.channel);
   return allClear(p,evidence);
