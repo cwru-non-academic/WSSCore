@@ -70,10 +70,10 @@ test('final verification checks live workflows both before and after collection'
   const f=fixture();assert.equal(collectWithWorkflows(f.g,f.p,()=>42),42);
   assert.throws(()=>collectWithWorkflows(f.g,f.p,()=>{f.move('unity-wrapper');return 42;}),/Workflow tree changed/);
 });
-test('the existing publisher command is blocked at its write boundary after live drift',()=>{
+test('publication cannot omit admission evidence or bypass workflow drift',()=>{
   const f=fixture(),writer=guardedWriter(f.g,f.g,f.p,'acceptance',{purpose:'publication'});
   const args=['release','create',`dev-beta-11-${f.p.plan_id.slice(0,12)}`,'--repo',CORE,'--target',f.p.candidate.commit,'--prerelease','--title','candidate','--notes','verified'];
-  writer.command(args);assert.equal(f.commands.length,1);f.move('python-cli');assert.throws(()=>writer.command(args),/Workflow tree changed/);assert.equal(f.commands.length,1);
+  assert.throws(()=>writer.command(args),/collected admission evidence/);assert.equal(f.commands.length,0);f.move('python-cli');assert.throws(()=>writer.command(args),/Workflow tree changed/);assert.equal(f.commands.length,0);
 });
 test('adding snapshots does not bypass the real publisher tag-protection gate',()=>{
   const f=fixture(),writer=guardedWriter(f.g,f.g,f.p,'acceptance',{purpose:'publication'});
