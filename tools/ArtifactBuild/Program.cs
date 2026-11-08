@@ -137,6 +137,9 @@ internal static partial class Program
             startInfo.ArgumentList.Add(argument);
         }
 
+        // The package resolver and SDK output must use the same uncached package-root selection.
+        startInfo.ArgumentList.Add("-p:DisablePackageAssetsCache=true");
+
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Could not start dotnet build for " + projectPath + ".");
         process.WaitForExit();

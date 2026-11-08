@@ -37,3 +37,6 @@ try {
 
 & pwsh -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'PackageRootSelection.Tests.ps1') -HelperPath $HelperPath
 if($LASTEXITCODE -ne 0){throw 'SDK package-root selection comparison failed'}
+
+& pwsh -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'CachedPackageResolution.Tests.ps1') -HelperPath $HelperPath
+if($LASTEXITCODE -ne 0){throw 'Default SDK cache and corrected invocation comparison failed'}
