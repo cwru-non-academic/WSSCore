@@ -299,3 +299,96 @@ for(const channel of ['dev','main'])test(`${channel} collector rejects native at
  g.run=(repo,id)=>{const r=run(repo,id);return id==='300'&&++firstReads>=3?{...r,run_attempt:2}:r;};
  assert.throws(()=>collect(g,f.p),/attempt/);
 });
+import {freezeWorkflows,collectWithWorkflows,guardedWriter} from '../ci/workflow-freeze.mjs';
+// All reads and writes below are synthetic. Return detached metadata so a late
+// mutation cannot accidentally update an earlier evidence observation by alias.
+function boundaryFixture(channel) {
+ const f=fixture(channel),g=collectorFixture(f),get=g.get,object=g.object,head=g.head;
+ let freezing=true;
+ g.get=path=>path.includes('/rulesets/')?tagRule():path===`repos/${CORE}/contents/${channelContext(channel).targetPolicy}?ref=${f.p.candidate.commit}`?{type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(f.p.manifest)).toString('base64')}:get(path);
+ g.object=(repo,ref,path)=>path==='.github/workflows'?{type:'tree',sha:sha(777)}:object(repo,ref,path);
+ g.head=(repo,branch)=>repo===CORE?head(repo,branch):branch!==channel?sha(500):freezing?sha(2):head(repo,branch);
+ Object.assign(f.p,freezeWorkflows(g,f.p,'acceptance'));freezing=false;
+ for(const [id,t]of Object.entries(f.e.targets)){t.receipt.plan_id=f.p.plan_id;t.artifact.name=`wss-acceptance-${id}-${f.p.plan_id}-a1`;}
+ const logs=Buffer.from('synthetic native log');
+ for(const t of Object.values(f.e.targets)) {t.receipt.preflights[0].logs=[{job_id:'900',sha256:bytesDigest(logs)}];t.preflights[0].logs=t.receipt.preflights[0].logs;}
+ sync(f.e);g.jobLogBytes=()=>logs;
+ for(const name of ['run','jobs','pages','get','artifact']){const read=g[name];g[name]=(...args)=>structuredClone(read(...args));}
+ return {...f,g};
+}
+const lateChanges={
+ target:f=>f.e.targets['python-cli'].current_head=sha(999),
+ parent:f=>f.e.targets['csharp-wrapper'].current_head=sha(999),
+ Core:f=>f.e.producer.current_head=sha(999),
+ attempt:f=>f.e.targets['csharp-wrapper'].normal_run.run_attempt=2,
+ status:f=>f.e.targets['csharp-wrapper'].normal_run.status='in_progress',
+ jobs:f=>f.e.targets['csharp-wrapper'].normal_jobs[0].conclusion='failure',
+ producer:f=>f.e.producer.run.conclusion='failure',
+ producerJobs:f=>f.e.producer.jobs[0].conclusion='failure',
+ id:f=>{const pages=f.g.pages;f.g.pages=path=>path.includes(`/${f.p.manifest.targets[0].workflow.split('/').at(-1)}/runs?`)?pages(path).map(r=>({...r,id:999})):pages(path);},
+ ambiguous:f=>{const pages=f.g.pages;f.g.pages=path=>path.includes(`/${f.p.manifest.targets[0].workflow.split('/').at(-1)}/runs?`)?[...pages(path),{...pages(path)[0],id:999}]:pages(path);}
+};
+function lateHook(f,phase,mutate) {
+ let fired=false,count=0;
+ const last=f.p.manifest.targets.at(-1).repository;
+ const trigger=()=>{if(!fired){fired=true;mutate(f);}};
+ const name=phase==='native-artifact'?'artifactBytes':phase==='native-log'?'jobLogBytes':phase==='receiver'?'download':phase==='workflow'?'object':'jobs';
+ const read=f.g[name];
+ f.g[name]=(...args)=>{
+  const value=read(...args);
+  if(phase==='native-artifact'&&args[0]===last&&args[1]==='901'&&++count===2||
+     phase==='native-log'&&args[0]===last&&++count===2||
+     phase==='receiver'&&args[0]===last||
+     phase==='workflow'&&args[0]===last&&args[2]==='.github/workflows'||
+     phase==='metadata'&&args[0]===last&&args[1].path!=='.github/workflows/wss-preflight.yml')trigger();
+  return value;
+ };
+ return ()=>assert.equal(fired,true,'Late mutation hook must execute');
+}
+for(const channel of ['dev','main'])for(const phase of ['native-artifact','native-log','receiver'])for(const [change,mutate]of Object.entries(lateChanges))test(`final admission ${channel} rejects ${change} during ${phase}`,()=>{
+ const f=boundaryFixture(channel),fired=lateHook(f,phase,mutate);
+ assert.throws(()=>collect(f.g,f.p));fired();
+});
+for(const channel of ['dev','main'])for(const phase of ['workflow','metadata'])for(const [change,mutate]of Object.entries(lateChanges).filter(([name])=>phase==='workflow'||['target','parent','Core'].includes(name)))test(`publication admission ${channel} rejects ${change} during final ${phase} reads`,()=>{
+ const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
+ const writer=guardedWriter({command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedHeads:Object.fromEntries(Object.entries(accepted.record.targets).map(([id,t])=>[id,t.merge.sha])),acceptedAdmission:accepted});
+ const fired=lateHook(f,phase,mutate);
+ const args=['release','create',releaseFingerprint(channel,f.p.candidate.run_id,f.p.plan_id),'--repo',CORE,'--target',f.p.candidate.commit,...(channel==='dev'?['--prerelease']:[]),'--title','fixture','--notes','synthetic'];
+ assert.throws(()=>writer.command(args));fired();assert.equal(writes.length,0);
+});
+for(const channel of ['dev','main'])test(`publication admission ${channel} accepts merged heads different from frozen baselines`,()=>{
+ const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
+ const writer=guardedWriter({pages:()=>[],command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedHeads:Object.fromEntries(Object.entries(accepted.record.targets).map(([id,t])=>[id,t.merge.sha])),acceptedAdmission:accepted});
+ const directory=mkdtempSync(join(tmpdir(),'final-admission-'));
+ try{assert.equal(publish(writer,f.p,accepted,directory,f.g).state,'created');assert.equal(writes.length,1);}finally{rmSync(directory,{recursive:true,force:true});}
+});
+for(const channel of ['dev','main'])for(const change of ['target','Core','parent','attempt'])test(`publication recollection ${channel} rejects late native ${change} with zero writes`,()=>{
+ const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
+ const writer=guardedWriter({pages:()=>[],command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const fired=lateHook(f,'native-artifact',lateChanges[change]),directory=mkdtempSync(join(tmpdir(),'final-native-admission-'));
+ try {assert.throws(()=>publish(writer,f.p,accepted,directory,f.g));fired();assert.equal(writes.length,0);}finally{rmSync(directory,{recursive:true,force:true});}
+});
+for(const channel of ['dev','main'])test(`final admission ${channel} retains one independent end-of-collection native pass`,()=>{
+ const f=boundaryFixture(channel),read=f.g.artifactBytes,counts=new Map();
+ f.g.artifactBytes=(repo,id,...args)=>{if(id==='901')counts.set(repo,(counts.get(repo)||0)+1);return read(repo,id,...args);};
+ collect(f.g,f.p);
+ assert.deepEqual([...counts.values()],Array(9).fill(2));
+});
+for(const channel of ['dev','main'])for(const change of ['attempt','status','jobs','id','ambiguous'])test(`publication admission ${channel} rejects normal ${change} changing within its metadata reads`,()=>{
+ const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[],jobs=f.g.jobs;
+ let fired=false;
+ f.g.jobs=(repo,r)=>{const value=jobs(repo,r);if(!fired&&repo===f.p.manifest.targets[0].repository){fired=true;lateChanges[change](f);return jobs(repo,r);}return value;};
+ const writer=guardedWriter({command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const args=['release','create',releaseFingerprint(channel,f.p.candidate.run_id,f.p.plan_id),'--repo',CORE,'--target',f.p.candidate.commit,...(channel==='dev'?['--prerelease']:[]),'--title','fixture','--notes','synthetic'];
+ assert.throws(()=>writer.command(args));assert.equal(fired,true);assert.equal(writes.length,0);
+});
+for(const channel of ['dev','main'])test(`publication admission ${channel} retains captured producer attempt despite client aliasing`,()=>{
+ const f=boundaryFixture(channel),read=f.g.run;
+ f.g.run=(repo,id)=>repo===CORE?f.e.producer.run:read(repo,id);
+ const accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
+ f.e.producer.run.run_attempt=2;
+ assert.equal(accepted.admission.producer.run.run_attempt,1);
+ const writer=guardedWriter({command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const args=['release','create',releaseFingerprint(channel,f.p.candidate.run_id,f.p.plan_id),'--repo',CORE,'--target',f.p.candidate.commit,...(channel==='dev'?['--prerelease']:[]),'--title','fixture','--notes','synthetic'];
+ assert.throws(()=>writer.command(args),/Producer attempt/);assert.equal(writes.length,0);
+});

@@ -85,7 +85,7 @@ try {
     if(command==='publish') {
       requireThat(process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main','Publisher runs only trusted default-branch workflow');
       assertWorkflows(reader,p,'acceptance');
-      const published=publish(guardedWriter(g,reader,p,'acceptance',{purpose:'publication',...(p.channel==='main'?{acceptedHeads:Object.fromEntries(Object.entries(accepted.record.targets).map(([id,t])=>[id,t.merge.sha]))}:{})}),p,accepted,resolve(destination),reader);
+      const published=publish(guardedWriter(g,reader,p,'acceptance',{purpose:'publication',acceptedAdmission:accepted,acceptedHeads:Object.fromEntries(Object.entries(accepted.record.targets).map(([id,t])=>[id,t.merge.sha]))}),p,accepted,resolve(destination),reader);
       assertWorkflows(reader,p,'acceptance');
       console.log(JSON.stringify(published));
     } else console.log(`All nine targets accepted plan ${p.plan_id}; no publication requested`);
