@@ -100,15 +100,7 @@ export function collect(g,p) {
   const c=p.candidate, source=structuredClone(g.run(CORE,c.run_id)), zip=archive(g,c);
   const evidence={producer:{run:source,current_head:g.head(CORE,p.channel),jobs:g.jobs(CORE,source),artifact:zip.artifact,archive_sha256:bytesDigest(zip.files[c.archive])},targets:{}};
   for(const t of p.manifest.targets) {
-    const runs=g.pages(`repos/${t.repository}/actions/workflows/release-receipt.yml/runs?branch=${t.branch}`,'workflow_runs');
-    const matches=[];
-    for(const emitter of runs) {
-      const name=`wss-acceptance-${t.id}-${p.plan_id}-a${emitter.run_attempt}`;
-      const artifacts=g.pages(`repos/${t.repository}/actions/runs/${emitter.id}/artifacts`,'artifacts').filter(a=>a.name===name);
-      if(artifacts.length) matches.push({emitter,name});
-    }
-    requireThat(matches.length===1,`Missing or ambiguous actual acceptance receipt for ${t.id}`);
-    const {emitter,name}=matches[0];
+    const {emitter,name}=discoverReceipt(g,p,t);
     const receipt_bytes=g.download(t.repository,String(emitter.id),name,['receipt.json'])['receipt.json'];
     const r=JSON.parse(receipt_bytes.toString('utf8'));
     requireThat(r.emitter?.run_id===String(emitter.id),'Receipt emitter identifier mismatch');

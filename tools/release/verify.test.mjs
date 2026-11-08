@@ -420,15 +420,14 @@ const completeChanges={
  tagAppears:f=>{const pages=f.g.pages;f.g.pages=p=>p.includes('/git/matching-refs/')?[{ref:`refs/tags/${releaseFingerprint(f.p.channel,f.p.candidate.run_id,f.p.plan_id)}`}]:pages(p);},
  releaseAppears:f=>{const pages=f.g.pages;f.g.pages=p=>p.endsWith('/releases')?[{tag_name:releaseFingerprint(f.p.channel,f.p.candidate.run_id,f.p.plan_id)}]:pages(p);}
 };
-for(const channel of ['dev','main'])for(const [name,mutate]of Object.entries(completeChanges))test(`V7 complete publication ${channel} rejects late ${name}`,()=>{
- const f=boundaryFixture(channel),pages=f.g.pages;f.g.pages=p=>p.includes('/git/matching-refs/')||p.endsWith('/releases')?[]:pages(p);
+for(const channel of ['dev','main'])for(const selected of [false,true])for(const [name,mutate]of Object.entries({...lateChanges,...completeChanges}))test(`V7 complete publication ${channel} selected=${selected} rejects late ${name}`,()=>{
+ const f=boundaryFixture(channel,selected),pages=f.g.pages;f.g.pages=p=>p.includes('/git/matching-refs/')||p.endsWith('/releases')?[]:pages(p);
  const accepted=collectWithWorkflows(f.g,f.p,collect),writes=[],writer=guardedWriter({pages:()=>[],command:a=>writes.push(a)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
  const fired=lateHook(f,'workflow',mutate),dir=mkdtempSync(join(tmpdir(),'v7-complete-'));
  try{assert.throws(()=>publish(writer,f.p,accepted,dir,f.g));fired();assert.equal(writes.length,0);}finally{rmSync(dir,{recursive:true,force:true});}
 });
 
-for(const channel of ['dev','main'])for(const selected of [false,true])for(const change of ['stable','nativeDuplicate','nativeReplaced','nativeDigest','receiptDuplicate','competingEmitter','normalSelectedExpired','preflightSelectedExpired','normalSelectedReplaced','preflightSelectedReplaced','unrelatedArtifacts','historicalCandidate','historicalPR','metadataRunChange'])test(`V7 full ${channel} selected=${selected} ${change}`,()=>{
- if(!selected&&change.includes('Selected'))return;
+for(const channel of ['dev','main'])for(const selected of [false,true])for(const change of ['stable','nativeDuplicate','nativeReplaced','nativeDigest','receiptDuplicate','competingEmitter','normalSelectedExpired','preflightSelectedExpired','normalSelectedReplaced','preflightSelectedReplaced','unrelatedArtifacts','historicalCandidate','historicalPR','metadataRunChange','nativeAbsent','receiptAbsent','apiError','paginationError'].filter(change=>selected||!change.includes('Selected')))test(`V7 full ${channel} selected=${selected} ${change}`,()=>{
  const f=boundaryFixture(channel,selected),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
  const writer=guardedWriter({pages:()=>[],command:a=>writes.push(a)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
  const positive=['stable','unrelatedArtifacts','historicalCandidate','historicalPR'].includes(change);
@@ -436,7 +435,9 @@ for(const channel of ['dev','main'])for(const selected of [false,true])for(const
    const t=f.e.targets['csharp-wrapper'],get=f.g.get,pages=f.g.pages,artifact=f.g.artifact;
    if(change==='nativeReplaced'||change==='nativeDigest')f.g.get=p=>{const a=get(p);return p.endsWith('/actions/artifacts/901')?{...a,...(change==='nativeReplaced'?{id:999}:{digest:'sha256:'+'0'.repeat(64)})}:a;};
    if(change==='nativeDuplicate'||change==='unrelatedArtifacts')f.g.pages=p=>{const a=pages(p);return p.includes('/runs/300/artifacts')?[...a,change==='nativeDuplicate'?a[0]:{id:999,name:'unrelated'}]:a;};
-   if(change==='receiptDuplicate')f.g.artifact=(repo,id,name)=>{if(repo===t.normal_run.repository.full_name&&name.startsWith('wss-acceptance-'))throw Error('duplicate receipt artifact');return artifact(repo,id,name);};
+   if(change==='nativeAbsent')f.g.pages=p=>p.includes('/runs/300/artifacts')?pages(p).filter(a=>a.name!=='rich-proof'):pages(p);
+   if(change==='apiError'||change==='paginationError')f.g.pages=p=>{if(p.includes('/release-receipt.yml/runs?'))throw Error(change==='apiError'?'API unavailable':'Incomplete GitHub pagination');return pages(p);};
+   if(change==='receiptDuplicate'||change==='receiptAbsent')f.g.artifact=(repo,id,name)=>{if(repo===t.normal_run.repository.full_name&&name.startsWith('wss-acceptance-'))throw Error('duplicate receipt artifact');return artifact(repo,id,name);};
    if(change==='competingEmitter')f.g.pages=p=>p.includes('/release-receipt.yml/runs?')&&p.includes(t.normal_run.repository.full_name)?[...pages(p),{...t.emitter_run,id:999}]:pages(p);
    if(change.includes('Selected')){const proof=change.startsWith('normal')?t.selected_tests:t.preflights[0].selected_tests;if(change.endsWith('Expired'))proof.artifact.expired=true;else proof.artifact.id++;}
    if(change==='historicalCandidate')f.g.get=p=>{const a=get(p);return p.endsWith('/actions/artifacts/902')?{...a,expired:true}:a;};
