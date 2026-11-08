@@ -449,3 +449,15 @@ for(const channel of ['dev','main'])for(const selected of [false,true])for(const
  const dir=mkdtempSync(join(tmpdir(),'v7-full-'));
  try{if(positive){assert.equal(publish(writer,f.p,accepted,dir,f.g).state,'created');assert.equal(writes.length,1);}else{assert.throws(()=>publish(writer,f.p,accepted,dir,f.g));assert.equal(writes.length,0);}fired();}finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+for(const channel of ['dev','main'])for(const selected of [false,true])for(const state of ['missing','pending','ambiguous'])test(`V8 full collector ${channel} selected=${selected} remains non-accepted for ${state} receipts`,()=>{
+ const f=boundaryFixture(channel,selected),target=f.p.manifest.targets[0],e=f.e.targets[target.id],pages=f.g.pages,writes=[];
+ f.g.pages=(path,key)=>{
+  if(path.includes(`repos/${target.repository}/actions/workflows/release-receipt.yml/runs?`))return state==='missing'?[]:state==='pending'?[{...e.emitter_run,status:'in_progress',conclusion:null}]:[e.emitter_run,{...e.emitter_run,id:999}];
+  if(path===`repos/${target.repository}/actions/runs/${e.emitter_run.id}/artifacts`&&state==='pending')return [];
+  if(path===`repos/${target.repository}/actions/runs/999/artifacts`&&state==='ambiguous')return [{...e.artifact,workflow_run:{id:999,head_sha:e.emitter_run.head_sha}}];
+  return pages(path,key);
+ };
+ const directory=mkdtempSync(join(tmpdir(),'v8-partial-'));let accepted;
+ try{assert.throws(()=>{accepted=collectWithWorkflows(f.g,f.p,collect);const writer=guardedWriter({pages:()=>[],command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});publish(writer,f.p,accepted,directory,f.g);},/Missing or ambiguous actual acceptance receipt/);assert.equal(accepted,undefined);assert.equal(writes.length,0);}finally{rmSync(directory,{recursive:true,force:true});}
+});
