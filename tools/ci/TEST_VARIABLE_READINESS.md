@@ -98,22 +98,37 @@ load, and all mandatory baseline/native barriers. Preserve frozen campaign reuse
 Do not expose App credentials to selected executors or untrusted PR code. Do not
 activate inactive fragments merely to get readiness coverage.
 
-## Prepared pilot identities (no controller publication or dispatch)
+## Pilot source reconciliation after notifier adoption (local preparation)
 
-Verified Python dev 0487cb6019dc82a67501ad94498344620be4496b and
-main 6aeaa3693a8dacc2deea0bc61ec8421c7f875282 after pilot PR 74/75 merged.
-Both default-main local capture workflows are registered active. The readiness
-workflow blob is c8e8260afaac8baab84cf91482728a1f4bb68db0 and the complete
-wss-ci tree is 9e131377717c5f1493f79e1bcb2fbf445687e75d on both live heads and
-the independently reviewed sources. Retained source anchors are
-d73ccd34f541b640b63d39726dd337c99252b3fc (dev) and
-5624c044e653b74826413bcf4586da711043bde5 (main), each under
-refs/heads/ci/tooling/<fullSHA>. The registry binds these reviewed executable
-identities, not permanently fixed product heads. The actual current receiver
-head is authenticated and recorded when a readiness request is prepared.
+The registry's reviewed source commits are the accepted notifier merge results:
+- DEV: [PR 81](https://github.com/cwru-non-academic/Python_WSS_Integration_Lib/pull/81),
+  d213bfcc4ac5d5ac2a404df56770215e3368c37f.
+- MAIN: [PR 82](https://github.com/cwru-non-academic/Python_WSS_Integration_Lib/pull/82),
+  52ce2c33c8263dda3e767a537b3762652f631bef.
 
-Public App and bot metadata plus the authenticated gh user endpoint established
-the numeric identities; no installation expansion or repository enumeration was
-used. These are source-registration prerequisites, not a real App capture proof.
-The controller changes remain held for independent review and coordinated
-publication. Core merge and readiness dispatch are separate actions.
+Both have readiness workflow blob c8e8260afaac8baab84cf91482728a1f4bb68db0
+and complete wss-ci tree 4a1a1358da7b87fa47482550b62d0245a4133325. The
+former tree 9e131377717c5f1493f79e1bcb2fbf445687e75d differs only in the
+accepted notify-family.mjs and tests/notify-family.test.mjs blobs. Both new
+blobs match retained canonical notifier source dc3f4ec74a341fa49cadf9798a6c4b4f1f8ab36a;
+that canonical source lacks the readiness workflow and cannot replace the full
+receiver source authority. MAIN runtime merge cdde6a1b1fa83ec64455bcd435ca0a5ae5d86fb9
+preserves these exact executable identities. Moving branch bytes do not authorize
+a new registry entry; accepted merge provenance and the full source identities do.
+
+No existing Python ci/tooling anchor contained this workflow/tree pair when checked.
+Before deployment, separately approve creation and read-back verification of
+refs/heads/ci/tooling/d213bfcc4ac5d5ac2a404df56770215e3368c37f and
+refs/heads/ci/tooling/52ce2c33c8263dda3e767a537b3762652f631bef at their matching
+commits. Create only missing refs; never replace a conflicting ref. This local
+patch does not create either anchor or authorize publication or dispatch. Existing
+source checks still require both the reviewed commit and the independently frozen
+current receiver commit to match the exact workflow blob and complete tooling tree.
+
+Keep Core publication/merge held until final receiver sources are stable and the
+intended fresh campaign launch is reviewed: a Core merge can start ordinary
+producer/freeze workflows. Preserve existing plans and receipts. After independent
+review, retention and coordinated deployment, separately released DEV and MAIN
+readiness runs must authenticate their real local capture evidence. Historical
+DEV run 42384127998 is not current-source, MAIN, true-pin or production proof.
+The production registry remains empty; acceptance/propagation selection policies remain OFF.
