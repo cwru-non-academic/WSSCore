@@ -67,7 +67,7 @@ function descriptor(repository,profiles,lock){
   return {profile,parent:profile.role==='wrapper'?null:wrapper.target.repository};
 }
 export function verifyWorkflowPins({repository,profiles,lock,files,roles=pinRoles},g){
-  const {profile,parent}=descriptor(repository,profiles,lock),registered=[CORE,...(parent?[parent]:[])],all=[];
+  const {profile,parent}=descriptor(repository,profiles,lock),integration=lock.origins?.integration,registered=[...new Set([CORE,integration?.repository,...(parent?[parent]:[])].filter(Boolean))],all=[];
   for(const [file,text] of Object.entries(files))for(const pin of workflowPins(text,registered))all.push({...pin,file});
   if(parent&&['python','matlab'].includes(profile.family))requireThat(all.some(p=>p.repository===parent&&p.file==='release-receipt.yml'&&p.kind==='checkout'),'Receipt must pin its integration validator explicitly');
   if(parent&&profile.family==='unity')requireThat(all.some(p=>p.repository===parent&&p.kind==='workflow'),'Unity worker must pin its reusable validation workflow');
@@ -78,6 +78,15 @@ export function verifyWorkflowPins({repository,profiles,lock,files,roles=pinRole
   for(const pin of all){
     const fixture=runtimeFixture(repository,pin.file,pin,roles);
     if(fixture){requireThat(pin.sha===fixture.commit,`Reviewed runtime fixture pin changed: ${pin.file} / ${pin.checkoutPath}`);continue;}
+    if(pin.file==='release-receipt.yml'&&pin.checkoutPath==='bootstrap/Python_WSS_Integration_Lib'){requireThat(pin.repository===integration?.repository&&pin.sha===integration.commit,'Receipt bootstrap differs from immutable integration origin');continue;}
+    if(pin.file==='release-receipt.yml'&&pin.checkoutPath==='validator'){
+      requireThat(pin.repository===parent,'Receipt native validator must belong to registered wrapper');
+      const record=g.get(`repos/${parent}/contents/.github/scripts/wss-ci.lock.json?ref=${pin.sha}`);
+      requireThat(record?.encoding==='base64','Pinned native validator lock unavailable');
+      const nativeLock=JSON.parse(Buffer.from(record.content,'base64'));
+      requireThat(nativeLock.repository===parent&&nativeLock.source_commit===lock.source_commit&&canonical(nativeLock.origins)===canonical(lock.origins),'Pinned native validator uses another canonical source lock');
+      continue;
+    }
     if(pin.repository===CORE){requireThat(pin.sha===lock.source_commit,`Core workflow pin differs from copied canonical source: ${pin.file}`);continue;}
     heads??=['dev','main'].map(branch=>g.head(parent,branch));
     for(const head of heads){
@@ -85,6 +94,10 @@ export function verifyWorkflowPins({repository,profiles,lock,files,roles=pinRole
       for(const path of ['.github/scripts',integrationConfiguration(profile.family),'.github/dev-propagation.json','.github/main-propagation.json',...(pin.workflow?['.github/workflows',pin.workflow]:[])])
         requireThat(object(parent,pin.sha,path)===object(parent,head,path),`Pinned integration tooling differs from current verified dev/main: ${pin.file} / ${path}`);
     }
+  }
+  if(all.some(p=>p.file==='release-receipt.yml'&&p.checkoutPath==='bootstrap/Python_WSS_Integration_Lib')){
+    requireThat(all.filter(p=>p.file==='release-receipt.yml'&&p.checkoutPath==='bootstrap/Python_WSS_Integration_Lib').length===1&&all.filter(p=>p.file==='release-receipt.yml'&&p.repository===CORE&&p.checkoutPath==='core').length===1,'Receipt needs exact distinct engine/Core pin roles');
+    requireThat(!parent||all.filter(p=>p.file==='release-receipt.yml'&&p.checkoutPath==='validator'&&p.repository===parent).length===1,'Receipt application needs exact native validator pin');
   }
   return {references:all.length,owner:parent};
 }
@@ -98,14 +111,15 @@ export function refreshWorkflowPins({repository,profiles,lock,files,adapter,adap
       const fixture=runtimeFixture(repository,file,pin,roles);
       return fixture?{...pin,replacement:fixture.commit}:pin;
     });
+    if(file==='release-receipt.yml'&&text.includes('bootstrap/Python_WSS_Integration_Lib'))return [file,text]; // Generated receipt is regenerated separately, never regex-repinned.
     return [file,replacePins(text,pins,replacements)];
   }));
 }
 
 if(isEntrypoint(import.meta.url)){
-  const [operation,name,target,workspace,adapter]=process.argv.slice(2);
-  requireThat(['check','refresh'].includes(operation)&&/^[A-Za-z0-9_]+$/.test(name||'')&&target,'Usage: adapter-pins.mjs check|refresh <repository> <checkout> [workspace] [verified-adapter-sha]');
-  const profiles=JSON.parse(sourceBytes({origin:'integration',path:'.github/scripts/wss-ci/receipt-targets.json'},workspace?resolve(workspace):undefined));
+  const [operation,name,target,workspace,adapter,originsWorkspace]=process.argv.slice(2);
+  requireThat(['check','refresh'].includes(operation)&&/^[A-Za-z0-9_]+$/.test(name||'')&&target,'Usage: adapter-pins.mjs check|refresh <repository> <checkout> [workspace] [verified-adapter-sha] [origins-workspace]');
+  const profiles=JSON.parse(sourceBytes({origin:'integration',path:'.github/scripts/wss-ci/receipt-targets.json'},originsWorkspace?resolve(originsWorkspace):workspace?resolve(workspace):undefined));
   const root=resolve(target),repository=`cwru-non-academic/${name}`,lock=JSON.parse(readFileSync(join(root,'.github/scripts/wss-ci.lock.json'),'utf8'));
   const directory=join(root,'.github/workflows'),files=Object.fromEntries(readdirSync(directory).filter(p=>/\.ya?ml$/.test(p)).map(p=>[p,readFileSync(join(directory,p),'utf8')]));
   if(operation==='check')console.log(JSON.stringify(verifyWorkflowPins({repository,profiles,lock,files},new GitHub())));

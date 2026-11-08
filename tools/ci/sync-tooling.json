@@ -15,8 +15,8 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "c266ff8e5bdcdde840bec87b757cd6d23e888e76",
-      "ref": "refs/heads/ci/tooling/c266ff8e5bdcdde840bec87b757cd6d23e888e76"
+      "commit": "45d571bef78b1cee9d6497e20448bed7d353644c",
+      "ref": "refs/heads/ci/tooling/45d571bef78b1cee9d6497e20448bed7d353644c"
     }
   },
   "files": {
@@ -192,6 +192,43 @@
       "repositories": [
         "Python_WSS_Integration_Lib"
       ]
+    },
+    ".github/scripts/wss-ci/receipt-workflows.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-workflows.mjs"
+    },
+    ".github/scripts/wss-ci/receipt-workflow.yml": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-workflow.yml"
+    },
+    ".github/scripts/Write-ReleaseReceipt.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/Write-ReleaseReceipt.mjs",
+      "repositories": [
+        "Python_WSS_Integration_Lib",
+        "Matlab_WSS_Integration_Lib",
+        "CLI_Matlab_WSS_Application"
+      ]
+    },
+    ".github/scripts/wss-ci/preflight-proof.mjs": {
+      "origin": "core",
+      "path": "tools/release/preflight-proof.mjs"
+    },
+    ".github/scripts/wss-ci/verified-json-artifact.mjs": {
+      "origin": "core",
+      "path": "tools/release/verified-json-artifact.mjs"
+    },
+    ".github/scripts/wss-ci/receipt-proof-cli.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-proof-cli.mjs"
+    },
+    ".github/scripts/wss-ci/tests/receipt-gh-preload.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/tests/receipt-gh-preload.mjs"
+    },
+    ".github/scripts/wss-ci/admission-context.mjs": {
+      "origin": "core",
+      "path": "tools/release/admission-context.mjs"
     }
   }
 }

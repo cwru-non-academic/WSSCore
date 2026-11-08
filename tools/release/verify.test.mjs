@@ -1,3 +1,4 @@
+import {execFileSync} from 'node:child_process';
 import {resolveTestSelection} from '../ci/test-selection.mjs';
 import {CAMPAIGN_TEST_POLICY,selectionRequest,selectionFields,targetTestEvidence,selectedTestArtifactName} from './campaign-test-selection.mjs';
 import {test} from 'node:test';
@@ -10,6 +11,12 @@ import {collect,freeze,GitHub,publish} from './github.mjs';
 import {tagPolicy} from './policy.mjs';
 import {channelContext,releaseFingerprint} from './channels.mjs';
 
+const zipCache=new Map();
+function candidateZip(candidate) {
+ const text=JSON.stringify(candidate);if(zipCache.has(text))return zipCache.get(text);
+ const dir=mkdtempSync(join(tmpdir(),'receipt-candidate-zip-'));
+ try {writeFileSync(join(dir,'candidate.json'),text);writeFileSync(join(dir,'zip.ps1'),'param([string]$Source,[string]$Destination)\n$ErrorActionPreference="Stop"; Compress-Archive -LiteralPath $Source -DestinationPath $Destination');execFileSync('pwsh',['-NoProfile','-File',join(dir,'zip.ps1'),join(dir,'candidate.json'),join(dir,'proof.zip')]);const bytes=readFileSync(join(dir,'proof.zip'));zipCache.set(text,bytes);return bytes;}finally{rmSync(dir,{recursive:true,force:true});}
+}
 const sha=n=>n.toString(16).padStart(40,'0');
 const successful=names=>names.map(name=>({name,status:'completed',conclusion:'success'}));
 function tagRule() {return{id:123,target:'tag',enforcement:'active',source_type:'Repository',source:CORE,conditions:{ref_name:{include:['refs/tags/v*'],exclude:[]}},bypass_actors:[],rules:[{type:'creation'},{type:'update'},{type:'deletion'}]};}
@@ -29,13 +36,13 @@ function fixture(channel='dev') {
     const parents=Object.fromEntries(Object.keys(t.parents).map(id=>[id,sha(10+TARGETS.indexOf(id))]));
     const r={schema:context.receiptSchema,plan_id:p.plan_id,channel,target_id:t.id,candidate,mode:'merged-pr',
       merge:{pr_number:String(i+1),sha:merge,head_sha:head},normal_ci:{run_id:String(normal),attempt:1},
-      preflights:[{repository:t.repository,run_id:String(300+i),source_sha:sha(2),workflow:'.github/workflows/wss-preflight.yml'}],
+      preflights:[{repository:t.repository,run_id:String(300+i),source_sha:sha(2),workflow:'.github/workflows/wss-preflight.yml',attempt:1,jobs:[{id:'900',name:'Native required proof',status:'completed',conclusion:'success'}],artifacts:[{id:'901',name:'rich-proof',digest:'sha256:'+bytesDigest(Buffer.from('rich proof ZIP'))}],logs:[]}],
       parents,emitter:{run_id:String(emitter),attempt:1,source_sha:merge,workflow:'.github/workflows/release-receipt.yml'},coverage:t.coverage};
     e.targets[t.id]={receipt:r,receipt_bytes:Buffer.from(JSON.stringify(r)),pr:{number:i+1,merged:true,merged_at:'2026-10-29T00:00:00Z',user:{type:'Bot'},merged_by:{type:'User'},state:'closed',merge_commit_sha:merge,head:{sha:head,ref:'automation/candidate',repo:{full_name:t.repository}},base:{ref:'dev',repo:{full_name:t.repository}}},
       current_head:merge,merge_tree:sha(4),tested_tree:sha(4),trusted:p.target_snapshots[t.id].trusted,parent_gitlinks:parents,
       normal_run:{...run(t.repository,t.workflow,normal,merge),created_at:'2026-10-29T00:01:00Z',pull_requests:[]},normal_latest_run_id:String(normal),normal_jobs:successful(t.jobs),
       emitter_run:run(t.repository,r.emitter.workflow,emitter,merge),artifact:{id:500+i,name:`wss-acceptance-${t.id}-${p.plan_id}-a1`,expired:false,workflow_run:{id:emitter,head_sha:merge}},
-      preflights:[{run:run(t.repository,r.preflights[0].workflow,300+i,sha(2)),candidate}]};
+      preflights:[{run:run(t.repository,r.preflights[0].workflow,300+i,sha(2)),candidate,jobs:r.preflights[0].jobs,artifacts:r.preflights[0].artifacts,logs:[]}]};
     e.targets[t.id].receipt_sha256=bytesDigest(e.targets[t.id].receipt_bytes);
   });
   e.producer.run.head_branch=channel;
@@ -131,10 +138,13 @@ test('publication never overwrites a tag without a matching complete release',()
 
 function collectorFixture(f) {
   const {p,e}=f,entries=()=>Object.values(e.targets),target=repo=>entries().find(t=>t.normal_run.repository.full_name===repo);
+  const richBytes=Buffer.from('rich proof ZIP'),zip=candidateZip(p.candidate);
+  const artifacts=t=>[{id:901,name:'rich-proof',digest:'sha256:'+bytesDigest(richBytes),expired:false,workflow_run:{id:t.preflights[0].run.id,head_sha:t.preflights[0].run.head_sha}},{id:902,name:'wss-candidate-provenance',digest:'sha256:'+bytesDigest(zip),expired:false,workflow_run:{id:t.preflights[0].run.id,head_sha:t.preflights[0].run.head_sha}}];
   return {
+    artifactBytes:(repo,id)=>id==='901'?richBytes:zip,
     head:(repo,branch='dev')=>{assert.equal(branch,p.channel,'Collector must read the selected branch explicitly');return repo===CORE?e.producer.current_head:target(repo).current_head;},
     run:(repo,id)=>repo===CORE?e.producer.run:[...entries().flatMap(t=>[t.normal_run,t.emitter_run,...t.preflights.map(x=>x.run)])].find(r=>r.repository.full_name===repo&&String(r.id)===id),
-    jobs:(repo,r)=>repo===CORE?e.producer.jobs:target(repo).normal_jobs,
+    jobs:(repo,r)=>repo===CORE?e.producer.jobs:r.path==='.github/workflows/wss-preflight.yml'?target(repo).preflights[0].jobs:target(repo).normal_jobs,
     artifact:(repo,id)=>repo===CORE?e.producer.artifact:target(repo).artifact,
     download:(repo,id,name)=>{
       if(repo===CORE)return{[p.candidate.archive]:Buffer.from('zip'),'SHA256SUMS.txt':Buffer.from(`${p.candidate.sha256}  ${p.candidate.archive}\n`)};
@@ -142,12 +152,13 @@ function collectorFixture(f) {
       return{'receipt.json':target(repo).receipt_bytes};
     },
     pages:path=>{
+      if(path.includes('/git/matching-refs/')||path.endsWith('/releases'))return [];
       const repo=path.split('/').slice(1,3).join('/'),t=target(repo);
-      if(path.includes('/artifacts'))return[t.artifact];
+      if(path.includes('/artifacts'))return path.includes('/runs/'+t.preflights[0].run.id+'/')?artifacts(t):[t.artifact];
       if(path.includes('/release-receipt.yml/'))return[t.emitter_run];
       return[t.normal_run];
     },
-    get:path=>target(path.split('/').slice(1,3).join('/')).pr,
+    get:path=>{const t=target(path.split('/').slice(1,3).join('/'));return path.includes('/actions/artifacts/')?artifacts(t).find(a=>String(a.id)===path.split('/').at(-1)):t.pr;},
     tree:(repo,ref)=>ref===target(repo).receipt.merge.sha?target(repo).merge_tree:target(repo).tested_tree,
     object:(repo,ref,path)=>{const t=target(repo);if(path in t.trusted)return{sha:t.trusted[path]};const policy=p.manifest.targets.find(x=>x.repository===repo),parent=Object.keys(policy.parents).find(x=>policy.parents[x]===path);return{sha:t.parent_gitlinks[parent],type:'commit',mode:'160000'};}
   };
@@ -271,4 +282,182 @@ for(const [name,mutate] of Object.entries({
   'old job check still required':t=>t.normal_jobs.pop()
 }))test(`selected tests reject ${name}`,()=>{
   const f=selectedFixture();mutate(f.e.targets['python-cli']);sync(f.e);assert.throws(()=>allClear(f.p,f.e));
+});
+
+for(const channel of ['dev','main'])for(const id of TARGETS)test(`independent Core ${channel}/${id} rejects plausible receiver proof from another frozen source`,()=>{
+  const {p,e}=fixture(channel),t=e.targets[id];
+  t.receipt.preflights[0].source_sha=sha(99);t.preflights[0].run.head_sha=sha(99);sync(e);
+  assert.throws(()=>allClear(p,e),/Preflight source differs/);
+});
+
+for(const channel of ['dev','main'])for(const id of TARGETS)for(const mutation of ['attempt','jobs','artifacts','logs'])test(`independent ${id}/${channel} rejects replaced native ${mutation}`,()=>{
+ const {p,e}=fixture(channel),a=e.targets[id].preflights[0];
+ if(mutation==='attempt')a.run.run_attempt=2;else a[mutation]=mutation==='logs'?[{job_id:'900',sha256:'2'.repeat(64)}]:[];
+ assert.throws(()=>allClear(p,e));
+});
+for(const channel of ['dev','main'])test(`${channel} collector rejects native attempt movement after other receivers were collected`,()=>{
+ const f=fixture(channel),g=collectorFixture(f),run=g.run;let firstReads=0;
+ g.run=(repo,id)=>{const r=run(repo,id);return id==='300'&&++firstReads>=3?{...r,run_attempt:2}:r;};
+ assert.throws(()=>collect(g,f.p),/attempt/);
+});
+import {freezeWorkflows,collectWithWorkflows,guardedWriter} from '../ci/workflow-freeze.mjs';
+// All reads and writes below are synthetic. Return detached metadata so a late
+// mutation cannot accidentally update an earlier evidence observation by alias.
+function boundaryFixture(channel,selected=false) {
+ const f=selected?selectedFixture(channel):fixture(channel),g=selected?selectedCollector(f):collectorFixture(f),get=g.get,object=g.object,head=g.head;
+ let freezing=true;
+ g.get=path=>path.includes('/rulesets/')?tagRule():path===`repos/${CORE}/contents/${channelContext(channel).targetPolicy}?ref=${f.p.candidate.commit}`?{type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(f.p.manifest)).toString('base64')}:get(path);
+ g.object=(repo,ref,path)=>path==='.github/workflows'?{type:'tree',sha:sha(777)}:object(repo,ref,path);
+ g.head=(repo,branch)=>repo===CORE?head(repo,branch):branch!==channel?sha(500):freezing?sha(2):head(repo,branch);
+ Object.assign(f.p,freezeWorkflows(g,f.p,'acceptance'));freezing=false;
+ for(const [id,t]of Object.entries(f.e.targets)){t.receipt.plan_id=f.p.plan_id;t.artifact.name=`wss-acceptance-${id}-${f.p.plan_id}-a1`;}
+ const logs=Buffer.from('synthetic native log');
+ for(const t of Object.values(f.e.targets)) {t.receipt.preflights[0].logs=[{job_id:'900',sha256:bytesDigest(logs)}];t.preflights[0].logs=t.receipt.preflights[0].logs;}
+ sync(f.e);g.jobLogBytes=()=>logs;
+ for(const name of ['run','jobs','pages','get','artifact']){const read=g[name];g[name]=(...args)=>structuredClone(read(...args));}
+ return {...f,g};
+}
+const lateChanges={
+ target:f=>f.e.targets['python-cli'].current_head=sha(999),
+ parent:f=>f.e.targets['csharp-wrapper'].current_head=sha(999),
+ Core:f=>f.e.producer.current_head=sha(999),
+ attempt:f=>f.e.targets['csharp-wrapper'].normal_run.run_attempt=2,
+ status:f=>f.e.targets['csharp-wrapper'].normal_run.status='in_progress',
+ jobs:f=>f.e.targets['csharp-wrapper'].normal_jobs[0].conclusion='failure',
+ producer:f=>f.e.producer.run.conclusion='failure',
+ producerJobs:f=>f.e.producer.jobs[0].conclusion='failure',
+ id:f=>{const pages=f.g.pages;f.g.pages=path=>path.includes(`/${f.p.manifest.targets[0].workflow.split('/').at(-1)}/runs?`)?pages(path).map(r=>({...r,id:999})):pages(path);},
+ ambiguous:f=>{const pages=f.g.pages;f.g.pages=path=>path.includes(`/${f.p.manifest.targets[0].workflow.split('/').at(-1)}/runs?`)?[...pages(path),{...pages(path)[0],id:999}]:pages(path);}
+};
+function lateHook(f,phase,mutate) {
+ let fired=false,count=0;
+ const last=f.p.manifest.targets.at(-1).repository;
+ const trigger=()=>{if(!fired){fired=true;mutate(f);}};
+ const name=phase==='native-artifact'?'artifactBytes':phase==='native-log'?'jobLogBytes':phase==='receiver'?'download':phase==='workflow'?'object':'jobs';
+ const read=f.g[name];
+ f.g[name]=(...args)=>{
+  const value=read(...args);
+  if(phase==='native-artifact'&&args[0]===last&&args[1]==='901'&&++count===2||
+     phase==='native-log'&&args[0]===last&&++count===2||
+     phase==='receiver'&&args[0]===last||
+     phase==='workflow'&&args[0]===last&&args[2]==='.github/workflows'||
+     phase==='metadata'&&args[0]===last&&args[1].path!=='.github/workflows/wss-preflight.yml')trigger();
+  return value;
+ };
+ return ()=>assert.equal(fired,true,'Late mutation hook must execute');
+}
+for(const channel of ['dev','main'])for(const phase of ['native-artifact','native-log','receiver'])for(const [change,mutate]of Object.entries(lateChanges))test(`final admission ${channel} rejects ${change} during ${phase}`,()=>{
+ const f=boundaryFixture(channel),fired=lateHook(f,phase,mutate);
+ assert.throws(()=>collect(f.g,f.p));fired();
+});
+for(const channel of ['dev','main'])for(const phase of ['workflow','metadata'])for(const [change,mutate]of Object.entries(lateChanges).filter(([name])=>phase==='workflow'||['target','parent','Core'].includes(name)))test(`publication admission ${channel} rejects ${change} during final ${phase} reads`,()=>{
+ const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
+ const writer=guardedWriter({command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedHeads:Object.fromEntries(Object.entries(accepted.record.targets).map(([id,t])=>[id,t.merge.sha])),acceptedAdmission:accepted});
+ const fired=lateHook(f,phase,mutate);
+ const args=['release','create',releaseFingerprint(channel,f.p.candidate.run_id,f.p.plan_id),'--repo',CORE,'--target',f.p.candidate.commit,...(channel==='dev'?['--prerelease']:[]),'--title','fixture','--notes','synthetic'];
+ assert.throws(()=>writer.command(args));fired();assert.equal(writes.length,0);
+});
+for(const channel of ['dev','main'])test(`publication admission ${channel} accepts merged heads different from frozen baselines`,()=>{
+ const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
+ const writer=guardedWriter({pages:()=>[],command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedHeads:Object.fromEntries(Object.entries(accepted.record.targets).map(([id,t])=>[id,t.merge.sha])),acceptedAdmission:accepted});
+ const directory=mkdtempSync(join(tmpdir(),'final-admission-'));
+ try{assert.equal(publish(writer,f.p,accepted,directory,f.g).state,'created');assert.equal(writes.length,1);}finally{rmSync(directory,{recursive:true,force:true});}
+});
+for(const channel of ['dev','main'])for(const change of ['target','Core','parent','attempt'])test(`publication recollection ${channel} rejects late native ${change} with zero writes`,()=>{
+ const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
+ const writer=guardedWriter({pages:()=>[],command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const fired=lateHook(f,'native-artifact',lateChanges[change]),directory=mkdtempSync(join(tmpdir(),'final-native-admission-'));
+ try {assert.throws(()=>publish(writer,f.p,accepted,directory,f.g));fired();assert.equal(writes.length,0);}finally{rmSync(directory,{recursive:true,force:true});}
+});
+for(const channel of ['dev','main'])test(`final admission ${channel} retains one independent end-of-collection native pass`,()=>{
+ const f=boundaryFixture(channel),read=f.g.artifactBytes,counts=new Map();
+ f.g.artifactBytes=(repo,id,...args)=>{if(id==='901')counts.set(repo,(counts.get(repo)||0)+1);return read(repo,id,...args);};
+ collect(f.g,f.p);
+ assert.deepEqual([...counts.values()],Array(9).fill(2));
+});
+for(const channel of ['dev','main'])for(const change of ['attempt','status','jobs','id','ambiguous'])test(`publication admission ${channel} rejects normal ${change} changing within its metadata reads`,()=>{
+ const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[],jobs=f.g.jobs;
+ let fired=false;
+ f.g.jobs=(repo,r)=>{const value=jobs(repo,r);if(!fired&&repo===f.p.manifest.targets[0].repository){fired=true;lateChanges[change](f);return jobs(repo,r);}return value;};
+ const writer=guardedWriter({command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const args=['release','create',releaseFingerprint(channel,f.p.candidate.run_id,f.p.plan_id),'--repo',CORE,'--target',f.p.candidate.commit,...(channel==='dev'?['--prerelease']:[]),'--title','fixture','--notes','synthetic'];
+ assert.throws(()=>writer.command(args));assert.equal(fired,true);assert.equal(writes.length,0);
+});
+for(const channel of ['dev','main'])test(`publication admission ${channel} retains captured producer attempt despite client aliasing`,()=>{
+ const f=boundaryFixture(channel),read=f.g.run;
+ f.g.run=(repo,id)=>repo===CORE?f.e.producer.run:read(repo,id);
+ const accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
+ f.e.producer.run.run_attempt=2;
+ assert.equal(accepted.admission.producer.run.run_attempt,1);
+ const writer=guardedWriter({command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const args=['release','create',releaseFingerprint(channel,f.p.candidate.run_id,f.p.plan_id),'--repo',CORE,'--target',f.p.candidate.commit,...(channel==='dev'?['--prerelease']:[]),'--title','fixture','--notes','synthetic'];
+ assert.throws(()=>writer.command(args),/Producer attempt/);assert.equal(writes.length,0);
+});
+for(const channel of ['dev','main'])for(const field of ['run_attempt','status'])test(`publication admission ${channel} rejects producer ${field} moving during final artifact metadata`,()=>{
+ const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[],artifact=f.g.artifact;
+ let fired=false;
+ f.g.artifact=(repo,...args)=>{const value=artifact(repo,...args);if(repo===CORE&&!fired){fired=true;f.e.producer.run[field]=field==='run_attempt'?2:'in_progress';}return value;};
+ const writer=guardedWriter({command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const args=['release','create',releaseFingerprint(channel,f.p.candidate.run_id,f.p.plan_id),'--repo',CORE,'--target',f.p.candidate.commit,...(channel==='dev'?['--prerelease']:[]),'--title','fixture','--notes','synthetic'];
+ assert.throws(()=>writer.command(args),/Producer attempt|Run repository\/workflow\/status/);assert.equal(fired,true);assert.equal(writes.length,0);
+});
+for(const channel of ['dev','main'])for(const field of ['run_attempt','status'])test(`final collection ${channel} rejects producer ${field} moving during admission artifact metadata`,()=>{
+ const f=boundaryFixture(channel),artifact=f.g.artifact;let reads=0,fired=false;
+ f.g.artifact=(repo,...args)=>{const value=artifact(repo,...args);if(repo===CORE&&++reads===2){fired=true;f.e.producer.run[field]=field==='run_attempt'?2:'in_progress';}return value;};
+ assert.throws(()=>collect(f.g,f.p),/Producer attempt|Run repository\/workflow\/status/);assert.equal(fired,true);
+});
+
+const completeChanges={
+ emitterAttempt:f=>f.e.targets['csharp-wrapper'].emitter_run.run_attempt++,
+ emitterStatus:f=>f.e.targets['csharp-wrapper'].emitter_run.conclusion='failure',
+ receiptExpired:f=>f.e.targets['csharp-wrapper'].artifact.expired=true,
+ receiptReplaced:f=>f.e.targets['csharp-wrapper'].artifact.id++,
+ preflightAttempt:f=>f.e.targets['csharp-wrapper'].preflights[0].run.run_attempt++,
+ preflightStatus:f=>f.e.targets['csharp-wrapper'].preflights[0].run.conclusion='failure',
+ preflightJobs:f=>f.e.targets['csharp-wrapper'].preflights[0].jobs[0].conclusion='failure',
+ nativeExpired:f=>{const get=f.g.get;f.g.get=p=>{const v=get(p);return p.endsWith('/actions/artifacts/901')?{...v,expired:true}:v;};},
+ tagRule:f=>{const get=f.g.get;f.g.get=p=>{const v=get(p);return p.includes('/rulesets/')?{...v,enforcement:'disabled'}:v;};},
+ tagAppears:f=>{const pages=f.g.pages;f.g.pages=p=>p.includes('/git/matching-refs/')?[{ref:`refs/tags/${releaseFingerprint(f.p.channel,f.p.candidate.run_id,f.p.plan_id)}`}]:pages(p);},
+ releaseAppears:f=>{const pages=f.g.pages;f.g.pages=p=>p.endsWith('/releases')?[{tag_name:releaseFingerprint(f.p.channel,f.p.candidate.run_id,f.p.plan_id)}]:pages(p);}
+};
+for(const channel of ['dev','main'])for(const selected of [false,true])for(const [name,mutate]of Object.entries({...lateChanges,...completeChanges}))test(`V7 complete publication ${channel} selected=${selected} rejects late ${name}`,()=>{
+ const f=boundaryFixture(channel,selected),pages=f.g.pages;f.g.pages=p=>p.includes('/git/matching-refs/')||p.endsWith('/releases')?[]:pages(p);
+ const accepted=collectWithWorkflows(f.g,f.p,collect),writes=[],writer=guardedWriter({pages:()=>[],command:a=>writes.push(a)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const fired=lateHook(f,'workflow',mutate),dir=mkdtempSync(join(tmpdir(),'v7-complete-'));
+ try{assert.throws(()=>publish(writer,f.p,accepted,dir,f.g));fired();assert.equal(writes.length,0);}finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+for(const channel of ['dev','main'])for(const selected of [false,true])for(const change of ['stable','nativeDuplicate','nativeReplaced','nativeDigest','receiptDuplicate','competingEmitter','normalSelectedExpired','preflightSelectedExpired','normalSelectedReplaced','preflightSelectedReplaced','unrelatedArtifacts','historicalCandidate','historicalPR','metadataRunChange','nativeAbsent','receiptAbsent','apiError','paginationError'].filter(change=>selected||!change.includes('Selected')))test(`V7 full ${channel} selected=${selected} ${change}`,()=>{
+ const f=boundaryFixture(channel,selected),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
+ const writer=guardedWriter({pages:()=>[],command:a=>writes.push(a)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});
+ const positive=['stable','unrelatedArtifacts','historicalCandidate','historicalPR'].includes(change);
+ const fired=lateHook(f,'workflow',()=>{
+   const t=f.e.targets['csharp-wrapper'],get=f.g.get,pages=f.g.pages,artifact=f.g.artifact;
+   if(change==='nativeReplaced'||change==='nativeDigest')f.g.get=p=>{const a=get(p);return p.endsWith('/actions/artifacts/901')?{...a,...(change==='nativeReplaced'?{id:999}:{digest:'sha256:'+'0'.repeat(64)})}:a;};
+   if(change==='nativeDuplicate'||change==='unrelatedArtifacts')f.g.pages=p=>{const a=pages(p);return p.includes('/runs/300/artifacts')?[...a,change==='nativeDuplicate'?a[0]:{id:999,name:'unrelated'}]:a;};
+   if(change==='nativeAbsent')f.g.pages=p=>p.includes('/runs/300/artifacts')?pages(p).filter(a=>a.name!=='rich-proof'):pages(p);
+   if(change==='apiError'||change==='paginationError')f.g.pages=p=>{if(p.includes('/release-receipt.yml/runs?'))throw Error(change==='apiError'?'API unavailable':'Incomplete GitHub pagination');return pages(p);};
+   if(change==='receiptDuplicate'||change==='receiptAbsent')f.g.artifact=(repo,id,name)=>{if(repo===t.normal_run.repository.full_name&&name.startsWith('wss-acceptance-'))throw Error('duplicate receipt artifact');return artifact(repo,id,name);};
+   if(change==='competingEmitter')f.g.pages=p=>p.includes('/release-receipt.yml/runs?')&&p.includes(t.normal_run.repository.full_name)?[...pages(p),{...t.emitter_run,id:999}]:pages(p);
+   if(change.includes('Selected')){const proof=change.startsWith('normal')?t.selected_tests:t.preflights[0].selected_tests;if(change.endsWith('Expired'))proof.artifact.expired=true;else proof.artifact.id++;}
+   if(change==='historicalCandidate')f.g.get=p=>{const a=get(p);return p.endsWith('/actions/artifacts/902')?{...a,expired:true}:a;};
+   if(change==='historicalPR'){t.pr.title='unrelated';t.pr.body='new commentary';}
+   if(change==='metadataRunChange'){const jobs=f.g.jobs;f.g.jobs=(repo,r)=>{const a=jobs(repo,r);if(String(r.id)==='300')t.preflights[0].run.run_attempt++;return a;};}
+   // No body acquisition is allowed after the final workflow observation.
+   for(const name of ['download','artifactBytes','jobLogBytes'])f.g[name]=()=>assert.fail('Final refresh downloaded bytes');
+ });
+ const dir=mkdtempSync(join(tmpdir(),'v7-full-'));
+ try{if(positive){assert.equal(publish(writer,f.p,accepted,dir,f.g).state,'created');assert.equal(writes.length,1);}else{assert.throws(()=>publish(writer,f.p,accepted,dir,f.g));assert.equal(writes.length,0);}fired();}finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+for(const channel of ['dev','main'])for(const selected of [false,true])for(const state of ['missing','pending','ambiguous'])test(`V8 full collector ${channel} selected=${selected} remains non-accepted for ${state} receipts`,()=>{
+ const f=boundaryFixture(channel,selected),target=f.p.manifest.targets[0],e=f.e.targets[target.id],pages=f.g.pages,writes=[];
+ f.g.pages=(path,key)=>{
+  if(path.includes(`repos/${target.repository}/actions/workflows/release-receipt.yml/runs?`))return state==='missing'?[]:state==='pending'?[{...e.emitter_run,status:'in_progress',conclusion:null}]:[e.emitter_run,{...e.emitter_run,id:999}];
+  if(path===`repos/${target.repository}/actions/runs/${e.emitter_run.id}/artifacts`&&state==='pending')return [];
+  if(path===`repos/${target.repository}/actions/runs/999/artifacts`&&state==='ambiguous')return [{...e.artifact,workflow_run:{id:999,head_sha:e.emitter_run.head_sha}}];
+  return pages(path,key);
+ };
+ const directory=mkdtempSync(join(tmpdir(),'v8-partial-'));let accepted;
+ try{assert.throws(()=>{accepted=collectWithWorkflows(f.g,f.p,collect);const writer=guardedWriter({pages:()=>[],command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedAdmission:accepted});publish(writer,f.p,accepted,directory,f.g);},/Missing or ambiguous actual acceptance receipt/);assert.equal(accepted,undefined);assert.equal(writes.length,0);}finally{rmSync(directory,{recursive:true,force:true});}
 });
