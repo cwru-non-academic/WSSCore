@@ -14,6 +14,132 @@ const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const git=(root,...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8'}).trim();
 const pinRoles=JSON.parse(readFileSync(new URL('./executable-pin-roles.json',import.meta.url),'utf8'));
 
+// These are executable guard roles, not a second native-job or receipt policy.
+// Authority is an explicitly reviewed immutable owner in the existing registry;
+// a deployed branch/candidate is only compared with that authority, never adopted.
+const guardRepository='cwru-non-academic/Matlab_WSS_Integration_Lib';
+const guardPaths=Object.freeze({
+  native_evidence_guard:'.github/scripts/Complete-MatlabPreflight.ps1',
+  promotion_contract_test:'.github/scripts/tests/Test-MatlabPromotion.ps1',
+  merge_evidence_guard:'.github/scripts/MatlabPromotion.ps1'
+});
+const guardChannels=Object.freeze(['dev','main']);
+const exactKeys=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&canonical(Object.keys(value).sort())===canonical([...keys].sort());
+export function stageGuardPolicies(){
+  return Object.fromEntries(guardChannels.map(channel=>[channel,JSON.parse(readFileSync(new URL(`./${channel}-propagation.json`,import.meta.url),'utf8'))]));
+}
+
+// Read-only validation/projection shared by preparation, adoption and BOTH freezes.
+// A projection is returned only from valid, stable reviewed owner objects and
+// matching receiver sources. Policy drift is reported together for both channels.
+export function inspectStageGuardPins({policies,roles=pinRoles,heads,deployed=true},g){
+  const inputIdentity=canonical({policies,roles,heads,deployed});
+  const issues=[],sourceIssues=[],captures=new Map(),commits=new Map(),projection={dev:{},main:{}};
+  const issue=(message,source=false)=>{issues.push(message);if(source)sourceIssues.push(message);};
+  const read=(label,fn)=>{try{return fn();}catch{issue(`${label}: unavailable`,true);return undefined;}};
+  const readCommit=(repository,ref)=>{
+    const label=`Guard source ${repository}@${ref}`,key=JSON.stringify([repository,ref]);
+    if(commits.has(key))return commits.get(key);
+    const value=read(label,()=>g.get(`repos/${repository}/git/commits/${ref}`));
+    if(!value||value.sha!==ref||!fullSha(value.tree?.sha)){
+      issue(`${label}: expected exact immutable commit`,true);
+      commits.set(key,null);return null;
+    }
+    const capture={repository,ref,tree:value.tree.sha};commits.set(key,capture);return capture;
+  };
+  const readBlob=(repository,ref,path)=>{
+    const key=JSON.stringify([repository,ref,path]);
+    if(captures.has(key))return captures.get(key);
+    const label=`Guard object ${repository}@${ref}/${path}`;
+    const value=read(label,()=>g.object(repository,ref,path));
+    if(!value||value.type!=='blob'||!['100644','100755'].includes(value.mode)||!fullSha(value.sha)||(value.path!==undefined&&value.path!==path)){
+      issue(`${label}: expected regular blob at registered path`,true);
+      captures.set(key,null);return null;
+    }
+    const capture={repository,ref,path,sha:value.sha,type:value.type,mode:value.mode};captures.set(key,capture);return capture;
+  };
+  if(typeof deployed!=='boolean')issue('Guard validation requires an explicit boolean deployment mode',true);
+  const registrations=roles?.stage_guards;
+  if(!Array.isArray(registrations))issue('Stage guard roles must be explicit and complete',true);
+  const valid=[];
+  for(const role of Object.keys(guardPaths)){
+    const matches=Array.isArray(registrations)?registrations.filter(entry=>entry?.role===role):[];
+    if(matches.length!==1){issue(`Expected exactly one stage guard role: ${role}`,true);continue;}
+    const entry=matches[0];
+    if(!exactKeys(entry,['role','repository','path','policy_slot','channels','reviewed_sources'])||
+      entry.repository!==guardRepository||entry.path!==guardPaths[role]||entry.policy_slot!==role||
+      canonical(entry.channels)!==canonical(guardChannels)||!exactKeys(entry.reviewed_sources,guardChannels)||
+      !guardChannels.every(channel=>fullSha(entry.reviewed_sources[channel]))){
+      issue(`Invalid registered ownership/path/channel/immutable source for stage guard: ${role}`,true);continue;
+    }
+    valid.push(entry);
+  }
+  for(const entry of Array.isArray(registrations)?registrations:[])
+    if(!Object.hasOwn(guardPaths,entry?.role||''))issue(`Unknown stage guard role: ${entry?.role}`,true);
+  if(!exactKeys(policies,guardChannels))issue('Stage guard consistency requires both dev and main policies');
+  const targets={};
+  for(const channel of guardChannels){
+    const p=policies?.[channel],matches=Array.isArray(p?.libraries)?p.libraries.filter(t=>t?.id==='matlab'):[];
+    if(p?.channel!==channel||matches?.length!==1||matches[0].repository!==guardRepository){
+      issue(`Invalid MATLAB policy ownership on ${channel}`);continue;
+    }
+    targets[channel]=matches[0];
+    for(const role of Object.keys(guardPaths)){
+      const pin=matches[0][role];
+      if(!exactKeys(pin,['path','sha'])||pin.path!==guardPaths[role]||!fullSha(pin.sha))issue(`Pin the registered ${role} before handoff on ${channel}`);
+    }
+  }
+  const receiverHeads={};
+  if(heads!==undefined&&!exactKeys(heads,guardChannels))issue('Guard receiver sources require exact dev/main commits',true);
+  if(!deployed&&heads===undefined)issue('Candidate guard validation requires explicitly selected receiver sources',true);
+  for(const branch of guardChannels){
+    const ref=heads?.[branch]??(deployed?read(`Guard receiver ${branch} head`,()=>g.head(guardRepository,branch)):undefined);
+    if(!fullSha(ref)){issue(`Invalid immutable guard receiver source on ${branch}`,true);continue;}
+    receiverHeads[branch]=ref;readCommit(guardRepository,ref);
+  }
+  for(const entry of valid){
+    const owners={};
+    for(const channel of guardChannels){
+      const ref=entry.reviewed_sources[channel];
+      if(readCommit(entry.repository,ref))owners[channel]=readBlob(entry.repository,ref,entry.path);
+    }
+    if(owners.dev&&owners.main&&owners.dev.sha!==owners.main.sha)issue(`Reviewed owner guard bytes differ between channels: ${entry.role}`,true);
+    if(owners.dev&&owners.main&&owners.dev.sha===owners.main.sha){
+      for(const channel of guardChannels){
+        projection[channel][entry.policy_slot]={path:entry.path,sha:owners[channel].sha};
+        const pin=targets[channel]?.[entry.policy_slot];
+        if(pin&&canonical(pin)!==canonical(projection[channel][entry.policy_slot]))issue(`${channel} ${entry.role} policy is not the reviewed version`);
+      }
+    }
+    for(const branch of guardChannels){
+      if(!receiverHeads[branch])continue;
+      const receiver=readBlob(entry.repository,receiverHeads[branch],entry.path);
+      if(receiver&&owners[branch]&&receiver.sha!==owners[branch].sha)issue(`${entry.role} is not the reviewed version on ${branch}`,true);
+    }
+  }
+  // Detach captured scalars and re-read after collection. Never silently refresh
+  // a moved receiver, changed commit/object response or the caller's input.
+  for(const capture of commits.values())if(capture){
+    const {repository,ref,tree}=capture,value=read(`Guard source recheck ${repository}@${ref}`,()=>g.get(`repos/${repository}/git/commits/${ref}`));
+    if(!value||value.sha!==ref||value.tree?.sha!==tree)issue(`Guard source changed after capture: ${repository}@${ref}`,true);
+  }
+  for(const capture of captures.values())if(capture){
+    const {repository,ref,path,sha,type,mode}=capture,value=read(`Guard object recheck ${repository}@${ref}/${path}`,()=>g.object(repository,ref,path));
+    if(!value||value.sha!==sha||value.type!==type||value.mode!==mode||(value.path!==undefined&&value.path!==path))issue(`Guard object changed after capture: ${repository}@${ref}/${path}`,true);
+  }
+  if(deployed)for(const branch of guardChannels){
+    const current=read(`Guard receiver ${branch} final head`,()=>g.head(guardRepository,branch));
+    if(current!==receiverHeads[branch])issue(`Guard receiver source moved on ${branch}`,true);
+  }
+  if(canonical({policies,roles,heads,deployed})!==inputIdentity)issue('Guard registration/policy/source input changed after capture',true);
+  return {issues,...(sourceIssues.length===0?{projection}:{}),sources:{reviewed:valid.map(e=>({role:e.role,repository:e.repository,commits:{...e.reviewed_sources}})),receivers:receiverHeads},deployed};
+}
+export function assertStageGuardPins(input,g){
+  const report=inspectStageGuardPins(input,g);
+  requireThat(report.issues.length===0,`Stage guard consistency failed:\n${report.issues.join('\n')}`);
+  return report;
+}
+
 export function workflowPins(text,repositories){
   const result=[],known=new Set(repositories);let offset=0;
   const lines=text.split(/(?<=\n)/);
@@ -116,9 +242,17 @@ export function refreshWorkflowPins({repository,profiles,lock,files,adapter,adap
   }));
 }
 
-if(isEntrypoint(import.meta.url)){
+function main(){
   const [operation,name,target,workspace,adapter,originsWorkspace]=process.argv.slice(2);
+  if(['check-guards','check-guard-candidates'].includes(operation)){
+    requireThat(operation==='check-guards'?process.argv.length===3:process.argv.length===4,'Usage: adapter-pins.mjs check-guards | check-guard-candidates <receiver-sources.json>');
+    const report=inspectStageGuardPins({policies:stageGuardPolicies(),...(operation==='check-guard-candidates'?{heads:JSON.parse(readFileSync(resolve(name),'utf8')),deployed:false}:{})},new GitHub());
+    console.log(JSON.stringify(report,null,2));
+    requireThat(report.issues.length===0,'Stage guard consistency failed; review every reported mismatch before adoption');return;
+  }
   requireThat(['check','refresh'].includes(operation)&&/^[A-Za-z0-9_]+$/.test(name||'')&&target,'Usage: adapter-pins.mjs check|refresh <repository> <checkout> [workspace] [verified-adapter-sha] [origins-workspace]');
+  // Library-first/Core-last deployment is checked before any local pin writes.
+  assertStageGuardPins({policies:stageGuardPolicies()},new GitHub());
   const profiles=JSON.parse(sourceBytes({origin:'integration',path:'.github/scripts/wss-ci/receipt-targets.json'},originsWorkspace?resolve(originsWorkspace):workspace?resolve(workspace):undefined));
   const root=resolve(target),repository=`cwru-non-academic/${name}`,lock=JSON.parse(readFileSync(join(root,'.github/scripts/wss-ci.lock.json'),'utf8'));
   const directory=join(root,'.github/workflows'),files=Object.fromEntries(readdirSync(directory).filter(p=>/\.ya?ml$/.test(p)).map(p=>[p,readFileSync(join(directory,p),'utf8')]));
@@ -136,3 +270,5 @@ if(isEntrypoint(import.meta.url)){
     console.log(`Refreshed registered executable workflow pins: ${repository}; product sources and permissions unchanged`);
   }
 }
+
+if(isEntrypoint(import.meta.url)){try{main();}catch(error){console.error(error.message);process.exitCode=1;}}

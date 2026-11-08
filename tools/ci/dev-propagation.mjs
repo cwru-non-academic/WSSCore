@@ -1,3 +1,4 @@
+import {assertStageGuardPins,stageGuardPolicies} from './adapter-pins.mjs';
 import {testSelectionPolicy,assertPairedTestSelection,selectionFields,validatePlanTestSelection,collectSelectedTestArtifact,verifySelectedTestArtifact} from '../release/campaign-test-selection.mjs';
 import {isEntrypoint} from '../release/entrypoint.mjs';
 import {readFileSync,writeFileSync,mkdirSync,appendFileSync,realpathSync,existsSync} from 'node:fs';
@@ -174,20 +175,14 @@ export function freezeStage(g,m,c,{freeze=true,testSelection}={}) {
       for(const f of ['promote-integration.yml','wss-preflight.yml']) registered(g,app,f);
     }
     if(t.id==='matlab') {
-      const pin=t.native_evidence_guard;
-      requireThat(pin?.path==='.github/scripts/Complete-MatlabPreflight.ps1' && /^[0-9a-f]{40}$/.test(pin.sha),'Pin the reviewed MATLAB native evidence validator before handoff');
-      for(const branch of ['main','dev']) requireThat(g.object(t.repository,heads[branch],pin.path).sha===pin.sha,`MATLAB native evidence validator is not the reviewed version on ${branch}`);
-      const fixture=t.promotion_contract_test;
-      requireThat(fixture?.path==='.github/scripts/tests/Test-MatlabPromotion.ps1' && /^[0-9a-f]{40}$/.test(fixture.sha),'Pin the candidate-aware MATLAB promotion contract test before handoff');
-      for(const branch of ['main','dev']) requireThat(g.object(t.repository,heads[branch],fixture.path).sha===fixture.sha,`MATLAB promotion contract test is not the reviewed version on ${branch}`);
-      const mergeGuard=t.merge_evidence_guard;
-      requireThat(mergeGuard?.path==='.github/scripts/MatlabPromotion.ps1' && /^[0-9a-f]{40}$/.test(mergeGuard.sha),'Pin the reviewed MATLAB closed-PR CI validator before handoff');
-      for(const branch of ['main','dev']) requireThat(g.object(t.repository,heads[branch],mergeGuard.path).sha===mergeGuard.sha,`MATLAB merged-wrapper evidence validator is not the reviewed version on ${branch}`);
       matlabReady(g,t.repository);
       for(const app of t.applications) matlabReady(g,app);
     }
     receivers[t.id]={heads,trusted};
   }
+  // Both channel policies and every fixed executable guard share one reviewed
+  // registration. No plan is constructed until all mismatches have been checked.
+  assertStageGuardPins({policies:{...stageGuardPolicies(),[context.channel]:m},heads:receivers.matlab.heads},g);
   const body={schema:context.stagePlanSchema,...(context.channel==='main'?{channel:'main'}:{}),candidate:c,policy:m,policy_sha256:digest(m),receivers,...selected};
   requireThat(g.head(CORE,context.branch)===c.commit,'Core channel moved while freezing receiver tooling');
   const p={...body,plan_id:digest(body)};
