@@ -26,7 +26,12 @@ receiver), `engineRoot` (immutable Python owner), `coreRoot` (immutable Core),
 `integrationRoot` (actual accepted wrapper product), and fresh `outputRoot`.
 Aliasing is allowed only in registry-declared groups; wrapper native roles must
 all alias its accepted root. App wrapper tooling is pinned independently from
-the accepted wrapper product. All Git roots must be clean, including untracked
+the accepted wrapper product. Accepted receiver and accepted integration
+checkouts use full Git history (`fetch-depth: 0`): native source assertions compare
+the frozen preflight source against the later dependency merge. Shallow
+checkouts omit legitimate ancestor objects and cannot satisfy those assertions.
+Immutable tool-only checkouts remain pinned to their exact revisions.
+All Git roots must be clean, including untracked
 files. Pins, copied-source locks, frozen scripts/config/workflows, exact caller,
 producer/archive/jobs, actual merge, parents and normal CI are admitted before
 native code. Source-bound proof descriptors are checked unconditionally, not
@@ -84,5 +89,11 @@ closed roots, permissions, errors, output suppression and Unicode/spaced paths.
 It does not execute WSS DLLs or hardware. Native family negative suites are
 separate and must be rerun against the final composed consumer files; a stub
 receipt test alone is not proof of the complete native proof implementation.
+The C# native receipt suite must also exercise the unchanged real
+`Assert-WssSource` against real shallow/full local Git fetches: missing history
+fails, full legitimate source comparisons pass, and prohibited source changes
+still fail. Common template tests cover accepted/integration history across
+all nine DEV/MAIN roles. Do not substitute stub adapter success for this native
+history regression.
 Core workflow-freeze, source-copy, executable-pin, renderer and independent
 acceptance suites must also pass. Hosted normal checks follow reviewed adoption.
