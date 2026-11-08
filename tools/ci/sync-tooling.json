@@ -15,8 +15,8 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "C:\Users\Owner\Documents\Codex\2026-11-07\test-selection\receipt-common-core-main-v7\tools\ci\sync-tooling.json",
-      "ref": "refs/heads/ci/tooling/C:\Users\Owner\Documents\Codex\2026-11-07\test-selection\receipt-common-core-main-v7\tools\ci\sync-tooling.json"
+      "commit": "20e75c7fd91f595d6cef12b22e2c40312f31f36d",
+      "ref": "refs/heads/ci/tooling/20e75c7fd91f595d6cef12b22e2c40312f31f36d"
     }
   },
   "files": {
