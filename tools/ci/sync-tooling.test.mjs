@@ -61,3 +61,10 @@ test('synchronized consumer rejects code drift and a forged tooling lock',()=>{
     assert.throws(()=>sourceBytes({origin:'unreviewed',path:'unexpected'}),/Unknown canonical CI origin/);
   } finally {rmSync(root,{recursive:true,force:true});}
 });
+
+test('retained receipt owner imports the exact same Core module bytes as its distributed closure',()=>{
+  const manifest=JSON.parse(readFileSync(new URL('./sync-tooling.json',import.meta.url)));
+  const modules=Object.entries(manifest.files).filter(([path,entry])=>entry.origin==='core'&&path.endsWith('.mjs'));
+  assert.ok(modules.length>0);
+  for(const [path,entry] of modules)assert.deepEqual(sourceBytes({origin:'integration',path}),sourceBytes(entry),`Immutable owner/Core helper drift: ${path}`);
+});

@@ -15,8 +15,8 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "c266ff8e5bdcdde840bec87b757cd6d23e888e76",
-      "ref": "refs/heads/ci/tooling/c266ff8e5bdcdde840bec87b757cd6d23e888e76"
+      "commit": "15c4358190f82b9cbca3e2f14b42d9121b36c287",
+      "ref": "refs/heads/ci/tooling/15c4358190f82b9cbca3e2f14b42d9121b36c287"
     }
   },
   "files": {
@@ -191,6 +191,23 @@
       "path": "tools/ci/shared/test-variable-readiness-capture.yml",
       "repositories": [
         "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/receipt-workflows.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-workflows.mjs"
+    },
+    ".github/scripts/wss-ci/receipt-workflow.yml": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-workflow.yml"
+    },
+    ".github/scripts/Write-ReleaseReceipt.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/Write-ReleaseReceipt.mjs",
+      "repositories": [
+        "Python_WSS_Integration_Lib",
+        "Matlab_WSS_Integration_Lib",
+        "CLI_Matlab_WSS_Application"
       ]
     }
   }

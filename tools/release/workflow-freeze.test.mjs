@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {CORE,digest,plan} from './verify.mjs';
 import {publish} from './github.mjs';
 import {action,execute,journal} from './dispatch.mjs';
-import {assertWorkflows,collectWithWorkflows,freezeWorkflows,guardedWriter,initialProducerPlan,initialRequest,SNAPSHOT_POLICY} from '../ci/workflow-freeze.mjs';
+import {receiptAuthorization,assertWorkflows,collectWithWorkflows,freezeWorkflows,guardedWriter,initialProducerPlan,initialRequest,SNAPSHOT_POLICY} from '../ci/workflow-freeze.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
 const json=value=>({type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(value)).toString('base64')});
@@ -105,4 +105,12 @@ test('initial C# dispatch remains possible while its own producer is in progress
 });
 test('all non-C# initial handoffs preserve exact candidate wire data',()=>{
   const f=fixture('stage');for(const family of ['python','unity','matlab']){const body={ref:'dev',inputs:{candidate_json:JSON.stringify(f.p.candidate)}};assert.equal(initialRequest(f.p,family,body).id,family);body.inputs.candidate_json=JSON.stringify({...f.p.candidate,run_id:'99'});assert.throws(()=>initialRequest(f.p,family,body),/differs/);}
+});
+
+test('common receipt authority is mandatory on DEV and rejects omitted frozen policy',()=>{
+  const f=fixture();
+  for(const target of f.p.manifest.targets)assert.equal(receiptAuthorization(f.g,f.p,target.id).target_id,target.id);
+  f.move('python-wrapper');assert.throws(()=>receiptAuthorization(f.g,f.p,'python-wrapper'),/Workflow tree changed/);
+  const legacy=fixture('acceptance',true);assert.throws(()=>receiptAuthorization(legacy.g,legacy.p,'python-wrapper'),/requires producer-bound/);
+  assert.throws(()=>receiptAuthorization(f.g,f.p,'unknown'),/Invalid receipt authority/);
 });
