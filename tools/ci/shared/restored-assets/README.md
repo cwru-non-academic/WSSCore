@@ -1,0 +1,13 @@
+# Restored package assets
+
+Canonical owner: WSSCore tools/ArtifactBuild/RestoredPackageAssets.cs. Core ArtifactBuild and the CSharp/Python output validator use this same implementation. Consumer copies are whole-file managed sources in tools/ci/sync-tooling.json, never independently maintained.
+
+The original package metadata resolution was extracted from ArtifactBuild. Version 2 corrects its inherited first-existing-asset fallback: select the first declared package folder containing the exact package/version extraction marker (.nupkg.metadata or the legacy package .nupkg.sha512), then require the declared asset inside that one package directory. An incomplete directory without either marker is not selected. A selected package with a missing asset fails; another cache cannot supply that asset. PackageRootSelection.Tests.ps1 compares these cases against actual SDK 9.0.316 ResolvePackageAssets with package-asset caching disabled. Marker contents are not a package-authentication claim.
+
+CaptureProjectAsset creates an immutable in-process proof of the exact project path and SHA256, assets path and SHA256, package identity, selected package directory, neutral asset path and SHA256. Callers capture before selectable code. AssertProjectAssetProof rechecks metadata, selection identity and bytes afterward. The verifier uses the original captured neutral hash in its allowlist, so newly introduced roots or modified files cannot redefine acceptable output. The bridge loads only its trusted sibling C# source. A proof is never read from child-written JSON.
+
+Project validation requires the caller's exact project, restored net9.0 graph and exact System.IO.Ports/8.0.0 package/type. The neutral lib/net8.0 asset must be declared by that package. This is an explicit output-policy alternative to the verified host runtime DLL, not a claim that every RID graph copies the neutral DLL. RID runtime target entries may differ. Unrelated project/framework/package graphs fail. Root output Ports remains optional, but restore-input validation is unconditional.
+
+CSharp selected/baseline/hosted and Python platform callers retain this parent proof across selectable children. Python builds its immutable fixture before selected smoke, then uses no-build/no-restore execution. Product/fixture pins, payload checks, macOS pair/capability checks, obsolete-dependency checks, runtime/native proof and source-selection gates remain separate authorities.
+
+RestoredAssets.Tests.ps1 uses fabricated bytes only. RestoreLayout.Tests.ps1 uses a local fabricated NuGet package, configured cache/fallback roots, spaces and artifacts-path. Neither fixture executes package assemblies or WSS native code. Full hosted/native acceptance remains distinct.
