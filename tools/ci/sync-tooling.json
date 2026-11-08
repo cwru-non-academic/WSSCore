@@ -274,6 +274,14 @@
         "CLI_CSharp_WSS_Application",
         "Python_WSS_Integration_Lib"
       ]
+    },
+    ".github/scripts/wss-ci/compiled-tests/CompiledCSharpTests.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/compiled-tests/CompiledCSharpTests.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application"
+      ]
     }
   }
 }
