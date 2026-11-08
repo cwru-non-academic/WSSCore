@@ -46,6 +46,50 @@ SHA-256. Retain `ci/tooling/<commit>` anchors and pinned adapter revisions after
 feature deletion or squash merges. Git clean filters compare canonical blobs,
 so ordinary Windows CRLF and Unix LF checkouts have the same source identity.
 
+## Fixed executable guard adoption
+
+`executable-pin-roles.json` registers the three MATLAB stage guards separately
+from workflow/bootstrap/native-validator/runtime-fixture roles. Each role has a
+closed owner, path, channel policy slot and explicitly reviewed immutable owner
+commit for dev and main. `adapter-pins.mjs` derives blob hashes from those commits,
+checks both channel policies together and verifies both receiver copies. Never
+select a source from a live branch just because its CI is green. Source approval
+requires independent review of the owning changes, registration and policy diff.
+
+Before a coordinated adoption, select and review the immutable owner commits,
+then change only their `reviewed_sources` entries. Create a local JSON object
+with the explicitly intended receiver candidates: `{"dev":"<full commit>",
+"main":"<full commit>"}`. Run:
+
+```
+node tools/ci/adapter-pins.mjs check-guard-candidates <receiver-sources.json>
+```
+
+This read-only command checks those candidate commits, not branch tips. It reports
+all registration, source and policy mismatches. If sources are valid and stable,
+its `projection` contains the proposed pins derived only from the reviewed owner
+commits. Apply that projection to **both** channel policies in the same reviewed
+Core change. No command automatically refreshes the registry or writes policies,
+plans, settings or downstream state. Invalid/missing/changed source objects suppress
+the projection. Historical source fixtures test rejection; they are not the
+adoption readiness authority.
+
+Deploy and verify the reviewed receiver changes library-first on dev and main.
+Then run `node tools/ci/adapter-pins.mjs check-guards` from the Core candidate.
+This live readiness check captures both receiver heads, compares them with the
+same reviewed owners, and rejects movement or object changes during collection.
+The existing `adapter-pins.mjs check` and `refresh` commands run this gate before
+checking or writing workflow pins. Core's own Common CI contracts workflow runs
+the gate with its existing contents-read token and public repository metadata;
+no token repository scope or permission is expanded. Keep Core-last ordering:
+a not-yet-deployed candidate check does not substitute for live readiness.
+
+Both producer channels use the same gate in `freezeStage` before constructing a
+stage plan. MAIN retains its existing scripts/config/workflow equality checks.
+The paired policy files must travel with the reviewed immutable Core source;
+this does not change the separate C8 receipt bootstrap or P8 engine authority.
+These are point-in-time observations, not an atomic lock on remote branches.
+
 ## Proof and trust boundaries
 
 Receiver-owned target policy is defined once in the integration reference's

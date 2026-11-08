@@ -7,5 +7,49 @@
       "repository": "cwru-non-academic/WSSCore",
       "commit": "0ac18df22a1371e5ff94d5485c6d3fa4b3e6538f"
     }
+  ],
+  "stage_guards": [
+    {
+      "role": "native_evidence_guard",
+      "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "path": ".github/scripts/Complete-MatlabPreflight.ps1",
+      "policy_slot": "native_evidence_guard",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "reviewed_sources": {
+        "dev": "34c0ee48a7cb373e8a892b4ad98904e9c2342ea7",
+        "main": "b43f63d3baee83ccca41ccda5f9f9e4621e2c025"
+      }
+    },
+    {
+      "role": "promotion_contract_test",
+      "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "path": ".github/scripts/tests/Test-MatlabPromotion.ps1",
+      "policy_slot": "promotion_contract_test",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "reviewed_sources": {
+        "dev": "34c0ee48a7cb373e8a892b4ad98904e9c2342ea7",
+        "main": "b43f63d3baee83ccca41ccda5f9f9e4621e2c025"
+      }
+    },
+    {
+      "role": "merge_evidence_guard",
+      "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "path": ".github/scripts/MatlabPromotion.ps1",
+      "policy_slot": "merge_evidence_guard",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "reviewed_sources": {
+        "dev": "34c0ee48a7cb373e8a892b4ad98904e9c2342ea7",
+        "main": "b43f63d3baee83ccca41ccda5f9f9e4621e2c025"
+      }
+    }
   ]
 }
