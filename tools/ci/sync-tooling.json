@@ -15,8 +15,8 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "450623fb1cef648c6d8c92eee5dd21082f6e97eb",
-      "ref": "refs/heads/ci/tooling/450623fb1cef648c6d8c92eee5dd21082f6e97eb"
+      "commit": "e520ebcd19691f745551e9984d16086bb8bb1353",
+      "ref": "refs/heads/ci/tooling/e520ebcd19691f745551e9984d16086bb8bb1353"
     }
   },
   "files": {
@@ -295,6 +295,13 @@
         "CLI_CSharp_WSS_Application",
         "Unity_WSS_Integration_Lib",
         "GUI_Unity_WSS_Application"
+      ]
+    },
+    ".github/scripts/Universal-WssFiles.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/restored-assets/Universal-WssFiles.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib"
       ]
     }
   }
