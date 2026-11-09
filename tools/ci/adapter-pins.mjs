@@ -154,7 +154,7 @@ export function workflowPins(text,repositories,{repository='@self'}={}){
     requireThat(!/^\s*(?:-\s*)?(?:[A-Za-z0-9_-]+:|<<:)\s*[*&]/.test(line)&&!/^\s*<<:/.test(line),'YAML aliases/anchors are not supported source roles');
     requireThat(!/^\s*(?:jobs|steps):\s*\S/.test(line)&&!/^\s*-\s*\{[^\r\n]*uses:/.test(line),'Flow job/step mappings are not supported source roles');
     requireThat(!(inJobs&&/^\s*(?:-\s*)?(?:["'][^"']+["']\s*:|(?:uses|repository|ref|path)\s+:)/.test(line)),'Quoted or noncanonical source keys are not supported');
-    if(inJobs&&/^\s*(?:-\s*)?uses\s*:/.test(line))requireThat(/^\s*(?:- )?uses:/.test(line),'Noncanonical uses sequence syntax is not supported');
+    if(inJobs&&/^\s*(?:-\s*)?uses\s*:/.test(line))requireThat(/^\s*(?:- )?uses:\s*(?:[A-Za-z0-9_.-]+\/|\.\/)[^\s]+\s*$/.test(line.trimEnd()),'Noncanonical uses scalar/sequence syntax is not supported');
     const jobMatch=/^  ([A-Za-z0-9_-]+):\s*$/.exec(line.trimEnd());if(jobMatch)job=jobMatch[1];
     const checkout=/^\s*(?:- )?uses:\s*actions\/checkout@[^\s]+\s*$/.test(line.trimEnd());
     if(/^\s*(?:- )?uses:/.test(line)&&/actions\/checkout/i.test(line))requireThat(checkout,'Unsupported checkout source syntax');
@@ -166,7 +166,7 @@ export function workflowPins(text,repositories,{repository='@self'}={}){
       requireThat(!lines.slice(i+1,end).some(l=>/^\s*with:\s*\S/.test(l)),'Inline checkout mappings are not supported source roles');
       const fields={};let localOffset=offset+line.length;
       for(let j=i+1;j<end;j++){
-        for(const key of ['repository','ref','path']){const v=value(lines[j],key);if(v!==undefined){requireThat(!Object.hasOwn(fields,key),`Duplicate checkout ${key}`);fields[key]={value:v,start:localOffset+lines[j].indexOf(v)};}}
+        for(const key of ['repository','ref','path']){const v=value(lines[j],key);if(new RegExp(`^\\s*${key}:`).test(lines[j]))requireThat(v!==undefined,'Checkout source fields require same-line scalars');if(v!==undefined){requireThat(!Object.hasOwn(fields,key),`Duplicate checkout ${key}`);fields[key]={value:v,start:localOffset+lines[j].indexOf(v)};}}
         localOffset+=lines[j].length;
       }
       if(fields.repository)requireThat(/^[A-Za-z0-9_/-]+$/.test(fields.repository.value)||fields.repository.value==='${{ github.repository }}','Unsupported checkout repository scalar');
