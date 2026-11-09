@@ -7,5 +7,5429 @@
       "repository": "cwru-non-academic/WSSCore",
       "commit": "0ac18df22a1371e5ff94d5485c6d3fa4b3e6538f"
     }
+  ],
+  "stage_guards": [
+    {
+      "role": "native_evidence_guard",
+      "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "path": ".github/scripts/Complete-MatlabPreflight.ps1",
+      "policy_slot": "native_evidence_guard",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "reviewed_sources": {
+        "dev": "34c0ee48a7cb373e8a892b4ad98904e9c2342ea7",
+        "main": "b43f63d3baee83ccca41ccda5f9f9e4621e2c025"
+      }
+    },
+    {
+      "role": "promotion_contract_test",
+      "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "path": ".github/scripts/tests/Test-MatlabPromotion.ps1",
+      "policy_slot": "promotion_contract_test",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "reviewed_sources": {
+        "dev": "34c0ee48a7cb373e8a892b4ad98904e9c2342ea7",
+        "main": "b43f63d3baee83ccca41ccda5f9f9e4621e2c025"
+      }
+    },
+    {
+      "role": "merge_evidence_guard",
+      "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "path": ".github/scripts/MatlabPromotion.ps1",
+      "policy_slot": "merge_evidence_guard",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "reviewed_sources": {
+        "dev": "34c0ee48a7cb373e8a892b4ad98904e9c2342ea7",
+        "main": "b43f63d3baee83ccca41ccda5f9f9e4621e2c025"
+      }
+    }
+  ],
+  "source_catalogue": [
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "artifacts.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "release-contract-tests",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "core-tests",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "ble-linux-tests",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "ble-windows-tests",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "package-universal",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "ble-macos-tests",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "ble-consumer-summary",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "serial-tests",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "core-consumers",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "propagate-universal",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "dev-propagation.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "prepare",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "dev-release.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "reconcile",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "verify",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "publish",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "main-propagation.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "prepare",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "main-release.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "reconcile",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "verify",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "publish",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "propagate-matlab.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "propagate-python.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "propagate-unity.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "shared-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "contracts",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "contracts",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".ci-origins/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "manifest-engine",
+          "ref": "${{ steps.integration.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "test-installation-scope.yml",
+      "channels": [
+        "dev"
+      ],
+      "sources": [
+        {
+          "job": "inventory",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "test-variable-readiness.yml",
+      "channels": [
+        "dev"
+      ],
+      "sources": [
+        {
+          "job": "contracts",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/WSSCore",
+      "workflow": "test-variable-snapshot-readiness.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "readiness",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "dispatch-cli-promotion.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".core-stage",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "main"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "host-reload.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "csharp-reload",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "notify-core-stage.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.workflow_sha }}"
+        },
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "promote-wss.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 1,
+          "role": "product",
+          "ref": "${{ steps.source.outputs.sha }}"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "existing-promotion",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.inputs.outputs.branch }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "release-receipt.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_ENGINE_SHA",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_CORE_SHA",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-core"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_VALIDATOR_SHA",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "bootstrap/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core",
+          "occurrence": 0,
+          "role": "core"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "accepted",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "validator",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "integration",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "${{ github.ref_name }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "selected-runtime-fixtures.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "verify-input",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "verify-input",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".fixture-product",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ matrix.profile == 'legacy-v1' && 'aafeef78536fe06094c6a694dd64d9a9e1433b21' || '2d58507e812a097a26d59b3199c1533ab083da78' }}"
+        },
+        {
+          "job": "synthetic-runtime",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "synthetic-runtime",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".fixture-v1-bundle",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ matrix.bundle == 'legacy-v1' && 'aafeef78536fe06094c6a694dd64d9a9e1433b21' || '2d58507e812a097a26d59b3199c1533ab083da78' }}"
+        },
+        {
+          "job": "synthetic-runtime",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".fixture-main-bundle",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "a5a7c630dc9acdf0463a9cbcd9666ea5897d3f39"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "selected-test-contracts.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "source-contracts",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "shared-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.lock.outputs.commit }}"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core/.ci-origins/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "lock-engine",
+          "ref": "${{ steps.lock.outputs.integration_commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "test-variable-snapshot.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "snapshot",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "wss-compatibility.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "resolve-channel",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "package-contracts",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "package-contracts",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "core"
+        },
+        {
+          "job": "receipt-policy-boundary",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "behavioral-tests",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos_architecture",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos_compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+      "workflow": "wss-preflight.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "resolve-inputs",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "resolve-inputs",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "core"
+        },
+        {
+          "job": "behavioral-tests",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos_architecture",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos_compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_CSharp_WSS_Application",
+      "workflow": "cli-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "resolve-channel",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "receipt-policy-boundary",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos_evidence_contracts",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "release-receipt-contracts",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "general-conformance",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "general-conformance",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "SubModules/HFI_WSS_Csharp_Implementation",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.integration.outputs.sha }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "SubModules/HFI_WSS_Csharp_Implementation",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.integration.outputs.sha }}"
+        },
+        {
+          "job": "macos_architecture",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos_architecture",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "SubModules/HFI_WSS_Csharp_Implementation",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.integration.outputs.sha }}"
+        },
+        {
+          "job": "macos_compatibility",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_CSharp_WSS_Application",
+      "workflow": "promote-integration.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".promotion-tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "SubModules/HFI_WSS_Csharp_Implementation",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.inputs.outputs.integration_sha }}"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 1,
+          "role": "product",
+          "ref": "${{ steps.cli-base.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_CSharp_WSS_Application",
+      "workflow": "release-receipt.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_ENGINE_SHA",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_CORE_SHA",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-core"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_VALIDATOR_SHA",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-validator"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "bootstrap/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core",
+          "occurrence": 0,
+          "role": "core"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "accepted",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "validator",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "integration",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "${{ github.ref_name }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_CSharp_WSS_Application",
+      "workflow": "selected-runtime-fixtures.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "verify-input",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "verify-input",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "integration-tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "verify-input",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "integration-source",
+          "occurrence": 0,
+          "role": "fixture",
+          "refs": {
+            "dev": "db9174baca9a1687eab617e47de5b438da018efc",
+            "main": "e55a1d2899605dcb9b0314f4f5ead125b8f39c14"
+          }
+        },
+        {
+          "job": "synthetic-runtime",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "synthetic-runtime",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".fixture-test-source",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ matrix.bundle == 'main-v1' && 'f64382677f18d5a3d871e4889ac0b6c3f597ed58' || '5dabf075b60aa67239f38a5dbdbfaaa3c215425e' }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_CSharp_WSS_Application",
+      "workflow": "selected-test-contracts.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "source-contracts",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_CSharp_WSS_Application",
+      "workflow": "shared-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.lock.outputs.commit }}"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core/.ci-origins/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "lock-engine",
+          "ref": "${{ steps.lock.outputs.integration_commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_CSharp_WSS_Application",
+      "workflow": "test-variable-snapshot.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "snapshot",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_CSharp_WSS_Application",
+      "workflow": "wss-preflight.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "provenance",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "provenance",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "SubModules/HFI_WSS_Csharp_Implementation",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.integration.outputs.sha }}"
+        },
+        {
+          "job": "provenance",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.package-tools.outputs.commit }}"
+        },
+        {
+          "job": "general-conformance",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "general-conformance",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "SubModules/HFI_WSS_Csharp_Implementation",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.integration.outputs.sha }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "SubModules/HFI_WSS_Csharp_Implementation",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.integration.outputs.sha }}"
+        },
+        {
+          "job": "macos_architecture",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos_architecture",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "SubModules/HFI_WSS_Csharp_Implementation",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.integration.outputs.sha }}"
+        },
+        {
+          "job": "macos_compatibility",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "dispatch-unity-promotion.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".core-stage",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "main"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "host-reload.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "lifecycle",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "lifecycle",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".legacy-fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ steps.profile.outputs.fixture }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "notify-core-stage.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.workflow_sha }}"
+        },
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "promote-wss.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "release-receipt.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_ENGINE_SHA",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_CORE_SHA",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-core"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_VALIDATOR_SHA",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "bootstrap/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core",
+          "occurrence": 0,
+          "role": "core"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "accepted",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "validator",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "integration",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "${{ github.ref_name }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "selected-family-isolation.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "selected",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tooling",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "selected",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "eb1439afcd35ffc8691abeea7b59a06a6837b41f"
+        },
+        {
+          "job": "selected",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "gui",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "064de7b37ff8538c401b3eca2101a5d525f13367"
+        },
+        {
+          "job": "selected",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "fc427c5b8bc6534a7d02f00283830072572aa03a"
+        },
+        {
+          "job": "selected",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "selected-tests",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "eb1439afcd35ffc8691abeea7b59a06a6837b41f"
+        },
+        {
+          "job": "selected",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "selected-tests",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "064de7b37ff8538c401b3eca2101a5d525f13367"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "selected-test-contracts.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "source-contracts",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "source-contracts",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".legacy-product",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "8fbdead36cf9c5a31ed415d56cb5dbdfa552b889"
+        },
+        {
+          "job": "source-contracts",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".modern-product",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "b7c9d0374fec7cfecfa783f76a899ab0cff077c4"
+        },
+        {
+          "job": "source-contracts",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".legacy-fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "7145e2307f997f703748530bf74311ef94455e98"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "shared-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.lock.outputs.commit }}"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core/.ci-origins/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "lock-engine",
+          "ref": "${{ steps.lock.outputs.integration_commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "test-variable-snapshot.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "snapshot",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "tooling-separation.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "ordinary-gui",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tooling",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "ordinary-gui",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "gui",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ matrix.gui }}"
+        },
+        {
+          "job": "ordinary-gui",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.product.outputs.sha }}"
+        },
+        {
+          "job": "ordinary-gui",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ steps.profile.outputs.fixture }}"
+        },
+        {
+          "job": "modern-candidate",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tooling",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "modern-candidate",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "eb1439afcd35ffc8691abeea7b59a06a6837b41f"
+        },
+        {
+          "job": "modern-candidate",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "gui",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "064de7b37ff8538c401b3eca2101a5d525f13367"
+        },
+        {
+          "job": "modern-candidate",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "fc427c5b8bc6534a7d02f00283830072572aa03a"
+        },
+        {
+          "job": "modern-candidate",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "unity-compatibility.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "promotion-contracts",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "validate",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "local-workflow",
+          "workflow": ".github/workflows/_unity-validation.yml",
+          "occurrence": 0,
+          "role": "local-workflow",
+          "ref": "@self"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "wrapper_sha",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ steps.sources.outputs.fixture }}"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ steps.sources.outputs.fixture }}"
+        },
+        {
+          "job": "macos",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "wss-preflight.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "validate",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "local-workflow",
+          "workflow": ".github/workflows/_unity-validation.yml",
+          "occurrence": 0,
+          "role": "local-workflow",
+          "ref": "@self"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "wrapper_sha",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "gui_sha",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ inputs.gui_sha }}"
+        },
+        {
+          "job": "candidate-provenance",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "receiver",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.wrapper_sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "_unity-platform-validation.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "caller",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tooling",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.tooling_sha }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "gui",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.gui_sha }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ inputs.fixture_sha }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "caller",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tooling",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.tooling_sha }}"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "gui",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.gui_sha }}"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ inputs.fixture_sha }}"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "macos",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "caller",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tooling",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.tooling_sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Unity_WSS_Integration_Lib",
+      "workflow": "_unity-validation.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "prerequisites",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "prerequisites",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "candidate-contract",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "prerequisites",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tooling-contract",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ steps.tooling.outputs.sha }}"
+        },
+        {
+          "job": "prerequisites",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "profile-product",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.sources.outputs.wrapper }}"
+        },
+        {
+          "job": "candidate-platforms",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "local-workflow",
+          "workflow": ".github/workflows/_unity-platform-validation.yml",
+          "occurrence": 0,
+          "role": "local-workflow",
+          "ref": "@self"
+        },
+        {
+          "job": "candidate-platforms",
+          "kind": "source-field",
+          "field": "wrapper_sha",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ needs.prerequisites.outputs.wrapper }}"
+        },
+        {
+          "job": "candidate-platforms",
+          "kind": "source-field",
+          "field": "gui_sha",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ needs.prerequisites.outputs.gui }}"
+        },
+        {
+          "job": "candidate-platforms",
+          "kind": "source-field",
+          "field": "fixture_sha",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ needs.prerequisites.outputs.fixture }}"
+        },
+        {
+          "job": "candidate-platforms",
+          "kind": "source-field",
+          "field": "tooling_sha",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ needs.prerequisites.outputs.tooling }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tooling",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ needs.prerequisites.outputs.tooling }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.wrapper }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "gui",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.gui }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ needs.prerequisites.outputs.fixture }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/GUI_Unity_WSS_Application",
+      "workflow": "promote-integration.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "promotion-tools",
+          "occurrence": 0,
+          "role": "integration"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/GUI_Unity_WSS_Application",
+      "workflow": "promotion-tooling-binding.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "contracts",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/GUI_Unity_WSS_Application",
+      "workflow": "release-receipt.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_ENGINE_SHA",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_CORE_SHA",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-core"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_VALIDATOR_SHA",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-validator"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "bootstrap/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core",
+          "occurrence": 0,
+          "role": "core"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "accepted",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "validator",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "integration",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "${{ github.ref_name }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/GUI_Unity_WSS_Application",
+      "workflow": "shared-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.lock.outputs.commit }}"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core/.ci-origins/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "lock-engine",
+          "ref": "${{ steps.lock.outputs.integration_commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/GUI_Unity_WSS_Application",
+      "workflow": "test-variable-snapshot.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "snapshot",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/GUI_Unity_WSS_Application",
+      "workflow": "unity-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "receipt-contracts",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "validate",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "workflow",
+          "workflow": ".github/workflows/_unity-validation.yml",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "gui_sha",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "gui",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.sources.outputs.wrapper }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tooling",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ steps.sources.outputs.tooling }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ steps.profile.outputs.fixture }}"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "gui",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.sources.outputs.wrapper }}"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tooling",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ steps.sources.outputs.tooling }}"
+        },
+        {
+          "job": "macos-consumers",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ steps.profile.outputs.fixture }}"
+        },
+        {
+          "job": "macos",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/GUI_Unity_WSS_Application",
+      "workflow": "wss-preflight.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "validate",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "workflow",
+          "workflow": ".github/workflows/_unity-validation.yml",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "wrapper_sha",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "gui_sha",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ inputs.gui_sha }}"
+        },
+        {
+          "job": "candidate-provenance",
+          "repository": "cwru-non-academic/Unity_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "receiver",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.wrapper_sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "dispatch-cli-promotion.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "plan",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "plan",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "plan",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "main"
+        },
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "main"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "host-reload.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "python-reload",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "integration-ci-reference.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "contracts",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "contracts",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".ci-reference/Core",
+          "occurrence": 0,
+          "role": "core"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "notify-core-stage.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.workflow_sha }}"
+        },
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "ordinary-profile-proof.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "profile",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "profile",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "product",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ matrix.product.sha }}"
+        },
+        {
+          "job": "profile",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ matrix.product.fixture }}"
+        },
+        {
+          "job": "profile",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ matrix.product.cli }}"
+        },
+        {
+          "job": "binding",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "binding",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "legacy",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "d73452ff39993f528a87ea41acbf14ae16487fe2"
+        },
+        {
+          "job": "binding",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "modern",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "0c85874eaef0ee5990e2e5792f9bd8280522987c"
+        },
+        {
+          "job": "binding",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "7bf00ce5fc416ff93b3d7ae68f54017ec2916f19"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "promote-wss.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "release-receipt.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_ENGINE_SHA",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_CORE_SHA",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-core"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_VALIDATOR_SHA",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "bootstrap/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core",
+          "occurrence": 0,
+          "role": "core"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "accepted",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "validator",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "integration",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "${{ github.ref_name }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "selected-test-contracts.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "contracts",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "shared-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.lock.outputs.commit }}"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core/.ci-origins/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "lock-engine",
+          "ref": "${{ steps.lock.outputs.integration_commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "test-variable-readiness-capture.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "snapshot",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "test-variable-snapshot.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "snapshot",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "wss-compatibility.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "prerequisites",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.wrapper }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.cli }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ needs.prerequisites.outputs.fixture }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.wrapper }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.cli }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ needs.prerequisites.outputs.fixture }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.wrapper }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.cli }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ needs.prerequisites.outputs.fixture }}"
+        },
+        {
+          "job": "macos-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ needs.prerequisites.outputs.wrapper }}"
+        },
+        {
+          "job": "contracts",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "wss-preflight.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "validate",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "local-workflow",
+          "workflow": ".github/workflows/_python-validation.yml",
+          "occurrence": 0,
+          "role": "local-workflow",
+          "ref": "@self"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "tools_sha",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "wrapper_sha",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "cli_sha",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ inputs.cli_sha }}"
+        },
+        {
+          "job": "acceptance",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "_python-platform-validation.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.tools_sha }}"
+        },
+        {
+          "job": "compatibility",
+          "repository": "${{ github.repository }}",
+          "kind": "checkout",
+          "checkoutPath": "caller",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.cli_sha }}"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ inputs.fixture_sha }}"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.tools_sha }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "${{ github.repository }}",
+          "kind": "checkout",
+          "checkoutPath": "caller",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.cli_sha }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ inputs.fixture_sha }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "macos-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.tools_sha }}"
+        },
+        {
+          "job": "macos-compatibility",
+          "repository": "${{ github.repository }}",
+          "kind": "checkout",
+          "checkoutPath": "caller",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Python_WSS_Integration_Lib",
+      "workflow": "_python-validation.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "prerequisites",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.tools_sha }}"
+        },
+        {
+          "job": "prerequisites",
+          "repository": "${{ github.repository }}",
+          "kind": "checkout",
+          "checkoutPath": "caller",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "prerequisites",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "candidate-contract",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "candidate-platforms",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "local-workflow",
+          "workflow": ".github/workflows/_python-platform-validation.yml",
+          "occurrence": 0,
+          "role": "local-workflow",
+          "ref": "@self"
+        },
+        {
+          "job": "candidate-platforms",
+          "kind": "source-field",
+          "field": "tools_sha",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ inputs.tools_sha }}"
+        },
+        {
+          "job": "candidate-platforms",
+          "kind": "source-field",
+          "field": "wrapper_sha",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ needs.prerequisites.outputs.wrapper }}"
+        },
+        {
+          "job": "candidate-platforms",
+          "kind": "source-field",
+          "field": "cli_sha",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ needs.prerequisites.outputs.cli }}"
+        },
+        {
+          "job": "candidate-platforms",
+          "kind": "source-field",
+          "field": "fixture_sha",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ needs.prerequisites.outputs.fixture }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.tools_sha }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "${{ github.repository }}",
+          "kind": "checkout",
+          "checkoutPath": "caller",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.wrapper }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.cli }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ needs.prerequisites.outputs.fixture }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Python_WSS_Application",
+      "workflow": "cli-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "prerequisites",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "prerequisites",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "prerequisites",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.sources.outputs.wrapper }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.wrapper }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.cli }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ needs.prerequisites.outputs.fixture }}"
+        },
+        {
+          "job": "conformance",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.wrapper }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.cli }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ needs.prerequisites.outputs.fixture }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.wrapper }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.prerequisites.outputs.cli }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ needs.prerequisites.outputs.fixture }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "macos-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Python_WSS_Application",
+      "workflow": "promote-integration.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "promotion-tools",
+          "occurrence": 0,
+          "role": "integration"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Python_WSS_Application",
+      "workflow": "release-receipt.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_ENGINE_SHA",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_CORE_SHA",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-core"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_VALIDATOR_SHA",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-validator"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "bootstrap/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core",
+          "occurrence": 0,
+          "role": "core"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "accepted",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "validator",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "integration",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "${{ github.ref_name }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Python_WSS_Application",
+      "workflow": "selected-test-contracts.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "source-contracts",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "source-contracts",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "baseline-tools",
+          "occurrence": 0,
+          "role": "integration"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Python_WSS_Application",
+      "workflow": "shared-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.lock.outputs.commit }}"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core/.ci-origins/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "lock-engine",
+          "ref": "${{ steps.lock.outputs.integration_commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Python_WSS_Application",
+      "workflow": "standalone-selected-runtime.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "verify-input",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "standalone-runtime",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "parent",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "standalone-runtime",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ env.CLI_SOURCE }}"
+        },
+        {
+          "job": "standalone-runtime",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "selected-tests",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ env.TEST_SOURCE }}"
+        },
+        {
+          "job": "standalone-runtime",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ env.WRAPPER_SOURCE }}"
+        },
+        {
+          "job": "standalone-runtime",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "standalone-runtime",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "fc427c5b8bc6534a7d02f00283830072572aa03a"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Python_WSS_Application",
+      "workflow": "test-variable-snapshot.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "snapshot",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Python_WSS_Application",
+      "workflow": "wss-preflight.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "tooling",
+          "kind": "source-field",
+          "field": "tools_sha",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ steps.binding.outputs.tools_sha }}"
+        },
+        {
+          "job": "tooling",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "tooling",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "validate",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "workflow",
+          "workflow": ".github/workflows/_python-validation.yml",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "tools_sha",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ needs.tooling.outputs.tools_sha }}"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "wrapper_sha",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "validate",
+          "kind": "source-field",
+          "field": "cli_sha",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "occurrence": 0,
+          "role": "forwarded-source",
+          "ref": "${{ inputs.cli_sha }}"
+        },
+        {
+          "job": "acceptance",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/ROS_Python_WSS_Application",
+      "workflow": "promote-integration.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "promotion-tools",
+          "occurrence": 0,
+          "role": "integration"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/ROS_Python_WSS_Application",
+      "workflow": "release-receipt.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_ENGINE_SHA",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_CORE_SHA",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-core"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_VALIDATOR_SHA",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-validator"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "bootstrap/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core",
+          "occurrence": 0,
+          "role": "core"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "accepted",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "validator",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "integration",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "${{ github.ref_name }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/ROS_Python_WSS_Application",
+      "workflow": "ros-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "preflight-context-contracts",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "payload-stage",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.ros_sha || github.sha }}"
+        },
+        {
+          "job": "payload-stage",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "payload-stage",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.sources.outputs.wrapper }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.payload-stage.outputs.wrapper }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ steps.ordinary.outputs.fixture }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.payload-stage.outputs.wrapper }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ steps.ordinary.outputs.fixture }}"
+        },
+        {
+          "job": "macos-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "ros-build",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.ros_sha || github.sha }}"
+        },
+        {
+          "job": "ros-build",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.payload-stage.outputs.wrapper }}"
+        },
+        {
+          "job": "general-conformance",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.ros_sha || github.sha }}"
+        },
+        {
+          "job": "general-conformance",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "general-conformance",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.sources.outputs.wrapper }}"
+        },
+        {
+          "job": "general-conformance",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "${{ steps.ordinary.outputs.fixture }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/ROS_Python_WSS_Application",
+      "workflow": "selected-test-contracts.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "contracts",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/ROS_Python_WSS_Application",
+      "workflow": "shared-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.lock.outputs.commit }}"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core/.ci-origins/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "lock-engine",
+          "ref": "${{ steps.lock.outputs.integration_commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/ROS_Python_WSS_Application",
+      "workflow": "test-variable-snapshot.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "snapshot",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/ROS_Python_WSS_Application",
+      "workflow": "wss-preflight.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "python-core",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.ros_sha || github.sha }}"
+        },
+        {
+          "job": "python-core",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "python-core",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "python-core",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ steps.sources.outputs.wrapper }}"
+        },
+        {
+          "job": "python-core",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "fc427c5b8bc6534a7d02f00283830072572aa03a"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.ros_sha }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.python-core.outputs.wrapper }}"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "fc427c5b8bc6534a7d02f00283830072572aa03a"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.ros_sha }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.python-core.outputs.wrapper }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/CSharp_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "fixture",
+          "occurrence": 0,
+          "role": "fixture",
+          "ref": "fc427c5b8bc6534a7d02f00283830072572aa03a"
+        },
+        {
+          "job": "macos-compatibility",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "ros-build",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.ros_sha || github.sha }}"
+        },
+        {
+          "job": "ros-build",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ needs.python-core.outputs.wrapper }}"
+        },
+        {
+          "job": "acceptance",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.ros_sha || github.sha }}"
+        },
+        {
+          "job": "acceptance",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "macos-architectures",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "workflow": "dispatch-cli-promotion.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "dispatch",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core-stage",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "main"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "workflow": "notify-core-stage.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.workflow_sha }}"
+        },
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "workflow": "promote-wss.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "workflow": "release-receipt.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_ENGINE_SHA",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_CORE_SHA",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-core"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_VALIDATOR_SHA",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "bootstrap/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core",
+          "occurrence": 0,
+          "role": "core"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "accepted",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "validator",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "integration",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "${{ github.ref_name }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "workflow": "shared-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.lock.outputs.commit }}"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core/.ci-origins/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "lock-engine",
+          "ref": "${{ steps.lock.outputs.integration_commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "workflow": "test-variable-snapshot.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "snapshot",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "workflow": "wss-compatibility.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "selected-guard-contracts",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "behavioral-tests",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "behavioral-tests",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "local-action",
+          "action": "./.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "local-action",
+          "action": "./.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "local-action",
+          "action": "./.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "local-action",
+          "action": "./.github/actions/mac-artifact-diagnostic",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "macos-compatibility",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "workflow": "wss-preflight.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "behavioral",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "behavioral",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "authenticated-product-tooling",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "behavioral",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.cli_sha }}"
+        },
+        {
+          "job": "behavioral",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "behavioral",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "local-action",
+          "action": "./source/.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "authenticated-product-tooling",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.cli_sha }}"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "local-action",
+          "action": "./source/.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "authenticated-product-tooling",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.cli_sha }}"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "local-action",
+          "action": "./source/.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "macos-compatibility",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "mac-tools",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "candidate-provenance",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "candidate-provenance",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "proof-tools",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.wrapper_sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Matlab_WSS_Application",
+      "workflow": "cli-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "general-conformance",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "general-conformance",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "local-action",
+          "action": "./.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "platform-compatibility",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "local-action",
+          "action": "./.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".mac-tools",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "local-action",
+          "action": "./.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "local-action",
+          "action": "./.mac-tools/.github/actions/mac-artifact-diagnostic",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "macos-compatibility",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos-compatibility",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".mac-tools",
+          "occurrence": 0,
+          "role": "integration"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Matlab_WSS_Application",
+      "workflow": "promote-integration.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "promote",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "promotion-tools",
+          "occurrence": 0,
+          "role": "integration"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Matlab_WSS_Application",
+      "workflow": "release-receipt.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_ENGINE_SHA",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-engine"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_CORE_SHA",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-core"
+        },
+        {
+          "job": "receipt",
+          "kind": "source-field",
+          "field": "WSS_RECEIPT_VALIDATOR_SHA",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "occurrence": 0,
+          "role": "expected-validator"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "bootstrap/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "engine"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "core",
+          "occurrence": 0,
+          "role": "core"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "accepted",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "validator",
+          "occurrence": 0,
+          "role": "integration"
+        },
+        {
+          "job": "receipt",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "integration",
+          "occurrence": 0,
+          "role": "live-evidence",
+          "ref": "${{ github.ref_name }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Matlab_WSS_Application",
+      "workflow": "shared-ci.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.lock.outputs.commit }}"
+        },
+        {
+          "job": "identical",
+          "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": ".wss-core/.ci-origins/Python_WSS_Integration_Lib",
+          "occurrence": 0,
+          "role": "lock-engine",
+          "ref": "${{ steps.lock.outputs.integration_commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Matlab_WSS_Application",
+      "workflow": "test-variable-snapshot.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "snapshot",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Matlab_WSS_Application",
+      "workflow": "wss-preflight.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "behavioral",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "behavioral",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "authenticated-product-tooling",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "behavioral",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.cli_sha }}"
+        },
+        {
+          "job": "behavioral",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "behavioral",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "local-action",
+          "action": "./source/.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "authenticated-product-tooling",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.cli_sha }}"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "compatibility",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "local-action",
+          "action": "./source/.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "wrapper",
+          "occurrence": 0,
+          "role": "authenticated-product-tooling",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "cli",
+          "occurrence": 0,
+          "role": "product",
+          "ref": "${{ inputs.cli_sha }}"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        },
+        {
+          "job": "macos-native",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "local-action",
+          "action": "./source/.github/actions/native-matlab",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@self"
+        },
+        {
+          "job": "macos-compatibility",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "mac-tools",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.wrapper_sha }}"
+        },
+        {
+          "job": "candidate-provenance",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": "source",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.sha }}"
+        },
+        {
+          "job": "candidate-provenance",
+          "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+          "kind": "checkout",
+          "checkoutPath": "proof-tools",
+          "occurrence": 0,
+          "role": "authenticated-tooling",
+          "ref": "${{ inputs.wrapper_sha }}"
+        }
+      ]
+    }
+  ],
+  "parent_executable_blobs": [
+    {
+      "target": "cwru-non-academic/CLI_Matlab_WSS_Application",
+      "repository": "cwru-non-academic/Matlab_WSS_Integration_Lib",
+      "paths": [
+        ".github/actions/mac-artifact-diagnostic/action.yml",
+        "ci/runMacArtifactDiagnostic.m"
+      ]
+    }
   ]
 }

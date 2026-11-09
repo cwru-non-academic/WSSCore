@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {CORE,digest,plan} from './verify.mjs';
 import {publish} from './github.mjs';
 import {action,execute,journal} from './dispatch.mjs';
-import {assertWorkflows,collectWithWorkflows,freezeWorkflows,guardedWriter,initialProducerPlan,initialRequest,SNAPSHOT_POLICY} from '../ci/workflow-freeze.mjs';
+import {receiptAuthorization,assertWorkflows,collectWithWorkflows,freezeWorkflows,guardedWriter,initialProducerPlan,initialRequest,SNAPSHOT_POLICY} from '../ci/workflow-freeze.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
 const json=value=>({type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(value)).toString('base64')});
@@ -70,10 +70,10 @@ test('final verification checks live workflows both before and after collection'
   const f=fixture();assert.equal(collectWithWorkflows(f.g,f.p,()=>42),42);
   assert.throws(()=>collectWithWorkflows(f.g,f.p,()=>{f.move('unity-wrapper');return 42;}),/Workflow tree changed/);
 });
-test('the existing publisher command is blocked at its write boundary after live drift',()=>{
+test('publication cannot omit admission evidence or bypass workflow drift',()=>{
   const f=fixture(),writer=guardedWriter(f.g,f.g,f.p,'acceptance',{purpose:'publication'});
   const args=['release','create',`dev-beta-11-${f.p.plan_id.slice(0,12)}`,'--repo',CORE,'--target',f.p.candidate.commit,'--prerelease','--title','candidate','--notes','verified'];
-  writer.command(args);assert.equal(f.commands.length,1);f.move('python-cli');assert.throws(()=>writer.command(args),/Workflow tree changed/);assert.equal(f.commands.length,1);
+  assert.throws(()=>writer.command(args),/collected admission evidence/);assert.equal(f.commands.length,0);f.move('python-cli');assert.throws(()=>writer.command(args),/Workflow tree changed/);assert.equal(f.commands.length,0);
 });
 test('adding snapshots does not bypass the real publisher tag-protection gate',()=>{
   const f=fixture(),writer=guardedWriter(f.g,f.g,f.p,'acceptance',{purpose:'publication'});
@@ -105,4 +105,12 @@ test('initial C# dispatch remains possible while its own producer is in progress
 });
 test('all non-C# initial handoffs preserve exact candidate wire data',()=>{
   const f=fixture('stage');for(const family of ['python','unity','matlab']){const body={ref:'dev',inputs:{candidate_json:JSON.stringify(f.p.candidate)}};assert.equal(initialRequest(f.p,family,body).id,family);body.inputs.candidate_json=JSON.stringify({...f.p.candidate,run_id:'99'});assert.throws(()=>initialRequest(f.p,family,body),/differs/);}
+});
+
+test('common receipt authority is mandatory on DEV and rejects omitted frozen policy',()=>{
+  const f=fixture();
+  for(const target of f.p.manifest.targets)assert.equal(receiptAuthorization(f.g,f.p,target.id).target_id,target.id);
+  f.move('python-wrapper');assert.throws(()=>receiptAuthorization(f.g,f.p,'python-wrapper'),/Workflow tree changed/);
+  const legacy=fixture('acceptance',true);assert.throws(()=>receiptAuthorization(legacy.g,legacy.p,'python-wrapper'),/requires producer-bound/);
+  assert.throws(()=>receiptAuthorization(f.g,f.p,'unknown'),/Invalid receipt authority/);
 });

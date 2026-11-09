@@ -75,11 +75,11 @@
       },
       "promotion_contract_test": {
         "path": ".github/scripts/tests/Test-MatlabPromotion.ps1",
-        "sha": "c6ada237074772ebe087c0999671e70e261ebe53"
+        "sha": "4b31284d8a9528dc48b7d5f38d71ba9d1dab9360"
       },
       "merge_evidence_guard": {
         "path": ".github/scripts/MatlabPromotion.ps1",
-        "sha": "d6aaeaa64ad817e98f77ffb7d919d298cbc12628"
+        "sha": "b9e8be6ff8fbc45bc1f00dbb086da24bce2ea863"
       }
     }
   ],

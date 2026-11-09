@@ -6,10 +6,10 @@
     ],
     "source": {
       "ref": "refs/heads/dev",
-      "commit": "d73ccd34f541b640b63d39726dd337c99252b3fc",
+      "commit": "d213bfcc4ac5d5ac2a404df56770215e3368c37f",
       "workflow": ".github/workflows/test-variable-readiness-capture.yml",
       "workflow_blob": "c8e8260afaac8baab84cf91482728a1f4bb68db0",
-      "tooling_tree": "9e131377717c5f1493f79e1bcb2fbf445687e75d",
+      "tooling_tree": "4a1a1358da7b87fa47482550b62d0245a4133325",
       "actor_id": "326213682"
     }
   },
@@ -19,10 +19,10 @@
     ],
     "source": {
       "ref": "refs/heads/main",
-      "commit": "5624c044e653b74826413bcf4586da711043bde5",
+      "commit": "52ce2c33c8263dda3e767a537b3762652f631bef",
       "workflow": ".github/workflows/test-variable-readiness-capture.yml",
       "workflow_blob": "c8e8260afaac8baab84cf91482728a1f4bb68db0",
-      "tooling_tree": "9e131377717c5f1493f79e1bcb2fbf445687e75d",
+      "tooling_tree": "4a1a1358da7b87fa47482550b62d0245a4133325",
       "actor_id": "326213682"
     }
   }

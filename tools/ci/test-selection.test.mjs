@@ -58,8 +58,19 @@ test('resolver preserves the request and selected product/campaign identity',()=
   assert.notEqual(s.campaign.commit,s.targets['python-wrapper'].tests.commit);
 });
 test('unsupported channels, duplicate targets and malformed trusted input fail before network',()=>{
-  for(const mutate of [r=>r.channel='feature',r=>r.campaign.run_id=42,r=>r.targets.push({...r.targets[0]}),r=>r.targets[0].allowed_test_repositories=[],r=>r.targets[0].variables.UNKNOWN='x',r=>r.targets[0].default_test_repository='foreign/repo',r=>r.campaign.unexpected=true]) {
-    const r=input();mutate(r);assert.throws(()=>resolveTestSelection(r,rejectNetwork));
+  for(const [mutate,expected] of [
+    [r=>r.channel='feature',/CI channel must be exactly/],
+    [r=>r.campaign.run_id=42,/Invalid immutable campaign identity/],
+    [r=>r.targets.push({...r.targets[0]}),/Invalid or duplicate test target/],
+    [r=>r.targets[0].allowed_test_repositories=[],/explicit reviewed repository allowlist/],
+    [r=>r.targets[0].variables.UNKNOWN='x',/Invalid repository variable snapshot/],
+    [r=>r.targets[0].default_test_repository='foreign/repo',/explicit reviewed repository allowlist/],
+    [r=>r.campaign.unexpected=true,/Invalid immutable campaign identity/]
+  ]) {
+    const r=input(),calls=[];mutate(r);
+    const network=Object.fromEntries(['head','get'].map(name=>[name,()=>{calls.push(name);throw Error('Forbidden network access');}]));
+    assert.throws(()=>resolveTestSelection(r,network),expected);
+    assert.deepEqual(calls,[],'Invalid trusted input must reject before any network call');
   }
 });
 test('consumers authenticate frozen selection identity, not a self-reported digest',()=>{

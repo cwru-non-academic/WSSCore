@@ -2,7 +2,7 @@ import {assertPairedTestSelection,validatePlanTestSelection} from '../release/ca
 // Core coordinator extension. Receiver-owned target profiles remain unchanged.
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {GitHub,loadPlan} from '../release/github.mjs';
+import {GitHub,loadPlan,refreshAdmission} from '../release/github.mjs';
 import {candidate,canonical,CORE,CORE_JOBS,digest,jobs,requireThat} from '../release/verify.mjs';
 import {channelContext,releaseFingerprint} from '../release/channels.mjs';
 import {isEntrypoint} from '../release/entrypoint.mjs';
@@ -138,12 +138,14 @@ export function assertWorkflows(g,p,kind,{ids,live=true}={}) {
     const head=g.head(a.repository,a.branch);
     requireThat((head===a.source_sha?a.tree_sha:tree(g,a.repository,head))===a.tree_sha,`Workflow tree changed after freeze: ${key}`);
   }
+  requireThat(g.head(CORE,context(p,kind).branch)===p.candidate.commit,'Core moved during workflow snapshot verification');
   return true;
 }
 export function collectWithWorkflows(g,p,collect) {
   assertWorkflows(g,p,'acceptance');
   const accepted=collect(g,p);
   assertWorkflows(g,p,'acceptance');
+  if(accepted?.admission)requireThat(same(refreshAdmission(g,p,accepted.admission),accepted.record),'Acceptance evidence changed during workflow verification');
   return accepted;
 }
 // Read-only receiver entrypoint, including direct manual dispatches. Keep the
@@ -161,14 +163,23 @@ export function receiverAuthorization(g,producerId,repository,{loadFrozenPlan=lo
   return {schema:'wss-receiver-workflow-authorization/v1',channel:'main',plan_id:p.plan_id,target_id:matches[0].id,repository,candidate:p.candidate};
 }
 
+// Common receipt admission reuses the producer-owned frozen workflow policy on
+// both channels. Unlike the older adapter bridge, DEV is never a bypass.
+export function receiptAuthorization(g,p,id) {
+  const target=p.manifest.targets.filter(t=>t.id===id);
+  requireThat(target.length===1&&p.candidate.run_id&&['dev','main'].includes(p.channel),'Invalid receipt authority target/channel');
+  requireThat(assertWorkflows(g,p,'acceptance',{ids:[id]}),'Receipt requires producer-bound workflow snapshots');
+  return {plan_id:p.plan_id,target_id:id,channel:p.channel};
+}
+
 // Preserve the existing publisher/dispatchers. The only additional write client
 // checks run at their command boundary, using a separate read-only credential.
-export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,acceptedHeads,initialAuthority}={}) {
+export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,acceptedHeads,acceptedAdmission,initialAuthority}={}) {
   requireThat(['initial','proof','stage','publication'].includes(purpose),'Unknown guarded write purpose');
   const c=context(p,kind);
   if(c.channel==='main'&&purpose==='initial')requireThat(ids?.length===1,'Initial main mutation requires one exact family scope');
   if(c.channel==='main'&&['stage','proof'].includes(purpose))requireThat(ids?.length===1&&sha(executionSource),'Main mutation requires its exact journaled execution source');
-  if(c.channel==='main'&&purpose==='publication')requireThat(acceptedHeads&&same(Object.keys(acceptedHeads).sort(),p.manifest.targets.map(t=>t.id).sort())&&Object.values(acceptedHeads).every(sha),'Main publication requires all exact accepted merge heads');
+  if(purpose==='publication'&&acceptedHeads)requireThat(acceptedHeads&&same(Object.keys(acceptedHeads).sort(),p.manifest.targets.map(t=>t.id).sort())&&Object.values(acceptedHeads).every(sha),'Publication requires all exact accepted merge heads');
   const allowed=new Set();
   if(purpose==='initial'||purpose==='stage')for(const t of p.policy.libraries.filter(t=>!ids||ids.includes(t.id))) {
     for(const name of purpose==='initial'?['promote-wss.yml']:[t.normal,t.fanout])allowed.add(`repos/${t.repository}/actions/workflows/${name}/dispatches`);
@@ -215,13 +226,14 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,
         }
         assertWorkflows(reader,p,kind,{ids});
         if(purpose==='initial'&&initialAuthority)initialAuthority();
-        if(c.channel==='main') {
-          if(purpose==='publication')for(const t of p.manifest.targets)requireThat(reader.head(t.repository,c.branch)===acceptedHeads[t.id],'Accepted main target moved at publication boundary');
-          else {
-            const target=kind==='stage'?p.policy.libraries.find(t=>t.id===ids[0]):p.manifest.targets.find(t=>t.id===ids[0]);
-            const expected=purpose==='initial'?p.receivers[target.id].heads.main:executionSource;
-            requireThat(reader.head(target.repository,'main')===expected,'Main execution source moved at mutation boundary');
-          }
+        if(purpose==='publication') {
+          requireThat(acceptedAdmission?.record&&acceptedAdmission?.admission,'Publication requires collected admission evidence');
+          if(acceptedHeads)requireThat(same(acceptedHeads,Object.fromEntries(Object.entries(acceptedAdmission.record.targets).map(([id,t])=>[id,t.merge.sha]))),'Accepted publication heads differ from admission');
+          requireThat(same(refreshAdmission(reader,p,acceptedAdmission.admission,{publication:true}),acceptedAdmission.record),'Acceptance evidence changed at publication boundary');
+        } else if(c.channel==='main') {
+          const target=kind==='stage'?p.policy.libraries.find(t=>t.id===ids[0]):p.manifest.targets.find(t=>t.id===ids[0]);
+          const expected=purpose==='initial'?p.receivers[target.id].heads.main:executionSource;
+          requireThat(reader.head(target.repository,'main')===expected,'Main execution source moved at mutation boundary');
         }
       }
       return target.command(args);

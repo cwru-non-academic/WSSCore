@@ -90,14 +90,37 @@ test('read-only uncertain recovery correlates original capture without requiring
  f.state.documents[REPORT].purpose='tampered';assert.throws(()=>correlateReadiness(f.g,f.reader,f.auth,intent));
 });
 for(const kind of ['missing','duplicate','unfinished','failed'])test(`uncertain recovery rejects ${kind} capture without redispatch`,()=>{
- const f=fixture();f.state.localRuns=kind==='missing'?[]:kind==='duplicate'?[f.localRun,f.localRun]:[f.localRun];if(kind==='unfinished')f.localRun.status='in_progress';if(kind==='failed')f.localRun.conclusion='failure';f.reader.command=()=>assert.fail('no POST');assert.throws(()=>correlateReadiness(f.g,f.reader,{...f.auth,attempt:2},f.d));assert.equal(f.state.posts,0);
+ const f=fixture();f.state.localRuns=kind==='missing'?[]:kind==='duplicate'?[f.localRun,f.localRun]:[f.localRun];if(kind==='unfinished')f.localRun.status='in_progress';if(kind==='failed')f.localRun.conclusion='failure';
+ let writes=0;f.reader.command=()=>{writes++;assert.fail('no POST');};
+ const expected=kind==='missing'?/Missing snapshot run/:kind==='duplicate'?/Duplicate snapshot dispatch/:/Snapshot run not successful/;
+ assert.throws(()=>correlateReadiness(f.g,f.reader,{...f.auth,attempt:2},f.d),expected);assert.equal(writes,0);assert.equal(f.state.posts,0);
 });
 
-for(const [channel,anchor] of Object.entries({dev:'d73ccd34f541b640b63d39726dd337c99252b3fc',main:'5624c044e653b74826413bcf4586da711043bde5'}))test(`${channel} readiness registry authorizes only reviewed representative sources and controller`,()=>{
+for(const [channel,anchor] of Object.entries({dev:'d213bfcc4ac5d5ac2a404df56770215e3368c37f',main:'52ce2c33c8263dda3e767a537b3762652f631bef'}))test(`${channel} readiness registry authorizes only reviewed representative sources and controller`,()=>{
  const registry=JSON.parse(readFileSync(new URL('../ci/test-variable-readiness-sources.json',import.meta.url)));
  assert.deepEqual(Object.keys(registry).sort(),['dev','main','schema']);assert.equal(registry.schema,'wss-test-variable-readiness-sources/v1');
- const expected={controller_actor_ids:['25409955'],source:{ref:`refs/heads/${channel}`,commit:anchor,workflow:SNAPSHOT_WORKFLOW,workflow_blob:'c8e8260afaac8baab84cf91482728a1f4bb68db0',tooling_tree:'9e131377717c5f1493f79e1bcb2fbf445687e75d',actor_id:'326213682'}};
+ const expected={controller_actor_ids:['25409955'],source:{ref:`refs/heads/${channel}`,commit:anchor,workflow:SNAPSHOT_WORKFLOW,workflow_blob:'c8e8260afaac8baab84cf91482728a1f4bb68db0',tooling_tree:'4a1a1358da7b87fa47482550b62d0245a4133325',actor_id:'326213682'}};
  assert.deepEqual(registry[channel],expected);
  const f=fixture(channel);f.registry[channel]=registry[channel];f.run.actor.id=25409955;f.run.triggering_actor.id=25409955;f.env.GITHUB_ACTOR_ID='25409955';assert.equal(readinessAuthority(f.g,f.env).source.commit,anchor);
  f.run.triggering_actor.id=326213682;f.env.GITHUB_ACTOR_ID='326213682';assert.throws(()=>readinessAuthority(f.g,f.env),/actor/);
+});
+
+for(const channel of ['dev','main'])test(`${channel} reconciled registry retains independent reviewed and current source checks`,()=>{
+ const registry=JSON.parse(readFileSync(new URL('../ci/test-variable-readiness-sources.json',import.meta.url))),source=registry[channel].source,f=fixture(channel);
+ f.registry[channel]=registry[channel];f.run.actor.id=25409955;f.run.triggering_actor.id=25409955;f.env.GITHUB_ACTOR_ID='25409955';
+ const auth=readinessAuthority(f.g,f.env),current=sha(5),reads=[];
+ f.reader.head=()=>current;
+ const object=(_repo,commit,path)=>{reads.push(commit);return path==='.github/scripts/wss-ci'?{type:'tree',mode:'040000',sha:source.tooling_tree}:{type:'blob',mode:'100644',sha:source.workflow_blob};};
+ f.reader.object=object;
+ const intent=prepareReadiness(f.g,f.reader,auth);
+ assert.equal(intent.request.source.reviewed_commit,source.commit);assert.equal(intent.request.source.commit,current);
+ assert.deepEqual(new Set(reads),new Set([source.commit,current]));
+ for(const commit of [source.commit,current]){
+  f.reader.object=(repo,actual,path)=>actual===commit&&path==='.github/scripts/wss-ci'?{type:'tree',mode:'040000',sha:'9e131377717c5f1493f79e1bcb2fbf445687e75d'}:object(repo,actual,path);
+  assert.throws(()=>prepareReadiness(f.g,f.reader,auth),/executable tooling source changed/);
+  f.reader.object=(repo,actual,path)=>actual===commit&&path===source.workflow?{type:'blob',mode:'100644',sha:sha(8)}:object(repo,actual,path);
+  assert.throws(()=>prepareReadiness(f.g,f.reader,auth),/workflow source changed/);
+ }
+ f.reader.object=(repo,commit,path)=>{if(commit===source.commit)throw Error('404 retained authority missing');return object(repo,commit,path);};
+ assert.throws(()=>prepareReadiness(f.g,f.reader,auth),/retained authority missing/);assert.equal(f.state.posts,0);
 });

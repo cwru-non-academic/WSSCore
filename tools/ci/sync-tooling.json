@@ -15,11 +15,19 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "5caa943d5472a4709e4eb77176650acbef52d8a4",
-      "ref": "refs/heads/ci/tooling/5caa943d5472a4709e4eb77176650acbef52d8a4"
+      "commit": "450623fb1cef648c6d8c92eee5dd21082f6e97eb",
+      "ref": "refs/heads/ci/tooling/450623fb1cef648c6d8c92eee5dd21082f6e97eb"
     }
   },
   "files": {
+    ".github/scripts/wss-ci/campaign-test-selection.mjs": {
+      "origin": "core",
+      "path": "tools/release/campaign-test-selection.mjs"
+    },
+    ".github/scripts/wss-ci/test-selection-contract.mjs": {
+      "origin": "core",
+      "path": "tools/release/test-selection-contract.mjs"
+    },
     ".github/scripts/wss-ci/verify.mjs": {
       "origin": "core",
       "path": "tools/release/verify.mjs"
@@ -152,14 +160,6 @@
       "origin": "core",
       "path": "tools/release/entrypoint.mjs"
     },
-    ".github/scripts/wss-ci/campaign-test-selection.mjs": {
-      "origin": "core",
-      "path": "tools/release/campaign-test-selection.mjs"
-    },
-    ".github/scripts/wss-ci/test-selection-contract.mjs": {
-      "origin": "core",
-      "path": "tools/release/test-selection-contract.mjs"
-    },
     ".github/scripts/wss-ci/local-test-variable-snapshot.mjs": {
       "origin": "core",
       "path": "tools/release/local-test-variable-snapshot.mjs"
@@ -191,6 +191,110 @@
       "path": "tools/ci/shared/test-variable-readiness-capture.yml",
       "repositories": [
         "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/receipt-workflows.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-workflows.mjs"
+    },
+    ".github/scripts/wss-ci/receipt-workflow.yml": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-workflow.yml"
+    },
+    ".github/scripts/Write-ReleaseReceipt.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/Write-ReleaseReceipt.mjs",
+      "repositories": [
+        "Python_WSS_Integration_Lib",
+        "Matlab_WSS_Integration_Lib",
+        "CLI_Matlab_WSS_Application"
+      ]
+    },
+    ".github/scripts/wss-ci/job-log.mjs": {
+      "origin": "core",
+      "path": "tools/release/job-log.mjs"
+    },
+    ".github/scripts/wss-ci/preflight-proof.mjs": {
+      "origin": "core",
+      "path": "tools/release/preflight-proof.mjs"
+    },
+    ".github/scripts/wss-ci/verified-json-artifact.mjs": {
+      "origin": "core",
+      "path": "tools/release/verified-json-artifact.mjs"
+    },
+    ".github/scripts/wss-ci/receipt-proof-cli.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/receipt-proof-cli.mjs"
+    },
+    ".github/scripts/wss-ci/tests/receipt-gh-preload.mjs": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/tests/receipt-gh-preload.mjs"
+    },
+    ".github/scripts/wss-ci/admission-context.mjs": {
+      "origin": "core",
+      "path": "tools/release/admission-context.mjs"
+    },
+    ".github/scripts/wss-ci/restored-assets/Verify-WssOutput.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/restored-assets/Verify-WssOutput.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/restored-assets/Universal-WssFiles.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/restored-assets/Universal-WssFiles.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/restored-assets/RestoredPackageAssets.cs": {
+      "origin": "core",
+      "path": "tools/ArtifactBuild/RestoredPackageAssets.cs",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/restored-assets/RestoredAssets.Tests.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/restored-assets/RestoredAssets.Tests.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/restored-assets/RestoredAssets.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/restored-assets/RestoredAssets.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/compiled-tests/CompiledCSharpTests.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/compiled-tests/CompiledCSharpTests.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application"
+      ]
+    },
+    ".github/scripts/tests/NativeReceiptAdapter.Tests.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/native-receipt/NativeReceiptAdapter.Tests.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Unity_WSS_Integration_Lib",
+        "GUI_Unity_WSS_Application"
       ]
     }
   }
