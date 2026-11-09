@@ -19,6 +19,7 @@ for(const channel of ['dev','main'])for(const role of ['csharp-wrapper','csharp-
  });
 }
 for(const [name,mutate] of Object.entries({
+ source:f=>f.state.run.head_sha='b'.repeat(40),runId:f=>f.state.run.id=31,
  attempt:f=>f.state.run.run_attempt++,jobMissing:f=>f.state.jobs=[],jobSkipped:f=>f.state.jobs[0].conclusion='skipped',jobDuplicate:f=>f.state.jobs.push({...f.state.jobs[0]}),jobReplaced:f=>f.state.jobs[0].id=41,
  artifactReplaced:f=>f.state.artifact.id=51,artifactExpired:f=>f.state.artifact.expired=true,artifactSource:f=>f.state.artifact.workflow_run.head_sha='b'.repeat(40),artifactDigest:f=>f.state.artifact.digest='sha256:'+'0'.repeat(64),archiveBytes:f=>f.state.bytes=Buffer.from('replaced ZIP'),logBytes:f=>f.state.log=Buffer.from('changed\n'),failedRun:f=>f.state.run.conclusion='failure'
 }))test(`independent collector rejects ${name}`,()=>{const f=fixture(),d=f.capture().descriptor;mutate(f);assert.throws(()=>collectPreflightProof(f.g,d));});

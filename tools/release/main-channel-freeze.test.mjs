@@ -118,18 +118,23 @@ test('actual PowerShell receiver bridge executes locked Core CLI and rejects mis
   const head=execFileSync('git',['-C',core,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
   const repository=p.manifest.targets[0].repository;
   const producer={id:11,repository:{full_name:CORE},head_repository:{full_name:CORE},path:'.github/workflows/artifacts.yml',head_branch:'main',head_sha:p.candidate.commit,event:'push',status:'completed',conclusion:'success',run_attempt:1};
-  const preload=join(root,'read only API.mjs'),script=join(root,'actual bridge.ps1');
+  const preload=join(root,'read only API.mjs'),script=join(root,'actual bridge.ps1'),attempts=join(root,'attempts.jsonl');
   try{
     mkdirSync(join(source,'.github/scripts'),{recursive:true});
     writeFileSync(join(source,'.github/scripts/wss-ci.lock.json'),JSON.stringify({source_repository:CORE,source_commit:head}));
-    writeFileSync(preload,`import {GitHub} from ${JSON.stringify(pathToFileURL(join(core,'tools/release/github.mjs')).href)};
+    writeFileSync(preload,`import {appendFileSync} from 'node:fs';
+const record=operation=>appendFileSync(${JSON.stringify(attempts)},JSON.stringify(operation)+'\\n');
+import {GitHub} from ${JSON.stringify(pathToFileURL(join(core,'tools/release/github.mjs')).href)};
 const p=${JSON.stringify(p)},heads=${JSON.stringify(Object.fromEntries(f.heads))},trees=${JSON.stringify(Object.fromEntries(f.trees))},run=${JSON.stringify(producer)};
-if(process.argv[1]?.endsWith('workflow-freeze.mjs')&&process.env.WSS_BRIDGE_FAILURE==='process')process.exit(9);
-if(process.argv[1]?.endsWith('workflow-freeze.mjs')&&process.env.WSS_BRIDGE_FAILURE==='json'){process.stdout.write('{');process.exit(0);}
-GitHub.prototype.command=()=>{throw Error('Network and mutations forbidden in the bridge contract');};
+if(process.argv[1]?.endsWith('workflow-freeze.mjs')){
+  record('workflow-entry');
+  if(process.env.WSS_BRIDGE_FAILURE==='process'){record('process');process.exit(9);}
+  if(process.env.WSS_BRIDGE_FAILURE==='json'){record('json');process.stdout.write('{');process.exit(0);}
+}
+GitHub.prototype.command=()=>{record('forbidden-transport');throw Error('Network and mutations forbidden in the bridge contract');};
 GitHub.prototype.download=()=>({'plan.json':Buffer.from(JSON.stringify(p))});
 GitHub.prototype.get=path=>{if(!path.includes('targets.main.json'))throw Error('Unexpected read');return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(p.manifest)).toString('base64')};};
-GitHub.prototype.run=()=>({...run,head_branch:process.env.WSS_BRIDGE_FAILURE==='channel'?'dev':'main'});
+GitHub.prototype.run=()=>{if(process.env.WSS_BRIDGE_FAILURE==='channel')record('channel');return {...run,head_branch:process.env.WSS_BRIDGE_FAILURE==='channel'?'dev':'main'};};
 GitHub.prototype.jobs=()=>${JSON.stringify(CORE_JOBS)}.map(name=>({name,status:'completed',conclusion:'success'}));
 GitHub.prototype.head=(repo,branch)=>repo===${JSON.stringify(CORE)}?p.candidate.commit:heads[repo+':'+branch];
 GitHub.prototype.object=(repo,ref,path)=>{if(path!=='.github/workflows')throw Error('Unexpected object');return {type:'tree',sha:trees[repo+':'+ref]};};
@@ -137,10 +142,23 @@ GitHub.prototype.object=(repo,ref,path)=>{if(path!=='.github/workflows')throw Er
     writeFileSync(script,`param([string]$Bridge)\n$ErrorActionPreference='Stop'\n. $Bridge\n$p=Assert-WssCiWorkflowAuthorization '11'\nif($p.target_id -cne 'csharp-wrapper'){throw 'Wrong actual bridge proof'}\n`);
     const env={...process.env,NODE_OPTIONS:`--import=${pathToFileURL(preload).href}`,WSS_CI_CHANNEL:'main',WSS_TARGET_ROOT:source,WSS_CORE_TOOLS_ROOT:core,GITHUB_REPOSITORY:repository,GITHUB_ACTIONS:'true'};
     const args=['-NoProfile','-NonInteractive','-File',script,join(core,'tools/ci/shared/Channel.ps1')];
-    execFileSync('pwsh',args,{env,stdio:'pipe'});
-    for(const mode of ['process','json','channel'])assert.throws(()=>execFileSync('pwsh',args,{env:{...env,WSS_BRIDGE_FAILURE:mode},stdio:'pipe'}));
+    const invoke=(mode,expected)=>{
+      writeFileSync(attempts,'');
+      let failure;
+      try{execFileSync('pwsh',args,{env:{...env,WSS_BRIDGE_FAILURE:mode},stdio:'pipe'});}catch(error){failure=error;}
+      const operations=readFileSync(attempts,'utf8').trim().split('\n').filter(Boolean).map(line=>JSON.parse(line));
+      assert.equal(operations.filter(operation=>operation==='forbidden-transport').length,0,'No bridge case may attempt transport or writes');
+      assert.equal(operations.filter(operation=>operation==='workflow-entry').length,mode==='lock'?0:1,'Every case must reach its intended boundary');
+      if(['process','json','channel'].includes(mode))assert.equal(operations.filter(operation=>operation===mode).length,1,'Fault injection must actually run');
+      if(expected){assert.ok(failure);assert.equal(failure.status,1);assert.equal(failure.signal,null);assert.match(failure.stderr.toString(),expected);}
+      else assert.equal(failure,undefined);
+    };
+    invoke('');
+    invoke('process',/Frozen main workflow authorization failed/);
+    invoke('json',/ConvertFrom-Json[\s\S]*Conversion from JSON failed/);
+    invoke('channel',/Plan artifact producer is not canonical/);
     writeFileSync(join(source,'.github/scripts/wss-ci.lock.json'),JSON.stringify({source_repository:CORE,source_commit:sha(999)}));
-    assert.throws(()=>execFileSync('pwsh',args,{env,stdio:'pipe'}));
+    invoke('lock',/Main workflow guard must execute the locked Core revision/);
   }finally{rmSync(root,{recursive:true,force:true});}
 });
 

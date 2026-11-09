@@ -90,7 +90,10 @@ test('read-only uncertain recovery correlates original capture without requiring
  f.state.documents[REPORT].purpose='tampered';assert.throws(()=>correlateReadiness(f.g,f.reader,f.auth,intent));
 });
 for(const kind of ['missing','duplicate','unfinished','failed'])test(`uncertain recovery rejects ${kind} capture without redispatch`,()=>{
- const f=fixture();f.state.localRuns=kind==='missing'?[]:kind==='duplicate'?[f.localRun,f.localRun]:[f.localRun];if(kind==='unfinished')f.localRun.status='in_progress';if(kind==='failed')f.localRun.conclusion='failure';f.reader.command=()=>assert.fail('no POST');assert.throws(()=>correlateReadiness(f.g,f.reader,{...f.auth,attempt:2},f.d));assert.equal(f.state.posts,0);
+ const f=fixture();f.state.localRuns=kind==='missing'?[]:kind==='duplicate'?[f.localRun,f.localRun]:[f.localRun];if(kind==='unfinished')f.localRun.status='in_progress';if(kind==='failed')f.localRun.conclusion='failure';
+ let writes=0;f.reader.command=()=>{writes++;assert.fail('no POST');};
+ const expected=kind==='missing'?/Missing snapshot run/:kind==='duplicate'?/Duplicate snapshot dispatch/:/Snapshot run not successful/;
+ assert.throws(()=>correlateReadiness(f.g,f.reader,{...f.auth,attempt:2},f.d),expected);assert.equal(writes,0);assert.equal(f.state.posts,0);
 });
 
 for(const [channel,anchor] of Object.entries({dev:'d213bfcc4ac5d5ac2a404df56770215e3368c37f',main:'52ce2c33c8263dda3e767a537b3762652f631bef'}))test(`${channel} readiness registry authorizes only reviewed representative sources and controller`,()=>{
