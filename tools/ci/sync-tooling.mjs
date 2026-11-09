@@ -42,7 +42,10 @@ function safePath(base,path) {
   return full;
 }
 
-export function expectedLock(repository,commit,workspace=resolve(root,'.ci-origins')) {
+// Optional reader supports explicit immutable local candidate mappings. The
+// deployed copier/checker retain sourceBytes and their existing source roots.
+export function expectedLock(repository,commit,workspace=resolve(root,'.ci-origins'),readSource=sourceBytes) {
+  requireThat(typeof readSource==='function','Canonical source byte reader is required');
   requireThat(manifest.repositories.includes(repository),'Unknown WSS target repository');
   const entries=Object.entries(manifest.files).filter(([,value])=>{
     const scope=sourceDescriptor(value).repositories;
@@ -52,7 +55,7 @@ export function expectedLock(repository,commit,workspace=resolve(root,'.ci-origi
   return {schema:manifest.schema,repository:`cwru-non-academic/${repository}`,source_repository:'cwru-non-academic/WSSCore',source_commit:commit,
     source_ref:`refs/heads/ci/tooling/${commit}`,
     origins:structuredClone(origins),
-    files:Object.fromEntries(entries.map(([target,value])=>{const entry=sourceDescriptor(value);return [target,{origin:entry.origin,source:entry.path,sha256:hash(sourceBytes(entry,workspace,commit))}];}))};
+    files:Object.fromEntries(entries.map(([target,value])=>{const entry=sourceDescriptor(value);return [target,{origin:entry.origin,source:entry.path,sha256:hash(readSource(entry,workspace,commit))}];}))};
 }
 
 export function check(repository,targetRoot,workspace=resolve(root,'.ci-origins')) {

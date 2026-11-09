@@ -1,4 +1,5 @@
 import {test} from 'node:test';
+import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,renameSync,symlinkSync} from 'node:fs';
@@ -75,4 +76,13 @@ test('retained receipt owner imports the exact same Core module bytes as its dis
   const modules=Object.entries(manifest.files).filter(([path,entry])=>entry.origin==='core'&&path.endsWith('.mjs'));
   assert.ok(modules.length>0);
   for(const [path,entry] of modules)assert.deepEqual(sourceBytes({origin:'integration',path}),sourceBytes(entry),`Immutable owner/Core helper drift: ${path}`);
+});
+
+
+test('candidate locks reuse canonical source definitions with explicit immutable mapped byte reads',()=>{
+  const calls=[],bytes=Buffer.from('safe synthetic canonical bytes\n');
+  const actual=expectedLock('Python_WSS_Integration_Lib','1'.repeat(40),'unused-noncanonical-directory',(entry,workspace,commit)=>{calls.push({entry,workspace,commit});return bytes;});
+  assert.ok(calls.length>0);assert.ok(calls.some(c=>c.entry.origin==='core'));assert.ok(calls.some(c=>c.entry.origin==='integration'));
+  assert.ok(calls.every(c=>c.workspace==='unused-noncanonical-directory'&&c.commit==='1'.repeat(40)));
+  for(const value of Object.values(actual.files))assert.equal(value.sha256,createHash('sha256').update(bytes).digest('hex'));
 });
