@@ -86,3 +86,17 @@ test('candidate locks reuse canonical source definitions with explicit immutable
   assert.ok(calls.every(c=>c.workspace==='unused-noncanonical-directory'&&c.commit==='1'.repeat(40)));
   for(const value of Object.values(actual.files))assert.equal(value.sha256,createHash('sha256').update(bytes).digest('hex'));
 });
+
+
+test('CSharp root and restored inventory readers share the one canonical owner',()=>{
+  const manifest=JSON.parse(readFileSync(new URL('./sync-tooling.json',import.meta.url)));
+  const root=manifest.files['.github/scripts/Universal-WssFiles.ps1'];
+  const restored=manifest.files['.github/scripts/wss-ci/restored-assets/Universal-WssFiles.ps1'];
+  assert.deepEqual(root,{origin:'core',path:restored.path,repositories:['CSharp_WSS_Integration_Lib']});
+  assert.equal(restored.origin,'core');
+  assert.deepEqual(sourceBytes(root),sourceBytes(restored));
+  const commit=execFileSync('git',['-C',fileURLToPath(new URL('../..',import.meta.url)),'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+  const lock=expectedLock('CSharp_WSS_Integration_Lib',commit);
+  assert.equal(lock.files['.github/scripts/Universal-WssFiles.ps1'].sha256,lock.files['.github/scripts/wss-ci/restored-assets/Universal-WssFiles.ps1'].sha256);
+  assert.equal(expectedLock('CLI_CSharp_WSS_Application',commit).files['.github/scripts/Universal-WssFiles.ps1'],undefined);
+});
