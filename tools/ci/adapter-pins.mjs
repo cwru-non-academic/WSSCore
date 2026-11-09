@@ -149,15 +149,18 @@ export function workflowPins(text,repositories,{repository='@self'}={}){
   const add=(line,ref,extra)=>{const start=offset+line.indexOf(ref);result.push({job,ref,...(fullSha(ref)?{sha:ref}:{}),...extra,start,end:start+ref.length});};
   for(let i=0;i<lines.length;i++){
     const line=lines[i];
+    // A trailing YAML comment is not part of a bare action/workflow locator.
+    // Parse every uses role from the same view, retaining original write offsets.
+    const usesLine=/^\s*(?:-\s*)?uses\s*:/.test(line)?line.replace(/[ \t]+#[^\r\n]*/,''):line;
     if(/^jobs:/.test(line))inJobs=true;else if(/^[A-Za-z][A-Za-z0-9_-]*:/.test(line))inJobs=false;
     requireThat(!(inJobs&&/^  [A-Za-z0-9_-]+:\s*\S/.test(line)),'Flow job mappings are not supported source roles');
     requireThat(!/^\s*(?:-\s*)?(?:[A-Za-z0-9_-]+:|<<:)\s*[*&]/.test(line)&&!/^\s*<<:/.test(line),'YAML aliases/anchors are not supported source roles');
     requireThat(!/^\s*(?:jobs|steps):\s*\S/.test(line)&&!/^\s*-\s*\{[^\r\n]*uses:/.test(line),'Flow job/step mappings are not supported source roles');
     requireThat(!(inJobs&&/^\s*(?:-\s*)?(?:["'][^"']+["']\s*:|(?:uses|repository|ref|path)\s+:)/.test(line)),'Quoted or noncanonical source keys are not supported');
-    if(inJobs&&/^\s*(?:-\s*)?uses\s*:/.test(line))requireThat(/^\s*(?:- )?uses:\s*(?:[A-Za-z0-9_.-]+\/|\.\/)[^\s]+\s*$/.test(line.trimEnd()),'Noncanonical uses scalar/sequence syntax is not supported');
+    if(inJobs&&/^\s*(?:-\s*)?uses\s*:/.test(line))requireThat(/^\s*(?:- )?uses:\s*(?:[A-Za-z0-9_.-]+\/|\.\/)[^\s]+\s*$/.test(usesLine.trimEnd()),'Noncanonical uses scalar/sequence syntax is not supported');
     const jobMatch=/^  ([A-Za-z0-9_-]+):\s*$/.exec(line.trimEnd());if(jobMatch)job=jobMatch[1];
-    const checkout=/^\s*(?:- )?uses:\s*actions\/checkout@[^\s]+\s*$/.test(line.trimEnd());
-    if(/^\s*(?:- )?uses:/.test(line)&&/actions\/checkout/i.test(line))requireThat(checkout,'Unsupported checkout source syntax');
+    const checkout=/^\s*(?:- )?uses:\s*actions\/checkout@[^\s]+\s*$/.test(usesLine.trimEnd());
+    if(/^\s*(?:- )?uses:/.test(usesLine)&&/actions\/checkout/i.test(usesLine))requireThat(checkout,'Unsupported checkout source syntax');
     if(checkout){
       // A named step can place `uses` after `name`/`if`; the next step or job
       // terminates its mapping. Never borrow a ref from the following checkout.
@@ -177,10 +180,10 @@ export function workflowPins(text,repositories,{repository='@self'}={}){
         result.push({job,repository:repo,ref,...(fullSha(ref)?{sha:ref}:{}),kind:'checkout',checkoutPath:path,start:fields.ref?.start??offset,end:fields.ref?fields.ref.start+ref.length:offset});
       }
     }
-    const use=/^\s*(?:- )?uses:\s*((?:cwru-non-academic\/[A-Za-z0-9_-]+\/|\.\/)\.github\/workflows\/[A-Za-z0-9_-]+\.ya?ml)(?:@([^\s]+))?\s*$/.exec(line.trimEnd());
-    const action=/^\s*(?:- )?uses:\s*(\.\/(?:[A-Za-z0-9_.-]+\/)*\.github\/actions\/[A-Za-z0-9_-]+)\s*$/.exec(line.trimEnd());
+    const use=/^\s*(?:- )?uses:\s*((?:cwru-non-academic\/[A-Za-z0-9_-]+\/|\.\/)\.github\/workflows\/[A-Za-z0-9_-]+\.ya?ml)(?:@([^\s]+))?\s*$/.exec(usesLine.trimEnd());
+    const action=/^\s*(?:- )?uses:\s*(\.\/(?:[A-Za-z0-9_.-]+\/)*\.github\/actions\/[A-Za-z0-9_-]+)\s*$/.exec(usesLine.trimEnd());
     if(action)result.push({job,repository,ref:'@self',kind:'local-action',action:action[1],start:offset,end:offset});
-    if(/^\s*(?:- )?uses:/.test(line)&&/cwru-non-academic\/|uses:\s*\.\//.test(line))requireThat(use||action,'Unclassified first-party action or reusable source');
+    if(/^\s*(?:- )?uses:/.test(usesLine)&&/cwru-non-academic\/|uses:\s*\.\//.test(usesLine))requireThat(use||action,'Unclassified first-party action or reusable source');
     if(use){const local=use[1].startsWith('./'),workflow=local?use[1].slice(2):use[1].split('/').slice(2).join('/'),repo=local?repository:use[1].split('/').slice(0,2).join('/'),ref=local?'@self':use[2];
       requireThat(local||fullSha(ref),'External first-party reusable workflows require immutable full SHAs');
       if(local)result.push({job,repository:repo,ref,kind:'local-workflow',workflow,start:offset,end:offset});
