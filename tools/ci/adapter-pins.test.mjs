@@ -28,6 +28,18 @@ test('every literal checkout is verified against live deployed parents and copie
 test('additional quoted/commented checkouts and YAML aliases cannot hide outside the inventory',()=>{
  for(const body of [checkout(parent,sha(9),'hidden').replace('uses: actions/checkout@v4',"uses: 'actions/checkout@v4'"),checkout(parent,sha(9),'hidden').replace('uses: actions/checkout@v4','uses: actions/checkout@v4 # source'),checkout(parent,sha(9),'hidden').replace('uses: actions/checkout@v4','uses: actions/Checkout@v4'),checkout(parent,sha(9),'hidden').replace('- uses:','-  uses:'),checkout(parent,sha(9),'hidden').replace('uses:',"'uses':"),checkout(parent,sha(9),'hidden').replace('repository:',"'repository':"),checkout(parent,sha(9),'hidden').replace('repository:','repository :'),checkout(parent,sha(9),'hidden').replace(parent,'>-\n            '+parent),'      - uses: *hidden\n',checkout(parent,sha(9),'hidden').replace('uses: actions/checkout@v4','uses: >-\n          actions/checkout@v4'),checkout(parent,sha(9),'hidden').replace('repository: '+parent,'repository:\n            '+parent),'  hidden: &source\n    steps: *checkout\n','      - {uses: actions/checkout@v4}\n',`  hidden: {uses: ${parent}/.github/workflows/_worker.yml@${sha(9)}}\n`])assert.throws(()=>verifyWorkflowPins(changed({'ci.yml':files['ci.yml']+body}),g));
 });
+test('trailing uses comments preserve action and first-party source classification',()=>{
+ const action='      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2\n';
+ const f={'ci.yml':files['ci.yml']+action};assert.equal(verifyWorkflowPins(changed(f),g).references,2);
+ assert.equal(verifyWorkflowPins(changed({'ci.yml':files['ci.yml']+action.replace('# v2','# actions/checkout and cwru-non-academic/comment-only')}),g).references,2,'Comment text is never an executable source');
+ const commented=files['ci.yml'].replaceAll('uses: actions/checkout@v4','uses: actions/checkout@v4 # reviewed checkout');
+ assert.equal(verifyWorkflowPins(changed({'ci.yml':commented}),g).references,2);
+ assert.equal(refresh({files:{'ci.yml':commented}})['ci.yml'],commented.replace(sha(3),sha(8)),'Refresh retains comments and replaces only the actual registered ref');
+ const callee=`  reusable:\n    uses: ${parent}/.github/workflows/_python-validation.yml@${sha(3)} # reviewed callee\n`,pair={'ci.yml':files['ci.yml']+callee},r=register(pair,p=>p.repository===core?'core':'integration');
+ assert.equal(verifyWorkflowPins({...input,files:pair,roles:r},g).references,3);
+ assert.throws(()=>verifyWorkflowPins(changed({'ci.yml':files['ci.yml']+callee}),g),/Unclassified/,'A commented reusable call cannot hide outside the inventory');
+ for(const text of [files['ci.yml']+checkout(parent,sha(9),'hidden').replace('uses: actions/checkout@v4','uses: actions/checkout@v4 # extra'),files['ci.yml']+checkout(parent,sha(9),'hidden').replace('uses: actions/checkout@v4',"uses: 'actions/checkout@v4' # quoted"),files['ci.yml'].replace(`ref: ${sha(3)}`,`ref: ${sha(3)} # ref remains unsupported`)])assert.throws(()=>verifyWorkflowPins(changed({'ci.yml':text}),g));
+});
 test('parent lock, family execution configuration and both live branch objects remain required',()=>{
  for(const path of ['.github/scripts','.github/python-ci.json','.github/dev-propagation.json','.github/main-propagation.json'])assert.throws(()=>verifyWorkflowPins(input,{...g,object:(_r,ref,p)=>({sha:ref===sha(5)&&p===path?sha(9):sha(6)})}),/Pinned integration tooling/);
  assert.throws(()=>verifyWorkflowPins(input,{...g,get:()=>({encoding:'base64',content:Buffer.from(JSON.stringify({...nativeLock,source_commit:sha(9)})).toString('base64')})}),/another canonical source/);
