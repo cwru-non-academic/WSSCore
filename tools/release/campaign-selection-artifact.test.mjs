@@ -58,9 +58,31 @@ for(const [name,mutate] of Object.entries({
   'Core moved':f=>f.g.head=()=>sha(2)
 }))test(`producer artifact rejects ${name} without resolving again`,()=>{
   const f=fixture();f.save();mutate(f);
-  assert.throws(()=>prepareProducerTestSelection(f.g,f.m,f.policy,f.c,{env:f.env,resolveSnapshots:()=>assert.fail('no fallback')}));
-  assert.throws(()=>loadProducerTestSelection(f.g,f.m,f.policy,f.c,{env:f.env}));
-  assert.equal(f.state.reads,1);
+  const expected={
+    'duplicate artifacts':/Ambiguous producer test selection artifact/,
+    'expired artifact':/artifact identity\/expiry mismatch/,
+    'foreign artifact run':/artifact identity\/expiry mismatch/,
+    'foreign artifact source':/artifact identity\/expiry mismatch/,
+    'wrong creating attempt':/envelope\/creating attempt mismatch/,
+    'wrong envelope workflow':/envelope\/creating attempt mismatch/,
+    'corrupt selection':/Test selection digest mismatch/,
+    'extra envelope field':/envelope\/creating attempt mismatch/,
+    'policy read denied':/403 denied/,'artifact read denied':/403 denied/,'download denied':/403 denied/,
+    'immutable policy differs':/differs from immutable producer policy/,
+    'wrong runner attempt':/producer run\/source\/attempt mismatch/,
+    'foreign runner':/exact canonical producer runner/,
+    'manual producer':/producer run\/source\/attempt mismatch/,
+    'wrong run source':/producer run\/source\/attempt mismatch/,
+    'fork producer':/producer run\/source\/attempt mismatch/,
+    'wrong branch':/producer run\/source\/attempt mismatch/,
+    'finished producer':/producer run\/source\/attempt mismatch/,
+    'Core moved':/Core moved before producer test selection/
+  }[name];
+  assert.ok(expected,'Every mutation needs an expected rejection');
+  let fallbacks=0;
+  assert.throws(()=>prepareProducerTestSelection(f.g,f.m,f.policy,f.c,{env:f.env,resolveSnapshots:()=>{fallbacks++;assert.fail('no fallback');}}),expected);
+  assert.throws(()=>loadProducerTestSelection(f.g,f.m,f.policy,f.c,{env:f.env}),expected);
+  assert.equal(fallbacks,0);assert.equal(f.state.reads,1);assert.equal(f.state.heads,1);
 });
 test('paired freeze cannot resolve an active policy from current variables implicitly',()=>{
   const f=fixture();assert.throws(()=>freezeCampaign({},f.m,f.policy,f.c,{verificationOnly:true}),/authenticated durable/);

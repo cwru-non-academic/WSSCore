@@ -210,6 +210,10 @@
         "CLI_Matlab_WSS_Application"
       ]
     },
+    ".github/scripts/wss-ci/job-log.mjs": {
+      "origin": "core",
+      "path": "tools/release/job-log.mjs"
+    },
     ".github/scripts/wss-ci/preflight-proof.mjs": {
       "origin": "core",
       "path": "tools/release/preflight-proof.mjs"
@@ -281,6 +285,16 @@
       "repositories": [
         "CSharp_WSS_Integration_Lib",
         "CLI_CSharp_WSS_Application"
+      ]
+    },
+    ".github/scripts/tests/NativeReceiptAdapter.Tests.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/native-receipt/NativeReceiptAdapter.Tests.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Unity_WSS_Integration_Lib",
+        "GUI_Unity_WSS_Application"
       ]
     }
   }

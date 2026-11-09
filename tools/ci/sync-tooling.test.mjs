@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,renameSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,renameSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
@@ -30,9 +30,17 @@ test('synchronized consumer rejects code drift and a forged tooling lock',()=>{
     assert.ok(lock.files['.github/scripts/wss-ci/channels.mjs']);
     assert.ok(lock.files['.github/scripts/wss-ci/Channel.ps1']);
     const module=name=>pathToFileURL(join(root,'.github/scripts/wss-ci',name)).href;
-    for(const name of ['channels.mjs','verify.mjs','github.mjs','receipt.mjs','promotion.mjs','staging.mjs','preflight.mjs'])
+    for(const name of ['channels.mjs','entrypoint.mjs','job-log.mjs','producer-jobs.mjs','verify.mjs','github.mjs','receipt.mjs','promotion.mjs','staging.mjs','preflight.mjs'])
       execFileSync(process.execPath,['--input-type=module','-e',`await import(${JSON.stringify(module(name))})`],{cwd:root,stdio:'pipe'});
     assert.equal(execFileSync(process.execPath,['--input-type=module','-e',`await import(${JSON.stringify(module('verify.mjs'))})`,'wss-policy-assertion-only'],{cwd:root,encoding:'utf8'}),'','Importing through an assertion sentinel must not enter the channel CLI');
+    const alias=join(root,'copied tooling alias');
+    symlinkSync(join(root,'.github/scripts/wss-ci'),alias,process.platform==='win32'?'junction':'dir');
+    const producer=join(alias,'producer-jobs.mjs'),context=join(root,'producer context.json');
+    writeFileSync(context,JSON.stringify({jobs:[],contract:'macos-ble-v1'}));
+    assert.throws(()=>execFileSync(process.execPath,[producer,context],{cwd:root,stdio:'pipe'}),error=>{
+      assert.equal(error.status,1);assert.match(error.stderr.toString(),/Required unique successful job missing/);return true;
+    });
+    assert.equal(execFileSync(process.execPath,['--input-type=module','--eval','await import('+JSON.stringify(module('producer-jobs.mjs'))+')','--',producer],{cwd:root,encoding:'utf8'}),'');
     const bridgeTest=join(root,'channel invocation.ps1');
     writeFileSync(bridgeTest,`param([string]$Bridge)\n$ErrorActionPreference='Stop'\n. $Bridge\nforeach($channel in @('dev','main')){if((Get-WssCiChannelContext $channel).channel -cne $channel){throw 'Wrong copied channel'}}\n`);
     execFileSync('pwsh',['-NoProfile','-NonInteractive','-File',bridgeTest,join(root,'.github/scripts/wss-ci/Channel.ps1')],{cwd:root,stdio:'pipe'});
