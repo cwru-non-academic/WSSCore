@@ -22,6 +22,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.316'
@@ -62,11 +65,18 @@ jobs:
             $display=if($value -ceq '') {'<unset>'} else {$value}
             Write-Output "$name=$display"
           }
-      - run: node --test tools/release/*.test.mjs tools/ci/test-selection.test.mjs tools/ci/selected-test-source.test.mjs tools/ci/ci-test-selection.test.mjs tools/ci/ci-test-selection-cli.test.mjs tools/ci/producer-test-selection.test.mjs tools/ci/sync-tooling.test.mjs tools/ci/native-receipt-adapter.test.mjs tools/ci/adapter-pins.test.mjs tools/ci/restored-assets-invocations.test.mjs tools/ci/stage-guard-pins.test.mjs tools/ci/workflow-freeze-receiver.test.mjs tools/ci/unity-concurrency.test.mjs
+      - run: node --test tools/release/*.test.mjs tools/ci/test-selection.test.mjs tools/ci/selected-test-source.test.mjs tools/ci/ci-test-selection.test.mjs tools/ci/ci-test-selection-cli.test.mjs tools/ci/producer-test-selection.test.mjs tools/ci/sync-tooling.test.mjs tools/ci/native-receipt-adapter.test.mjs tools/ci/adapter-pins.test.mjs tools/ci/restored-assets-invocations.test.mjs tools/ci/stage-guard-pins.test.mjs tools/ci/workflow-freeze-receiver.test.mjs tools/ci/unity-concurrency.test.mjs tools/ci/fanout-repair-registration.test.mjs
       - name: Test pinned receipt owner against the generated receiver closure
         env:
           WSS_CORE_REFERENCE: ${{ github.workspace }}
         run: node --test .ci-origins/Python_WSS_Integration_Lib/.github/scripts/wss-ci/tests/receipt.test.mjs .ci-origins/Python_WSS_Integration_Lib/.github/scripts/wss-ci/tests/receipt-paths.test.mjs
+      - name: Test pinned common application sender contracts
+        shell: pwsh
+        run: ./.ci-origins/Python_WSS_Integration_Lib/.github/scripts/wss-ci/tests/ApplicationDispatch.Tests.ps1
+      - name: Test pinned sender process and diagnostic outcomes
+        run: node --test .ci-origins/Python_WSS_Integration_Lib/.github/scripts/wss-ci/tests/dispatch-proof.test.mjs .ci-origins/Python_WSS_Integration_Lib/.github/scripts/wss-ci/tests/application-dispatch-exit.test.mjs .ci-origins/Python_WSS_Integration_Lib/.github/scripts/wss-ci/tests/application-dispatch-diagnostics.test.mjs
+      - name: Test pinned observational phase diagnostics
+        run: python .ci-origins/Python_WSS_Integration_Lib/.github/scripts/wss-ci/tests/test_phase_diagnostics.py
       - name: Reject independently edited channel controller workflows
         run: node tools/ci/channel-workflows.mjs check
       - shell: pwsh

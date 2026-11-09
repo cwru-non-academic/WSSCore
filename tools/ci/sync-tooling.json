@@ -15,8 +15,8 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "8479d559a7a79f53fb3b8b6654abb53659ee5cbf",
-      "ref": "refs/heads/ci/tooling/8479d559a7a79f53fb3b8b6654abb53659ee5cbf"
+      "commit": "cedce0423ed86a2ac5249d70f078572e4426c935",
+      "ref": "refs/heads/ci/tooling/cedce0423ed86a2ac5249d70f078572e4426c935"
     }
   },
   "files": {
@@ -302,6 +302,16 @@
       "path": "tools/ci/shared/restored-assets/Universal-WssFiles.ps1",
       "repositories": [
         "CSharp_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/PhaseDiagnostics.ps1": {
+      "origin": "integration",
+      "path": ".github/scripts/wss-ci/PhaseDiagnostics.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "Unity_WSS_Integration_Lib",
+        "Python_WSS_Integration_Lib",
+        "Matlab_WSS_Integration_Lib"
       ]
     }
   }
