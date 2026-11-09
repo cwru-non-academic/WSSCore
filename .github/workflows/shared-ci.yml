@@ -62,7 +62,7 @@ jobs:
             $display=if($value -ceq '') {'<unset>'} else {$value}
             Write-Output "$name=$display"
           }
-      - run: node --test tools/release/*.test.mjs tools/ci/test-selection.test.mjs tools/ci/selected-test-source.test.mjs tools/ci/ci-test-selection.test.mjs tools/ci/ci-test-selection-cli.test.mjs tools/ci/producer-test-selection.test.mjs tools/ci/sync-tooling.test.mjs tools/ci/native-receipt-adapter.test.mjs tools/ci/adapter-pins.test.mjs tools/ci/restored-assets-invocations.test.mjs tools/ci/stage-guard-pins.test.mjs tools/ci/workflow-freeze-receiver.test.mjs
+      - run: node --test tools/release/*.test.mjs tools/ci/test-selection.test.mjs tools/ci/selected-test-source.test.mjs tools/ci/ci-test-selection.test.mjs tools/ci/ci-test-selection-cli.test.mjs tools/ci/producer-test-selection.test.mjs tools/ci/sync-tooling.test.mjs tools/ci/native-receipt-adapter.test.mjs tools/ci/adapter-pins.test.mjs tools/ci/restored-assets-invocations.test.mjs tools/ci/stage-guard-pins.test.mjs tools/ci/workflow-freeze-receiver.test.mjs tools/ci/unity-concurrency.test.mjs
       - name: Test pinned receipt owner against the generated receiver closure
         env:
           WSS_CORE_REFERENCE: ${{ github.workspace }}
