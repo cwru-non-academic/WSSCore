@@ -1,6 +1,7 @@
 // Source-copy locks and executable workflow pins are separate trust boundaries.
 // Refresh pins only after committing/verifying their owning integration tools.
 import {execFileSync} from 'node:child_process';
+import {parseDocument,isMap,isSeq,isScalar,isAlias} from './vendor/yaml/dist/index.js';
 import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {isEntrypoint} from '../release/entrypoint.mjs';
@@ -140,73 +141,74 @@ export function assertStageGuardPins(input,g){
   return report;
 }
 
-// Closed source inventory for the current workflow dialect. Every checkout is
-// visited, including implicit self checkouts, repeated jobs and dynamic sources.
-// Offsets are retained so refresh changes only current tooling literals.
+// The upstream parser owns YAML syntax and ranges. This inventory owns only the
+// workflow source roles; it never reparses run strings as workflow mappings.
 export function workflowPins(text,repositories,{repository='@self'}={}){
-  const result=[],lines=text.split(/(?<=\n)/),known=new Set(repositories);let offset=0,job='',inJobs=false;
-  const value=(line,key)=>new RegExp(`^\\s*${key}:\\s*(.+?)\\s*$`).exec(line.trimEnd())?.[1];
-  const add=(line,ref,extra)=>{const start=offset+line.indexOf(ref);result.push({job,ref,...(fullSha(ref)?{sha:ref}:{}),...extra,start,end:start+ref.length});};
-  for(let i=0;i<lines.length;i++){
-    const line=lines[i];
-    // A trailing YAML comment is not part of a bare action/workflow locator.
-    // Parse every uses role from the same view, retaining original write offsets.
-    const usesLine=/^\s*(?:-\s*)?uses\s*:/.test(line)?line.replace(/[ \t]+#[^\r\n]*/,''):line;
-    if(/^jobs:/.test(line))inJobs=true;else if(/^[A-Za-z][A-Za-z0-9_-]*:/.test(line))inJobs=false;
-    requireThat(!(inJobs&&/^  [A-Za-z0-9_-]+:\s*\S/.test(line)),'Flow job mappings are not supported source roles');
-    requireThat(!/^\s*(?:-\s*)?(?:[A-Za-z0-9_-]+:|<<:)\s*[*&]/.test(line)&&!/^\s*<<:/.test(line),'YAML aliases/anchors are not supported source roles');
-    requireThat(!/^\s*(?:jobs|steps):\s*\S/.test(line)&&!/^\s*-\s*\{[^\r\n]*uses:/.test(line),'Flow job/step mappings are not supported source roles');
-    requireThat(!(inJobs&&/^\s*(?:-\s*)?(?:["'][^"']+["']\s*:|(?:uses|repository|ref|path)\s+:)/.test(line)),'Quoted or noncanonical source keys are not supported');
-    if(inJobs&&/^\s*(?:-\s*)?uses\s*:/.test(line))requireThat(/^\s*(?:- )?uses:\s*(?:[A-Za-z0-9_.-]+\/|\.\/)[^\s]+\s*$/.test(usesLine.trimEnd()),'Noncanonical uses scalar/sequence syntax is not supported');
-    const jobMatch=/^  ([A-Za-z0-9_-]+):\s*$/.exec(line.trimEnd());if(jobMatch)job=jobMatch[1];
-    const checkout=/^\s*(?:- )?uses:\s*actions\/checkout@[^\s]+\s*$/.test(usesLine.trimEnd());
-    if(/^\s*(?:- )?uses:/.test(usesLine)&&/actions\/checkout/i.test(usesLine))requireThat(checkout,'Unsupported checkout source syntax');
+  const document=parseDocument(text,{schema:'failsafe',keepSourceTokens:true,uniqueKeys:true,strict:true});
+  requireThat(document.errors.length===0,`Invalid workflow YAML: ${document.errors.map(e=>e.message).join('; ')}`);
+  requireThat(document.warnings.length===0,'Unsupported workflow YAML directive/tag');
+  const anchors=new Map(),anchorNodes=new WeakSet();let expansions=0,visited=0;
+  const unwrap=node=>{const seen=new Set();while(isAlias(node)){requireThat(!seen.has(node),'Cyclic workflow YAML alias');seen.add(node);node=node.resolve(document);requireThat(node,'Unresolved workflow YAML alias');}return node;};
+  const inspect=(node,parents=new Set())=>{
+    if(!node)return;requireThat(++visited<=100000&&parents.size<64,'Workflow YAML expansion/depth limit exceeded');
+    requireThat(!node.tag,'YAML tags are unsupported source roles');
+    if(node.anchor&&!anchorNodes.has(node)){requireThat(!anchors.has(node.anchor),'Duplicate workflow YAML anchor');anchors.set(node.anchor,node);anchorNodes.add(node);}
+    requireThat(!parents.has(node),'Cyclic workflow YAML alias');const next=new Set(parents).add(node);
+    if(isAlias(node)){requireThat(++expansions<=1000,'Workflow YAML alias expansion limit exceeded');const resolved=node.resolve(document);requireThat(resolved,'Unresolved workflow YAML alias');inspect(resolved,next);}
+    else if(isMap(node))for(const pair of node.items){requireThat(isScalar(pair.key)&&typeof pair.key.value==='string'&&pair.key.value!=='<<','Workflow mapping keys must be unique scalar strings, without merges');inspect(pair.key,next);inspect(pair.value,next);}
+    else if(isSeq(node))for(const item of node.items)inspect(item,next);
+  };
+  inspect(document.contents);
+  requireThat(isMap(document.contents),'Workflow must be one YAML mapping');
+  const get=(map,key)=>{map=unwrap(map);return isMap(map)?map.get(key,true):undefined;};
+  const value=node=>{node=unwrap(node);requireThat(isScalar(node)&&typeof node.value==='string'&&node.value.length>0,'Workflow source requires a nonempty string scalar');return node.value;};
+  const span=node=>{
+    node=unwrap(node);const result=value(node);requireThat(!['BLOCK_LITERAL','BLOCK_FOLDED'].includes(node.type)&&!/[\r\n]/.test(text.slice(node.range[0],node.range[1])),'Workflow source requires a same-line scalar');
+    const quoted=['QUOTE_SINGLE','QUOTE_DOUBLE'].includes(node.type);return {value:result,start:node.range[0]+(quoted?1:0),end:node.range[1]-(quoted?1:0)};
+  };
+  const result=[],jobs=unwrap(get(document.contents,'jobs'));requireThat(isMap(jobs),'Workflow jobs must be an explicit mapping');
+  const sourceFields=new Set(['WSS_RECEIPT_CORE_SHA','WSS_RECEIPT_ENGINE_SHA','WSS_RECEIPT_VALIDATOR_SHA','tools_sha','tooling_sha','wrapper_sha','integration_sha','cli_sha','gui_sha','fixture_sha']);
+  const add=(job,ref,extra,start,end,position=start)=>result.push({position,job,ref,...(fullSha(ref)?{sha:ref}:{}),...extra,start,end});
+  const sourceFieldsIn=(job,node,position)=>{
+    if(isAlias(node))position??=node.range[0];node=unwrap(node);
+    if(isMap(node))for(const pair of node.items){if(sourceFields.has(pair.key.value)){const field=span(pair.value);add(job,field.value,{kind:'source-field',field:pair.key.value,repository},field.start,field.end,position??field.start);}else sourceFieldsIn(job,pair.value,position);}
+    else if(isSeq(node))for(const item of node.items)sourceFieldsIn(job,item,position);
+  };
+  const inspectUses=(job,map,step,position)=>{
+    const node=get(map,'uses');if(!node)return;const uses=span(node),locator=uses.value;
+    requireThat(/^(?:[A-Za-z0-9_.-]+\/|\.\/|docker:\/\/)[^\s]+$/.test(locator),'Unsupported uses source scalar');
+    const checkout=/^actions\/checkout@[^\s]+$/.test(locator);
+    if(/actions\/checkout/i.test(locator))requireThat(checkout,'Unsupported checkout source syntax');
     if(checkout){
-      // A named step can place `uses` after `name`/`if`; the next step or job
-      // terminates its mapping. Never borrow a ref from the following checkout.
-      const indentation=line.search(/\S/)-(line.trimStart().startsWith('- ')?0:2);let end=i+1;
-      while(end<lines.length&&(!lines[end].trim()||lines[end].search(/\S/)>indentation)&&!new RegExp(`^ {${indentation}}- `).test(lines[end]))end++;
-      requireThat(!lines.slice(i+1,end).some(l=>/^\s*with:\s*\S/.test(l)),'Inline checkout mappings are not supported source roles');
-      const fields={};let localOffset=offset+line.length;
-      for(let j=i+1;j<end;j++){
-        for(const key of ['repository','ref','path']){const v=value(lines[j],key);if(new RegExp(`^\\s*${key}:`).test(lines[j]))requireThat(v!==undefined,'Checkout source fields require same-line scalars');if(v!==undefined){requireThat(!Object.hasOwn(fields,key),`Duplicate checkout ${key}`);fields[key]={value:v,start:localOffset+lines[j].indexOf(v)};}}
-        localOffset+=lines[j].length;
-      }
-      if(fields.repository)requireThat(/^[A-Za-z0-9_/-]+$/.test(fields.repository.value)||fields.repository.value==='${{ github.repository }}','Unsupported checkout repository scalar');
+      requireThat(step,'Checkout uses must belong to a step mapping');
+      const inputs=unwrap(get(map,'with'));requireThat(inputs===undefined||isMap(inputs),'Checkout with must be an explicit mapping');
+      const fields=Object.fromEntries(['repository','ref','path'].filter(key=>get(inputs,key)!==undefined).map(key=>[key,span(get(inputs,key))]));
+      if(fields.repository)requireThat(/^[A-Za-z0-9_./-]+$/.test(fields.repository.value)||fields.repository.value==='${{ github.repository }}','Unsupported checkout repository scalar');
       const repo=fields.repository?.value||repository,ref=fields.ref?.value||'@event',path=fields.path?.value||'.';
-      requireThat(!fields.repository||fields.ref,'Explicit repository checkout requires explicit ref');
-      requireThat(/^[A-Za-z0-9_./-]+$/.test(path),'Checkout source path must be literal');
-      if(known.has(repo)||repo===repository||repo==='${{ github.repository }}'||repo.includes('cwru-non-academic/')||repo.includes('${{')){
-        result.push({job,repository:repo,ref,...(fullSha(ref)?{sha:ref}:{}),kind:'checkout',checkoutPath:path,start:fields.ref?.start??offset,end:fields.ref?fields.ref.start+ref.length:offset});
-      }
+      requireThat(!fields.repository||fields.ref,'Explicit repository checkout requires explicit ref');requireThat(/^[A-Za-z0-9_./-]+$/.test(path),'Checkout source path must be literal');
+      add(job,ref,{repository:repo,kind:'checkout',checkoutPath:path},fields.ref?.start??uses.start,fields.ref?.end??uses.start,position??fields.ref?.start??uses.start);
     }
-    const use=/^\s*(?:- )?uses:\s*((?:cwru-non-academic\/[A-Za-z0-9_-]+\/|\.\/)\.github\/workflows\/[A-Za-z0-9_-]+\.ya?ml)(?:@([^\s]+))?\s*$/.exec(usesLine.trimEnd());
-    const action=/^\s*(?:- )?uses:\s*(\.\/(?:[A-Za-z0-9_.-]+\/)*\.github\/actions\/[A-Za-z0-9_-]+)\s*$/.exec(usesLine.trimEnd());
-    if(action)result.push({job,repository,ref:'@self',kind:'local-action',action:action[1],start:offset,end:offset});
-    if(/^\s*(?:- )?uses:/.test(usesLine)&&/cwru-non-academic\/|uses:\s*\.\//.test(usesLine))requireThat(use||action,'Unclassified first-party action or reusable source');
+    const use=/^((?:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/|\.\/)\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml)(?:@([^\s]+))?$/.exec(locator),action=/^(\.\/(?:[A-Za-z0-9_.-]+\/)*\.github\/actions\/[A-Za-z0-9_-]+)$/.exec(locator);
+    if(action)add(job,'@self',{repository,kind:'local-action',action:action[1]},uses.start,uses.start,position??uses.start);
+    if(/cwru-non-academic\/|^\.\//i.test(locator))requireThat(use||action,'Unclassified first-party action or reusable source');
     if(use){const local=use[1].startsWith('./'),workflow=local?use[1].slice(2):use[1].split('/').slice(2).join('/'),repo=local?repository:use[1].split('/').slice(0,2).join('/'),ref=local?'@self':use[2];
-      requireThat(local||fullSha(ref),'External first-party reusable workflows require immutable full SHAs');
-      if(local)result.push({job,repository:repo,ref,kind:'local-workflow',workflow,start:offset,end:offset});
-      else add(line,ref,{repository:repo,kind:'workflow',workflow});
+      requireThat(!step,'Reusable workflow uses must belong to a job mapping');requireThat(local||fullSha(ref),'External reusable workflows require immutable full SHAs');
+      add(job,ref,{repository:repo,kind:local?'local-workflow':'workflow',workflow,...(!local?{valuePrefix:`${repo}/${workflow}@`}:{})},uses.start,uses.end,position??uses.start);
     }
-    const field=/^\s+(WSS_RECEIPT_(?:CORE|ENGINE|VALIDATOR)_SHA|tools_sha|tooling_sha|wrapper_sha|integration_sha|cli_sha|gui_sha|fixture_sha):\s*(.+?)\s*$/.exec(line.trimEnd());
-    if(field&&!field[2].startsWith('{type:')&&!field[2].startsWith('{required:'))add(line,field[2],{kind:'source-field',field:field[1],repository});
-    // Only the exact independent rejection guard is writable. Missing, duplicate,
-    // case-insensitive or expression-substituted assertions fail inventory checks.
-    const guard=/^\s*if \(\$lock\.source_repository -cne 'cwru-non-academic\/WSSCore' -or \$lock\.source_commit -cne '([a-f0-9]{40})' -or \$lock\.source_ref -cne "refs\/heads\/ci\/tooling\/\$\(\$lock\.source_commit\)"\) \{ throw 'Unexpected reviewed package verifier lock\.' \}\s*$/.exec(line.trimEnd());
-    if(guard)add(line,guard[1],{kind:'expected-core',repository:CORE});
-    offset+=line.length;
+  };
+  for(const pair of jobs.items){
+    const job=pair.key.value,body=unwrap(pair.value);requireThat(isMap(body),'Workflow job must be an explicit mapping');inspectUses(job,body,false);sourceFieldsIn(job,body);
+    const steps=unwrap(get(body,'steps'));if(steps===undefined)continue;requireThat(isSeq(steps),'Workflow steps must be an explicit sequence');
+    for(const item of steps.items){const step=unwrap(item),position=isAlias(item)?item.range[0]:undefined;requireThat(isMap(step),'Workflow step must be an explicit mapping');inspectUses(job,step,true,position);
+
+    }
   }
-  const occurrences=new Map();
-  return result.map(pin=>{const key=sourceKey(pin),occurrence=occurrences.get(key)||0;occurrences.set(key,occurrence+1);return {...pin,occurrence};});
+  const occurrences=new Map();return result.sort((a,b)=>a.position-b.position).map(({position,...pin})=>{const key=sourceKey(pin),occurrence=occurrences.get(key)||0;occurrences.set(key,occurrence+1);return {...pin,occurrence};});
 }
 export function replacePins(text,pins,replacements){
-  for(const pin of [...pins].sort((a,b)=>b.start-a.start)){
-    const sha=pin.replacement||replacements[pin.repository];requireThat(fullSha(sha),'Replacement requires an immutable source revision');
-    requireThat(pin.end>pin.start,'Cannot replace an implicit source');
-    text=text.slice(0,pin.start)+sha+text.slice(pin.end);
-  }
-  return text;
+  const edits=new Map();
+  for(const pin of pins){const sha=pin.replacement||replacements[pin.repository];requireThat(fullSha(sha),'Replacement requires an immutable source revision');requireThat(pin.end>pin.start,'Cannot replace an implicit source');const key=JSON.stringify([pin.start,pin.end]),replacement=(pin.valuePrefix||'')+sha;requireThat(!edits.has(key)||edits.get(key).replacement===replacement,'Conflicting replacements for shared YAML source span');edits.set(key,{start:pin.start,end:pin.end,replacement});}
+  let previous=text.length;for(const edit of [...edits.values()].sort((a,b)=>b.start-a.start)){requireThat(edit.end<=previous,'Overlapping workflow source replacements');text=text.slice(0,edit.start)+edit.replacement+text.slice(edit.end);previous=edit.start;}return text;
 }
 const sourceKey=p=>canonical({job:p.job,kind:p.kind,repository:p.repository,occurrence:p.occurrence||0,...(p.checkoutPath?{path:p.checkoutPath}:{}),...(p.workflow?{workflow:p.workflow}:{}),...(p.field?{field:p.field}:{}),...(p.action?{action:p.action}:{})});
 const toolingRoles=new Set(['core','integration','engine','expected-core','expected-engine','expected-validator']);
@@ -257,6 +259,10 @@ function descriptor(repository,profiles,lock){
 function verifyPins(input,g,candidate){
   const {repository,profiles,lock,files}=input,{profile,parent}=descriptor(repository,profiles,lock),all=classifyWorkflowSources(input),integration=lock.origins?.integration;
   const cache=new Map(),object=(repo,ref,path)=>{const key=JSON.stringify([repo,ref,path]);if(!cache.has(key)){const value=g.object(repo,ref,path);requireThat(value&&fullSha(value.sha),'Expected immutable source object');cache.set(key,value.sha);}return cache.get(key);};
+  const extraBlobs=(input.roles?.parent_executable_blobs??pinRoles.parent_executable_blobs??[]).filter(entry=>entry.target===repository);
+  requireThat(new Set(extraBlobs.map(entry=>entry.repository)).size===extraBlobs.length,'Duplicate parent executable blob registration');
+  for(const entry of extraBlobs)requireThat(entry.repository===parent&&Array.isArray(entry.paths)&&entry.paths.length>0&&new Set(entry.paths).size===entry.paths.length&&entry.paths.every(path=>typeof path==='string'&&!path.split('/').includes('..')),'Invalid parent executable blob registration');
+  const regularObject=(repo,ref,path)=>{const value=g.object(repo,ref,path);requireThat(value?.type==='blob'&&['100644','100755'].includes(value.mode)&&fullSha(value.sha)&&(value.path===undefined||value.path===path),'Expected registered regular executable blob: '+path);return value.sha;};
   let heads;const ownerPins=[];
   for(const pin of all){
     if(!toolingRoles.has(pin.role))continue;
@@ -277,6 +283,8 @@ function verifyPins(input,g,candidate){
       requireThat(fullSha(head),'Invalid current integration source');
       for(const path of ['.github/scripts',integrationConfiguration(profile.family),'.github/dev-propagation.json','.github/main-propagation.json',...(pin.workflow?['.github/workflows',pin.workflow]:[])])
         requireThat(object(parent,pin.ref,path)===object(parent,head,path),`Pinned integration tooling differs from ${candidate?'future':'current verified'} dev/main: ${pin.file} / ${path}`);
+      for(const entry of extraBlobs)for(const path of entry.paths)
+        requireThat(regularObject(parent,pin.ref,path)===regularObject(parent,head,path),`Pinned integration executable blob differs from ${candidate?'future':'current verified'} dev/main: ${pin.file} / ${path}`);
     }
   }
   // Every ordinary invocation of an owner in a receiver binds to one source,
@@ -296,6 +304,7 @@ export function refreshWorkflowPins(input){
   return Object.fromEntries(Object.entries(files).map(([file,text])=>{
     if(file==='release-receipt.yml')return [file,text]; // Existing canonical renderer alone writes receipts.
     const pins=all.filter(p=>p.file===file&&['core','expected-core','integration'].includes(p.role));
+    for(const pin of pins){const replacement=(pin.valuePrefix||'')+replacements[pin.repository];for(const consumer of all.filter(p=>p.file===file&&p.start===pin.start&&p.end===pin.end&&!pins.includes(p)))requireThat(replacement===(consumer.valuePrefix||'')+consumer.ref,'Conflicting preserved consumer of shared YAML source span');}
     return [file,replacePins(text,pins,replacements)];
   }));
 }
