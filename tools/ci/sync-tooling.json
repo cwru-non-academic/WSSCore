@@ -15,8 +15,8 @@
     "integration": {
       "repository": "cwru-non-academic/Python_WSS_Integration_Lib",
       "workspace": "Python_WSS_Integration_Lib",
-      "commit": "45d571bef78b1cee9d6497e20448bed7d353644c",
-      "ref": "refs/heads/ci/tooling/45d571bef78b1cee9d6497e20448bed7d353644c"
+      "commit": "3c022aec7633211fc0da44ef5b91ebabd7defb3b",
+      "ref": "refs/heads/ci/tooling/3c022aec7633211fc0da44ef5b91ebabd7defb3b"
     }
   },
   "files": {
