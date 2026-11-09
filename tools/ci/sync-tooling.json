@@ -229,6 +229,59 @@
     ".github/scripts/wss-ci/admission-context.mjs": {
       "origin": "core",
       "path": "tools/release/admission-context.mjs"
+    },
+    ".github/scripts/wss-ci/restored-assets/Verify-WssOutput.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/restored-assets/Verify-WssOutput.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/restored-assets/Universal-WssFiles.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/restored-assets/Universal-WssFiles.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/restored-assets/RestoredPackageAssets.cs": {
+      "origin": "core",
+      "path": "tools/ArtifactBuild/RestoredPackageAssets.cs",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/restored-assets/RestoredAssets.Tests.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/restored-assets/RestoredAssets.Tests.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/restored-assets/RestoredAssets.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/restored-assets/RestoredAssets.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application",
+        "Python_WSS_Integration_Lib"
+      ]
+    },
+    ".github/scripts/wss-ci/compiled-tests/CompiledCSharpTests.ps1": {
+      "origin": "core",
+      "path": "tools/ci/shared/compiled-tests/CompiledCSharpTests.ps1",
+      "repositories": [
+        "CSharp_WSS_Integration_Lib",
+        "CLI_CSharp_WSS_Application"
+      ]
     }
   }
 }

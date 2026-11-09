@@ -84,3 +84,18 @@ test('generated receipt separates immutable bootstrap, Core and native validator
   assert.throws(()=>verifyWorkflowPins(data,{...reader,get:()=>({encoding:'base64',content:Buffer.from(JSON.stringify({...locked,repository:parent,source_commit:sha(8)})).toString('base64')})}),/another canonical source/);
   assert.equal(refreshWorkflowPins({...data,adapter:sha(8),adapterLock:{...locked,repository:parent}})['release-receipt.yml'],generated);
 });
+
+test('Python preflight pins orchestration separately from current or historical product checkouts',()=>{
+ const workflow=`jobs:\n  tooling:\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: \${{ github.sha }}\n          path: source\n      - uses: actions/checkout@v4\n        with:\n          repository: ${parent}\n          ref: ${sha(3)}\n          path: tools\n  validate:\n    needs: tooling\n    uses: ${parent}/.github/workflows/_python-validation.yml@${sha(3)}\n    with:\n      tools_sha: \${{ needs.tooling.outputs.tools_sha }}\n      wrapper_sha: \${{ inputs.wrapper_sha }}\n`;
+ const runtime=`steps:\n  - uses: actions/checkout@v4\n    with:\n      repository: ${parent}\n      ref: \${{ inputs.wrapper_sha }}\n      path: wrapper\n  - uses: actions/checkout@v4\n    with:\n      repository: ${parent}\n      ref: \${{ inputs.tools_sha }}\n      path: tools\n`;
+ const data={repository,profiles,lock,files:{...files,'wss-preflight.yml':workflow,'_python-validation.yml':runtime}};
+ assert.equal(verifyWorkflowPins(data,g).references,4);
+ const changed=refreshWorkflowPins({...data,adapter:sha(8),adapterLock:{...lock,repository:parent}});
+ assert.equal((changed['wss-preflight.yml'].match(new RegExp(sha(8),'g'))||[]).length,2);
+ assert.equal(changed['_python-validation.yml'],runtime,'Authenticated runtime product/tooling arguments remain caller-bound, not rewritten as independent pins');
+ assert.ok(changed['wss-preflight.yml'].includes('wrapper_sha: ${{ inputs.wrapper_sha }}'));
+ for(const path of ['.github/scripts','.github/python-ci.json','.github/workflows',' .github/workflows/_python-validation.yml'.trim()]){
+  assert.throws(()=>verifyWorkflowPins(data,{...g,object:(_r,ref,p)=>({sha:ref===sha(3)&&p===path?sha(9):sha(6)})}),/Pinned integration tooling/);
+ }
+ assert.throws(()=>workflowPins(workflow.replace(`_python-validation.yml@${sha(3)}`,'_python-validation.yml@main'),[core,parent]),/immutable/);
+});

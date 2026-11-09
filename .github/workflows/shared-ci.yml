@@ -1,10 +1,10 @@
 name: Common CI contracts
 on:
   pull_request:
-    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml', '.github/workflows/test-variable-snapshot-readiness.yml']
+    paths: ['tools/ArtifactBuild/**', 'tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml', '.github/workflows/test-variable-snapshot-readiness.yml']
   push:
     branches: [dev, main]
-    paths: ['tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml', '.github/workflows/test-variable-snapshot-readiness.yml']
+    paths: ['tools/ArtifactBuild/**', 'tools/ci/**', 'tools/release/**', '.github/workflows/shared-ci.yml', '.github/workflows/propagate-python.yml', '.github/workflows/propagate-unity.yml', '.github/workflows/propagate-matlab.yml', '.github/workflows/dev-propagation.yml', '.github/workflows/main-propagation.yml', '.github/workflows/dev-release.yml', '.github/workflows/main-release.yml', '.github/workflows/artifacts.yml', '.github/workflows/test-variable-snapshot-readiness.yml']
 permissions:
   contents: read
 jobs:
@@ -22,6 +22,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.316'
+      - name: Verify restored assets and output propagation without native execution
+        shell: pwsh
+        run: |
+          dotnet build -p:DisablePackageAssetsCache=true tools/ArtifactBuild/ArtifactBuild.csproj -p:RestoreLockedMode=true -p:TreatWarningsAsErrors=true
+          if ($LASTEXITCODE -ne 0) { throw 'ArtifactBuild helper build failed.' }
+          ./tools/ci/shared/restored-assets/RestoredAssets.Tests.ps1 -HelperPath ./tools/ArtifactBuild/RestoredPackageAssets.cs
+          ./tools/ci/shared/restored-assets/RestoreLayout.Tests.ps1 -HelperPath ./tools/ArtifactBuild/RestoredPackageAssets.cs
+          ./tools/ci/shared/restored-assets/PrebuiltPackageOverride.Tests.ps1 -ArtifactBuildAssembly ./tools/ArtifactBuild/bin/Debug/net9.0/ArtifactBuild.dll
       - name: Read pinned integration reference
         id: integration
         shell: pwsh
@@ -51,7 +62,7 @@ jobs:
             $display=if($value -ceq '') {'<unset>'} else {$value}
             Write-Output "$name=$display"
           }
-      - run: node --test tools/release/*.test.mjs tools/ci/sync-tooling.test.mjs tools/ci/adapter-pins.test.mjs tools/ci/stage-guard-pins.test.mjs tools/ci/test-selection.test.mjs tools/ci/repository-test-variables.test.mjs tools/ci/test-variable-readiness.test.mjs tools/ci/test-installation-scope.test.mjs tools/ci/selected-test-source.test.mjs tools/ci/ci-test-selection.test.mjs tools/ci/ci-test-selection-cli.test.mjs tools/ci/producer-test-selection.test.mjs tools/ci/workflow-freeze-receiver.test.mjs
+      - run: node --test tools/release/*.test.mjs tools/ci/sync-tooling.test.mjs tools/ci/adapter-pins.test.mjs tools/ci/restored-assets-invocations.test.mjs tools/ci/stage-guard-pins.test.mjs tools/ci/test-selection.test.mjs tools/ci/repository-test-variables.test.mjs tools/ci/test-variable-readiness.test.mjs tools/ci/test-installation-scope.test.mjs tools/ci/selected-test-source.test.mjs tools/ci/ci-test-selection.test.mjs tools/ci/ci-test-selection-cli.test.mjs tools/ci/producer-test-selection.test.mjs tools/ci/workflow-freeze-receiver.test.mjs
       - name: Test pinned receipt owner against the generated receiver closure
         env:
           WSS_CORE_REFERENCE: ${{ github.workspace }}

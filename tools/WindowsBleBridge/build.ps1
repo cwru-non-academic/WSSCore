@@ -83,6 +83,6 @@ Invoke-Checked $msbuild (@((Join-Path $root 'native\WssBleWindows.vcxproj'), '/t
 if ($ProductionOnly) { return }
 Invoke-Checked $msbuild (@((Join-Path $repo 'tests\BLE\Windows\NativeTestShim\WssBleWindows.TestShim.vcxproj'), '/t:Build', '/m') + $properties)
 # Rebuild only the two consumers to stage their DISTINCT native libraries.
-Invoke-Checked 'dotnet' @('build', (Join-Path $repo 'tests\BLE\Windows\ScanConsumer\ScanConsumer.csproj'), '-c', $Configuration)
-Invoke-Checked 'dotnet' @('build', (Join-Path $repo 'tests\BLE\Windows\WSS.BLE.Windows.Tests\WSS.BLE.Windows.Tests.csproj'), '-c', $Configuration)
+Invoke-Checked 'dotnet' @('build', (Join-Path $repo 'tests\BLE\Windows\ScanConsumer\ScanConsumer.csproj'), '-c', $Configuration, '-p:DisablePackageAssetsCache=true')
+Invoke-Checked 'dotnet' @('build', (Join-Path $repo 'tests\BLE\Windows\WSS.BLE.Windows.Tests\WSS.BLE.Windows.Tests.csproj'), '-c', $Configuration, '-p:DisablePackageAssetsCache=true')
 'Bridge and isolated test shim built. Run tests and the production scan consumer separately.'
