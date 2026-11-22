@@ -37,9 +37,7 @@ export function renderChannelWorkflow(operation,channel,{activation=channelActiv
 }
 // The integration owner owns both renderer and template. Require its retained
 // exact commit before importing; Core does not duplicate receiver semantics.
-export async function renderConsumerReceipt(repository,targetRoot,workspace,validator) {
-  checkCopiedTooling(repository,targetRoot,workspace);
-  const lock=JSON.parse(readFileSync(resolve(targetRoot,'.github/scripts/wss-ci.lock.json'),'utf8'));
+export async function renderReceiptFromLock(repository,lock,workspace,validator=lock.origins.integration.commit) {
   const origin=lock.origins.integration,ownerRoot=resolve(workspace,origin.workspace);
   const git=(...args)=>execFileSync('git',['-C',ownerRoot,...args],{encoding:'utf8'}).trim();
   requireThat(git('rev-parse','HEAD')===origin.commit&&git('status','--porcelain','--untracked-files=all')==='','Receipt renderer requires exact clean immutable integration owner');
@@ -49,6 +47,15 @@ export async function renderConsumerReceipt(repository,targetRoot,workspace,vali
   const matches=Object.entries(receiptProfiles).filter(([,p])=>p.target.repository===`cwru-non-academic/${repository}`);
   requireThat(matches.length===1&&lock.repository===matches[0][1].target.repository,'Unknown receipt target');
   return renderReceiptWorkflow(matches[0][0],{core:lock.source_commit,engine:origin.commit,validator});
+}
+export async function renderConsumerReceipt(repository,targetRoot,workspace,validator) {
+  checkCopiedTooling(repository,targetRoot,workspace);
+  const lock=JSON.parse(readFileSync(resolve(targetRoot,'.github/scripts/wss-ci.lock.json'),'utf8'));
+  return renderReceiptFromLock(repository,lock,workspace,validator);
+}
+export function renderedCoreWorkflows() {
+  return [...['dev','main'].flatMap(channel=>['propagation','acceptance'].map(operation=>renderChannelWorkflow(operation,channel))),
+    ...Object.keys(INITIAL_HANDOFF_PROFILES).map(family=>renderInitialWorkflow(family))];
 }
 async function main(){
   const command=process.argv[2];
@@ -61,9 +68,7 @@ async function main(){
     return;
   }
   if(!['write','check'].includes(command)||process.argv.length!==3)throw Error('Usage: channel-workflows.mjs write|check');
-  const rendered=[...['dev','main'].flatMap(channel=>['propagation','acceptance'].map(operation=>renderChannelWorkflow(operation,channel))),
-    ...Object.keys(INITIAL_HANDOFF_PROFILES).map(family=>renderInitialWorkflow(family))];
-  for(const result of rendered){
+  for(const result of renderedCoreWorkflows()){
     const path=resolve(root,result.path);
     if(command==='write'){mkdirSync(dirname(path),{recursive:true});writeFileSync(path,result.text);}
     else if(readFileSync(path,'utf8').replace(/\r\n/g,'\n')!==result.text)throw Error(`Channel workflow drift: ${result.path}`);
