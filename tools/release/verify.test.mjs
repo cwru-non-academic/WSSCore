@@ -46,6 +46,7 @@ function fixture(channel='dev') {
     e.targets[t.id].receipt_sha256=bytesDigest(e.targets[t.id].receipt_bytes);
   });
   e.producer.run.head_branch=channel;
+  e.producer.run.created_at='2026-10-28T23:00:00Z';
   for(const target of Object.values(e.targets)){
     target.pr.base.ref=channel;target.normal_run.head_branch=channel;target.emitter_run.head_branch=channel;
     for(const preflight of target.preflights)preflight.run.head_branch=channel;
@@ -155,7 +156,10 @@ function collectorFixture(f) {
       if(path.includes('/git/matching-refs/')||path.endsWith('/releases'))return [];
       const repo=path.split('/').slice(1,3).join('/'),t=target(repo);
       if(path.includes('/artifacts'))return path.includes('/runs/'+t.preflights[0].run.id+'/')?artifacts(t):[t.artifact];
-      if(path.includes('/release-receipt.yml/'))return[t.emitter_run];
+      if(path.includes('/release-receipt.yml/')) {
+        assert.ok(path.endsWith('&created=%3E%3D2026-10-28T23%3A00%3A00Z'));
+        return [t.emitter_run];
+      }
       return[t.normal_run];
     },
     get:path=>{const t=target(path.split('/').slice(1,3).join('/'));return path.includes('/actions/artifacts/')?artifacts(t).find(a=>String(a.id)===path.split('/').at(-1)):t.pr;},

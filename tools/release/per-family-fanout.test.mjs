@@ -71,6 +71,25 @@ test('another family becoming ready does not invalidate saved authorization for 
   const f=fixture(),j=prepareStage(f.g,f.p,'9',1);f.state.saved=j;f.state.merged.add('unity');
   executeStage(f.g,f.g,f.p,j);assert.equal(f.commands.length,1);assert.ok(f.commands[0].some(x=>x.includes(f.python.repository)));
 });
+for(const channel of ['dev','main'])test(`${channel} stage finds matching journals even if an earlier scheduled run was queued`,()=>{
+  const f=fixture(true,channel), first=prepareStage(f.g,f.p,'9',1),pages=f.g.pages;
+  const artifact=`wss-${channel}-stage-intents-${f.p.candidate.run_id}-9-a1`;
+  f.state.saved=first;
+  f.g.pages=(path,key)=>{
+    if(!path.startsWith(`repos/${CORE}/`))return pages(path,key);
+    assert.equal(key,'artifacts');
+    assert.equal(path,`repos/${CORE}/actions/artifacts`);
+    return [{name:'unrelated-artifact',workflow_run:{id:99}}, {name:artifact,expired:false,workflow_run:{id:9,head_sha:sha(1)}}];
+  };
+  f.g.run=(repo,id)=>{
+    assert.equal(repo,CORE);
+    assert.equal(id,'9');
+    return {id:9,path:`.github/workflows/${channel}-propagation.yml`,head_branch:'main',head_sha:sha(1),repository:{full_name:CORE},head_repository:{full_name:CORE},created_at:'2025-12-31T23:59:00Z'};
+  };
+  const next=prepareStage(f.g,f.p,'10',1);
+  assert.deepEqual(next.actions,[]);
+  assert.ok(next.blocked.some(issue=>issue.target==='python'&&issue.reason.includes('Uncertain prior dispatch')));
+});
 test('the authorized family moving or a foreign barrier cannot use saved authorization',()=>{
   const f=fixture(),j=prepareStage(f.g,f.p,'9',1);f.state.saved=j;f.state.heads.python=sha(99);
   assert.throws(()=>executeStage(f.g,f.g,f.p,j),/authorized barrier|Integration moved/);assert.equal(f.commands.length,0);

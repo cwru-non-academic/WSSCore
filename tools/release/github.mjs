@@ -10,6 +10,27 @@ import {checkTagGuard} from './policy.mjs';
 import {findNormalRuns,selectNormalRun} from './normal-ci.mjs';
 import {channelContext,releaseFingerprint} from './channels.mjs';
 
+export function createdSince(createdAt) {
+  requireThat(typeof createdAt==='string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(createdAt) && Number.isFinite(Date.parse(createdAt)),'Missing canonical producer creation time');
+  return `created=${encodeURIComponent(`>=${createdAt}`)}`;
+}
+
+export function journalArtifacts(g,workflow,prefix,excludeRun='') {
+  // A queued run can be created before the producer and still write its journal later.
+  const artifacts=g.pages(`repos/${CORE}/actions/artifacts`,'artifacts').filter(a=>a.name.startsWith(prefix));
+  const result=[];
+  for(const artifact of artifacts) {
+    const runId=String(artifact.workflow_run?.id ?? '');
+    requireThat(/^[1-9][0-9]*$/.test(runId),'Journal artifact is missing its workflow run');
+    if(runId===excludeRun)continue;
+    const run=g.run(CORE,runId);
+    requireThat(String(run.id)===runId && run.path===workflow && run.head_branch==='main' && run.repository?.full_name===CORE &&
+      run.head_repository?.full_name===CORE && run.head_sha===artifact.workflow_run.head_sha,'Journal artifact came from a foreign workflow source');
+    result.push({artifact,runId});
+  }
+  return result;
+}
+
 // No shell expansion, caller-provided commands, implicit pagination or token output.
 export class GitHub {
   constructor(token=process.env.GH_TOKEN) {this.environment={...process.env,GH_TOKEN:token};}
@@ -100,7 +121,7 @@ export function collect(g,p) {
   const c=p.candidate, source=structuredClone(g.run(CORE,c.run_id)), zip=archive(g,c);
   const evidence={producer:{run:source,current_head:g.head(CORE,p.channel),jobs:g.jobs(CORE,source),artifact:zip.artifact,archive_sha256:bytesDigest(zip.files[c.archive])},targets:{}};
   for(const t of p.manifest.targets) {
-    const {emitter,name}=discoverReceipt(g,p,t);
+    const {emitter,name}=discoverReceipt(g,p,t,source.created_at);
     const receipt_bytes=g.download(t.repository,String(emitter.id),name,['receipt.json'])['receipt.json'];
     const r=JSON.parse(receipt_bytes.toString('utf8'));
     requireThat(r.emitter?.run_id===String(emitter.id),'Receipt emitter identifier mismatch');
@@ -136,8 +157,8 @@ export function collect(g,p) {
 // unchanged. Reuse receipt/producer/allClear policy after refreshing mutable CI
 // metadata, then read exact accepted heads last (parents are also required targets).
 // These distributed observations narrow the IO window; they are not atomic.
-export function discoverReceipt(g,p,t) {
-  const runs=g.pages(`repos/${t.repository}/actions/workflows/release-receipt.yml/runs?branch=${t.branch}`,'workflow_runs'),matches=[];
+export function discoverReceipt(g,p,t,producerCreatedAt) {
+  const runs=g.pages(`repos/${t.repository}/actions/workflows/release-receipt.yml/runs?branch=${t.branch}&${createdSince(producerCreatedAt)}`,'workflow_runs'),matches=[];
   for(const emitter of runs){const name=`wss-acceptance-${t.id}-${p.plan_id}-a${emitter.run_attempt}`;
     if(g.pages(`repos/${t.repository}/actions/runs/${emitter.id}/artifacts`,'artifacts').some(a=>a.name===name))matches.push({emitter,name});}
   requireThat(matches.length===1,`Missing or ambiguous actual acceptance receipt for ${t.id}`);return matches[0];
@@ -159,7 +180,7 @@ export function refreshAdmission(g,p,captured,{publication=false}={}) {
       return {...fresh.proof,candidate:fresh.candidate,...(fresh.selected_tests?{selected_tests:fresh.selected_tests}:{})};
     });
     e.emitter_run=refreshEmitterMetadata(g,p,t,e.emitter_run,{session});
-    const found=discoverReceipt(g,p,t);
+    const found=discoverReceipt(g,p,t,evidence.producer.run.created_at);
     requireThat(String(found.emitter.id)===r.emitter.run_id&&found.emitter.run_attempt===r.emitter.attempt,'Receipt discovery changed emitter identity/attempt');
     const artifact=detachAdmission(g.artifact(t.repository,r.emitter.run_id,found.name));
     requireThat(String(artifact.id)===String(e.artifact.id)&&artifact.digest===e.artifact.digest,'Receipt artifact replaced since authentication');e.artifact=artifact;
