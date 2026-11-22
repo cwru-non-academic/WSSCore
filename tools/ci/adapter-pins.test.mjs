@@ -156,7 +156,15 @@ test('full local candidate API requires mapped canonical source identities rathe
  assert.throws(()=>verifyCandidateWorkflowPins({repository,channel:'dev',profiles,sources:[]}),/Explicit immutable/);
 });
 test('catalogue covers all supported receiver families and retains separate product/fixture/input roles',()=>{
- const actual=JSON.parse(readFileSync(new URL('./executable-pin-roles.json',import.meta.url))),targets=new Set(actual.source_catalogue.map(r=>r.target)),sources=actual.source_catalogue.flatMap(r=>r.sources);assert.equal(targets.size,10);assert.equal(actual.source_catalogue.length,96);assert.equal(sources.length,499);for(const role of ['fixture','product','lock-core','lock-engine','authenticated-tooling','live-evidence','forwarded-source','expected-core'])assert.ok(sources.some(s=>s.role===role));
+ const actual=JSON.parse(readFileSync(new URL('./executable-pin-roles.json',import.meta.url)));
+ const manifest=JSON.parse(readFileSync(new URL('./sync-tooling.json',import.meta.url)));
+ const expected=new Set([core,...manifest.repositories.map(name=>`cwru-non-academic/${name}`)]);
+ assert.deepEqual(new Set(actual.source_catalogue.map(entry=>entry.target)),expected);
+ const registrations=actual.source_catalogue.flatMap(entry=>(entry.channels??['dev','main'])
+  .map(channel=>`${entry.target}/${channel}/${entry.workflow}`));
+ assert.equal(new Set(registrations).size,registrations.length,'Workflow registrations are unique per repository and channel');
+ const sources=actual.source_catalogue.flatMap(entry=>entry.sources);
+ for(const role of ['fixture','product','lock-core','lock-engine','authenticated-tooling','live-evidence','forwarded-source','expected-core'])assert.ok(sources.some(source=>source.role===role),`Missing ${role} registrations`);
 });
 
 test('full candidate validates synthetic immutable mappings with noncanonical source directory names',async()=>{
