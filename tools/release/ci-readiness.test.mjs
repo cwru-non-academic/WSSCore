@@ -34,6 +34,12 @@ test('readiness reports multiple unrelated CI errors together', () => {
   const readFile = path => {
     const source = readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
     if (path === '.github/workflows/dev-release.yml') return source + '# drift\n';
+    if (path === 'tools/ci/executable-pin-roles.json') {
+      const roles = JSON.parse(source);
+      const artifact = roles.source_catalogue.find(entry => entry.target === 'cwru-non-academic/WSSCore' && entry.workflow === 'artifacts.yml');
+      artifact.sources = artifact.sources.filter(entry => entry.job !== 'promotion-readiness');
+      return JSON.stringify(roles);
+    }
     if (path === '.github/workflows/artifacts.yml') {
       return source.replaceAll('retention-days: 90','retention-days: 14').replace('platform: [Windows, Linux, Mac]', 'platform: [Windows, Linux]');
     }
@@ -44,5 +50,6 @@ test('readiness reports multiple unrelated CI errors together', () => {
   assert(issues.some(issue => issue.includes('universal-release-assets needs retention-days: 90')));
   assert(issues.some(issue => issue.includes('wss-propagation-plan needs retention-days: 90')));
   assert(issues.some(issue => issue.includes('expected one required job named BLE Consumer for Mac')));
+  assert(issues.some(issue => issue.includes('artifacts.yml / promotion-readiness')));
   assert.deepEqual(inspectReadiness(), []);
 });

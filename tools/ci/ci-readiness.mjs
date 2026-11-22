@@ -1,5 +1,5 @@
 import {appendFileSync, readFileSync} from 'node:fs';
-import {inspectStageGuardPins, stageGuardPolicies} from './adapter-pins.mjs';
+import {classifyWorkflowSources, inspectStageGuardPins, stageGuardPolicies} from './adapter-pins.mjs';
 import {isMap, isSeq, parseDocument} from './vendor/yaml/dist/index.js';
 import {channelActivation, publicationControls} from './channel-controls.mjs';
 import {renderedCoreWorkflows} from './channel-workflows.mjs';
@@ -94,6 +94,11 @@ export function inspectReadiness({readFile=read, channel, github, env=process.en
         issues.push(`artifacts.yml: expected one required job named ${name}.`);
       }
     }
+  });
+  collect('Core artifact workflow source bindings', () => {
+    const roles = JSON.parse(readFile('tools/ci/executable-pin-roles.json'));
+    roles.source_catalogue = roles.source_catalogue.filter(item => item.target === CORE && item.workflow === 'artifacts.yml');
+    classifyWorkflowSources({repository:CORE, files:{'artifacts.yml':readFile('.github/workflows/artifacts.yml')}, roles});
   });
   const staged = new Map();
   for (const branch of ['dev','main']) {

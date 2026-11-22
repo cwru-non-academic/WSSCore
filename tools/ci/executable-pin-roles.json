@@ -62,6 +62,24 @@
       ],
       "sources": [
         {
+          "job": "ci-configuration",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
+          "job": "promotion-readiness",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "@event"
+        },
+        {
           "job": "release-contract-tests",
           "repository": "cwru-non-academic/WSSCore",
           "kind": "checkout",
