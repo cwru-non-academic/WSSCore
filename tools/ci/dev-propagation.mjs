@@ -5,7 +5,8 @@ import {readFileSync,writeFileSync,mkdirSync,appendFileSync,realpathSync,existsS
 import {join,resolve,dirname,isAbsolute} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
-import {GitHub,archive,journalArtifacts,loadPlan} from '../release/github.mjs';
+import {GitHub,archive,loadPlan} from '../release/github.mjs';
+import {journalArtifacts} from '../release/controller-discovery.mjs';
 import {findNormalRuns} from '../release/normal-ci.mjs';
 import {CORE,CORE_JOBS,candidate,canonical,digest,jobs,requireThat} from '../release/verify.mjs';
 import {assertWorkflows,assertWorkflowPair,freezeWorkflows,guardedWriter} from './workflow-freeze.mjs';
