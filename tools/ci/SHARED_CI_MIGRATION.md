@@ -30,14 +30,20 @@ application gitlinks. The shared source does not replace language-specific proof
 
 1. Change the owning source once and verify the exact revision with hosted CI.
 2. Commit and retain the declared source revisions. From the reviewed Core
-   checkout, run `node tools/ci/sync-tooling.mjs copy <workspace>` with all nine
-   receivers and the referenced integration source available in the workspace.
-3. Review the changed files and locks, including necessary receiver-owned call
-   sites and executable pins. Do not independently edit generated common files.
+   checkout, run `node tools/ci/receiver-ci.mjs check <workspace> <receiver>
+   <dev|main> <origins-workspace> [reviewed-wrapper-commit]`. The workspace
+   contains the receiver and its wrapper checkout when applicable. The origins
+   workspace contains the named integration checkout at the exact pinned
+   tooling revision. An application requires the reviewed wrapper commit.
+3. Use `apply` in place of `check` to write the shared files, source lock,
+   registered executable pins, generated receipt workflow and evidence
+   retention together. Review the diff and rerun `check` before committing.
+   If you only need to verify evidence retention, run
+   `node tools/ci/ci-readiness.mjs retention <receiver-checkout>`.
 4. Use reviewed receiver dev PRs, hosted source-identity/platform checks and normal
    dev-to-main promotion. Verify workflow registration and actual deployed refs.
 
-The copier performs local file and lock updates. External pushes, PR creation,
+The generator performs local CI file updates. External pushes, PR creation,
 merges and campaign activation remain separate authorized operations. Source
 identity checking detects drift; it does not by itself deploy an update.
 

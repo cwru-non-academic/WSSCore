@@ -11,6 +11,59 @@ permissions:
   contents: read
 
 jobs:
+  ci-configuration:
+    name: CI configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node tools/ci/ci-readiness.mjs local
+
+  promotion-readiness:
+    name: Downstream CI readiness
+    needs: ci-configuration
+    if: ${{ github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main') && github.repository == 'cwru-non-academic/WSSCore' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Read the configured receiver list
+        id: receivers
+        env:
+          WSS_CI_CHANNEL: ${{ github.ref_name }}
+          WSS_APP_CONFIGURED: ${{ vars.WSS_GITHUB_APP_ID != '' && secrets.WSS_GITHUB_APP_PRIVATE_KEY != '' }}
+        run: |
+          if [[ "$WSS_APP_CONFIGURED" != 'true' ]]; then
+            echo "::error::Configure WSS_GITHUB_APP_ID and WSS_GITHUB_APP_PRIVATE_KEY for downstream readiness."
+            exit 1
+          fi
+          node tools/ci/ci-readiness.mjs repositories >> "$GITHUB_OUTPUT"
+      - name: Read downstream Actions and configuration
+        id: reader
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: ${{ steps.receivers.outputs.repositories }}
+          permission-actions: read
+          permission-contents: read
+      - run: node tools/ci/ci-readiness.mjs live
+        env:
+          GH_TOKEN: ${{ steps.reader.outputs.token }}
+          WSS_CI_CHANNEL: ${{ github.ref_name }}
+          WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
+          WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
+          WSS_MAIN_RELEASE_ENABLED: ${{ vars.WSS_MAIN_RELEASE_ENABLED }}
+
   release-contract-tests:
     name: Dev release acceptance contracts
     runs-on: ubuntu-latest
@@ -27,6 +80,7 @@ jobs:
 
   macos-native:
     name: Build macOS universal BLE bridge
+    needs: ci-configuration
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -40,11 +94,16 @@ jobs:
 
   core-tests:
     name: Core conformance
+    needs: ci-configuration
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
     steps:
+      - name: Require valid CI configuration
+        if: needs.ci-configuration.result != 'success'
+        run: exit 1
       - name: Check out source
         id: checkout
         uses: actions/checkout@v4
@@ -85,14 +144,14 @@ jobs:
         run: dotnet test -p:DisablePackageAssetsCache=true tests/Core/WSS.Core.Tests/WSS.Core.Tests.csproj -c Release --no-restore --nologo --logger "trx;LogFileName=core.trx" --results-directory "${{ runner.temp }}/test-results"
       - name: Retain detailed Core test results
         id: upload_test_results
-        if: always()
+        if: always() && steps.checkout.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: core-conformance-results
           path: ${{ runner.temp }}/test-results/**/*.trx
           if-no-files-found: ignore
       - name: Summarize actual execution
-        if: always()
+        if: always() && steps.checkout.outcome == 'success'
         shell: pwsh
         env:
           REPORT_TITLE: Core conformance
@@ -309,6 +368,7 @@ jobs:
             ${{ runner.temp }}/release-assets/WSS-Universal-*.zip
             ${{ runner.temp }}/release-assets/SHA256SUMS.txt
           if-no-files-found: error
+          retention-days: 90
       - name: Summarize actual execution
         if: always()
         shell: pwsh
@@ -528,7 +588,7 @@ jobs:
 
   propagate-universal:
     name: Start routine downstream validation
-    needs: [core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, ble-consumer-summary, package-universal, serial-tests, core-consumers]
+    needs: [promotion-readiness, core-tests, ble-linux-tests, ble-windows-tests, ble-macos-tests, ble-consumer-summary, package-universal, serial-tests, core-consumers]
     if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && github.repository == 'cwru-non-academic/WSSCore' }}
     env:
       WSS_CI_CHANNEL: ${{ github.ref_name }}
@@ -695,12 +755,14 @@ jobs:
           name: ${{ steps.channel.outputs.stage_artifact }}
           path: ${{ runner.temp }}/propagation-plan/plan.json
           if-no-files-found: error
+          retention-days: 90
       - uses: actions/upload-artifact@v4
         if: vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true'
         with:
           name: wss-propagation-plan
           path: ${{ runner.temp }}/release-plan/plan.json
           if-no-files-found: error
+          retention-days: 90
       - name: Create read-only projection evidence token
         id: projection-token
         uses: actions/create-github-app-token@v2
