@@ -1,6 +1,6 @@
 import {basename} from 'node:path';
 import {channelContext} from './channels.mjs';
-import {archive} from './github.mjs';
+import {archive,createdSince} from './github.mjs';
 import {findNormalRuns} from './normal-ci.mjs';
 import {bytesDigest,canonical,CORE,digest,plan,producer,requireThat} from './verify.mjs';
 import {assertWorkflows,guardedWriter} from '../ci/workflow-freeze.mjs';
@@ -29,9 +29,9 @@ export function validateJournal(p,j) {
   }
   return j;
 }
-export function previousIntents(g,p) {
+function previousIntents(g,p,since) {
   const result=[];
-  const runs=g.pages(`repos/${CORE}/actions/workflows/${channelContext(p.channel).acceptanceWorkflow.split('/').at(-1)}/runs?branch=main`,'workflow_runs');
+  const runs=g.pages(`repos/${CORE}/actions/workflows/${channelContext(p.channel).acceptanceWorkflow.split('/').at(-1)}/runs?branch=main&${since}`,'workflow_runs');
   for(const r of runs) {
     const prefix=`wss-dispatch-intents-${p.plan_id}-${r.id}-a`;
     const artifacts=g.pages(`repos/${CORE}/actions/runs/${r.id}/artifacts`,'artifacts').filter(a=>a.name.startsWith(prefix));
@@ -50,7 +50,7 @@ export function prepare(g,p,run,attempt) {
   assertWorkflows(g,p,'acceptance',{live:false});
   const c=p.candidate,r=g.run(CORE,c.run_id),zip=archive(g,c);
   producer(p,{run:r,current_head:g.head(CORE,p.channel),jobs:g.jobs(CORE,r),artifact:zip.artifact,archive_sha256:bytesDigest(zip.files[c.archive])});
-  const prior=previousIntents(g,p),actions=[];
+  const since=createdSince(r.created_at),prior=previousIntents(g,p,since),actions=[];
   function request(t,workflow,head,inputs,mergedAt) {
     const a=action(p,t,workflow,head,inputs,mergedAt);
     requireThat(!prior.some(x=>x.key===a.key),`Uncertain prior dispatch for ${t.id}; no automatic retry without inspected recovery`);
@@ -71,7 +71,7 @@ export function prepare(g,p,run,attempt) {
     requireThat(normals[0].status!=='completed' || normals[0].conclusion==='success',`Postmerge CI failed for ${t.id}; inspect recovery`);
     if(normals[0].status!=='completed') continue;
     const title=`WSS acceptance ${t.id} ${p.plan_id}`;
-    const receipts=g.pages(`repos/${t.repository}/actions/workflows/release-receipt.yml/runs?branch=${t.branch}&event=workflow_dispatch`,'workflow_runs').filter(r=>r.display_title===title);
+    const receipts=g.pages(`repos/${t.repository}/actions/workflows/release-receipt.yml/runs?branch=${t.branch}&event=workflow_dispatch&${since}`,'workflow_runs').filter(r=>r.display_title===title);
     requireThat(receipts.length<=1,`Ambiguous receipt runs for ${t.id}`);
     if(receipts.length) {requireThat(receipts[0].status!=='completed' || receipts[0].conclusion==='success',`Receipt failed for ${t.id}; inspect recovery`);continue;}
     request(t,'.github/workflows/release-receipt.yml',head,{producer_run_id:c.run_id,plan_id:p.plan_id},prs[0].merged_at);

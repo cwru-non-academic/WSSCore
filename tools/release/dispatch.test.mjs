@@ -19,16 +19,22 @@ function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false,targe
   const old=journal(p,'90',1,prior.length?prior:[action(p,t,t.workflow,sha(10),{})]);
   const g={
     get:path=>{assert.equal(path,`repos/${CORE}/contents/tools/release/targets.dev.json?ref=${candidate.commit}`);return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(manifest)).toString('base64')};},
-    run:()=>({id:1,repository:{full_name:CORE},head_repository:{full_name:CORE},path:'.github/workflows/artifacts.yml',head_sha:sha(1),head_branch:'dev',event:'push',status:'completed',conclusion:'success',run_attempt:1}),
+    run:()=>({id:1,repository:{full_name:CORE},head_repository:{full_name:CORE},path:'.github/workflows/artifacts.yml',head_sha:sha(1),head_branch:'dev',event:'push',status:'completed',conclusion:'success',run_attempt:1,created_at:'2026-10-28T23:00:00Z'}),
     head:repo=>repo===CORE?sha(1):repo===t.repository?(moved?sha(99):sha(10)):sha(2),
     jobs:()=>CORE_JOBS.map(name=>({name,status:'completed',conclusion:'success'})),
     artifact:()=>({id:2,name:'universal-release-assets',expired:false,workflow_run:{id:1,head_sha:sha(1)}}),
     download:(repo,run,name)=>name==='universal-release-assets'?{'WSS-Universal-ci.zip':Buffer.from('zip'),'SHA256SUMS.txt':Buffer.from(`${candidate.sha256}  WSS-Universal-ci.zip\n`)}:{'intent.json':Buffer.from(JSON.stringify(old))},
     pages:path=>{
-      if(path.includes('/dev-release.yml/')) return prior.length?[{id:90}]:[];
+      if(path.includes('/dev-release.yml/')) {
+        assert.ok(path.endsWith('&created=%3E%3D2026-10-28T23%3A00%3A00Z'));
+        return prior.length?[{id:90}]:[];
+      }
       if(path.includes(`repos/${CORE}/actions/runs/90/artifacts`))return[{name:journalName(p,'90',1),expired}];
       if(path.includes('/commits/'))return[{merged_at:'2026-10-29T00:00:00Z',merge_commit_sha:sha(10),base:{ref:'dev',repo:{full_name:t.repository}},head:{repo:{full_name:t.repository}},user:{type:'Bot'}}];
-      if(path.includes('/release-receipt.yml/'))return receipts.map(r=>({...r,display_title:`WSS acceptance ${t.id} ${p.plan_id}`}));
+      if(path.includes('/release-receipt.yml/')) {
+        assert.ok(path.endsWith('&created=%3E%3D2026-10-28T23%3A00%3A00Z'));
+        return receipts.map(r=>({...r,display_title:`WSS acceptance ${t.id} ${p.plan_id}`}));
+      }
       return normal.map(r=>normalRun(t,r));
     },
     command:args=>requests.push(args)

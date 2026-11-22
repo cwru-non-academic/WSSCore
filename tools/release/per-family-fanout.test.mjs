@@ -24,6 +24,7 @@ function fixture(perFamily=true,channel='dev'){
   const pr=t=>({number:1,merged:true,state:'closed',merged_at:'2026-01-01T00:00:00Z',merge_commit_sha:channel==='main'?sha(30+policy.libraries.indexOf(t)):head(t),user:{type:'Bot'},merged_by:{type:'User'},base:{ref:channel,repo:{full_name:t.repository}},head:{sha:sha(8),repo:{full_name:t.repository}}});
   const g={
     head:(repo,branch='dev')=>repo===CORE?candidate.commit:channel==='dev'?(branch==='main'?receivers[target(repo).id].heads.main:head(target(repo))):branch==='dev'?receivers[target(repo).id].heads.dev:state.merged.has(target(repo).id)?head(target(repo)):receivers[target(repo).id].heads.main,
+    run(repo,id){assert.equal(repo,CORE);assert.equal(id,candidate.run_id);return {created_at:'2026-01-01T00:00:00Z'};},
     object:()=>({type:'tree',sha:sha(5)}),
     get(path){
       if(path===`repos/${CORE}/contents/${context.stagePolicy}?ref=${candidate.commit}`)return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(policy)).toString('base64')};
@@ -70,6 +71,23 @@ test('committed CI can be requested for one merged family while other integratio
 test('another family becoming ready does not invalidate saved authorization for an unchanged family',()=>{
   const f=fixture(),j=prepareStage(f.g,f.p,'9',1);f.state.saved=j;f.state.merged.add('unity');
   executeStage(f.g,f.g,f.p,j);assert.equal(f.commands.length,1);assert.ok(f.commands[0].some(x=>x.includes(f.python.repository)));
+});
+for(const channel of ['dev','main'])test(`${channel} stage searches only current-producer journals and still blocks uncertain dispatch`,()=>{
+  const f=fixture(true,channel), first=prepareStage(f.g,f.p,'9',1),pages=f.g.pages;
+  const artifact=`wss-${channel}-stage-intents-${f.p.candidate.run_id}-9-a1`;
+  f.state.saved=first;
+  f.g.pages=(path,key)=>{
+    if(!path.startsWith(`repos/${CORE}/`))return pages(path,key);
+    if(key==='workflow_runs'){
+      assert.equal(path,`repos/${CORE}/actions/workflows/${channel}-propagation.yml/runs?branch=main&created=%3E%3D2026-01-01T00%3A00%3A00Z`);
+      return [{id:9}];
+    }
+    assert.equal(path,`repos/${CORE}/actions/runs/9/artifacts`);
+    return [{name:artifact,expired:false}];
+  };
+  const next=prepareStage(f.g,f.p,'10',1);
+  assert.deepEqual(next.actions,[]);
+  assert.ok(next.blocked.some(issue=>issue.target==='python'&&issue.reason.includes('Uncertain prior dispatch')));
 });
 test('the authorized family moving or a foreign barrier cannot use saved authorization',()=>{
   const f=fixture(),j=prepareStage(f.g,f.p,'9',1);f.state.saved=j;f.state.heads.python=sha(99);
