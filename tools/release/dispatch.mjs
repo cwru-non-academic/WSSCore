@@ -1,6 +1,6 @@
 import {basename} from 'node:path';
 import {channelContext} from './channels.mjs';
-import {archive,createdSince} from './github.mjs';
+import {archive,createdSince,journalArtifacts} from './github.mjs';
 import {findNormalRuns} from './normal-ci.mjs';
 import {bytesDigest,canonical,CORE,digest,plan,producer,requireThat} from './verify.mjs';
 import {assertWorkflows,guardedWriter} from '../ci/workflow-freeze.mjs';
@@ -29,19 +29,16 @@ export function validateJournal(p,j) {
   }
   return j;
 }
-function previousIntents(g,p,since) {
+function previousIntents(g,p) {
   const result=[];
-  const runs=g.pages(`repos/${CORE}/actions/workflows/${channelContext(p.channel).acceptanceWorkflow.split('/').at(-1)}/runs?branch=main&${since}`,'workflow_runs');
-  for(const r of runs) {
-    const prefix=`wss-dispatch-intents-${p.plan_id}-${r.id}-a`;
-    const artifacts=g.pages(`repos/${CORE}/actions/runs/${r.id}/artifacts`,'artifacts').filter(a=>a.name.startsWith(prefix));
-    for(const artifact of artifacts) {
-      requireThat(!artifact.expired,'Prior dispatch intent expired; inspect before recovery');
-      const bytes=g.download(CORE,String(r.id),artifact.name,['intent.json'])['intent.json'];
-      const j=validateJournal(p,JSON.parse(bytes));
-      requireThat(j.run_id===String(r.id) && artifact.name===journalName(p,j.run_id,j.attempt),'Intent artifact identity mismatch');
-      result.push(...j.actions);
-    }
+  const prefix=`wss-dispatch-intents-${p.plan_id}-`;
+  const workflow=channelContext(p.channel).acceptanceWorkflow;
+  for(const {artifact,runId} of journalArtifacts(g,workflow,prefix)) {
+    requireThat(!artifact.expired,'Prior dispatch intent expired; inspect before recovery');
+    const bytes=g.download(CORE,runId,artifact.name,['intent.json'])['intent.json'];
+    const j=validateJournal(p,JSON.parse(bytes));
+    requireThat(j.run_id===runId && artifact.name===journalName(p,j.run_id,j.attempt),'Intent artifact identity mismatch');
+    result.push(...j.actions);
   }
   return result;
 }
@@ -50,7 +47,7 @@ export function prepare(g,p,run,attempt) {
   assertWorkflows(g,p,'acceptance',{live:false});
   const c=p.candidate,r=g.run(CORE,c.run_id),zip=archive(g,c);
   producer(p,{run:r,current_head:g.head(CORE,p.channel),jobs:g.jobs(CORE,r),artifact:zip.artifact,archive_sha256:bytesDigest(zip.files[c.archive])});
-  const since=createdSince(r.created_at),prior=previousIntents(g,p,since),actions=[];
+  const since=createdSince(r.created_at),prior=previousIntents(g,p),actions=[];
   function request(t,workflow,head,inputs,mergedAt) {
     const a=action(p,t,workflow,head,inputs,mergedAt);
     requireThat(!prior.some(x=>x.key===a.key),`Uncertain prior dispatch for ${t.id}; no automatic retry without inspected recovery`);

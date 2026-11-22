@@ -15,6 +15,22 @@ export function createdSince(createdAt) {
   return `created=${encodeURIComponent(`>=${createdAt}`)}`;
 }
 
+export function journalArtifacts(g,workflow,prefix,excludeRun='') {
+  // A queued run can be created before the producer and still write its journal later.
+  const artifacts=g.pages(`repos/${CORE}/actions/artifacts`,'artifacts').filter(a=>a.name.startsWith(prefix));
+  const result=[];
+  for(const artifact of artifacts) {
+    const runId=String(artifact.workflow_run?.id ?? '');
+    requireThat(/^[1-9][0-9]*$/.test(runId),'Journal artifact is missing its workflow run');
+    if(runId===excludeRun)continue;
+    const run=g.run(CORE,runId);
+    requireThat(String(run.id)===runId && run.path===workflow && run.head_branch==='main' && run.repository?.full_name===CORE &&
+      run.head_repository?.full_name===CORE && run.head_sha===artifact.workflow_run.head_sha,'Journal artifact came from a foreign workflow source');
+    result.push({artifact,runId});
+  }
+  return result;
+}
+
 // No shell expansion, caller-provided commands, implicit pagination or token output.
 export class GitHub {
   constructor(token=process.env.GH_TOKEN) {this.environment={...process.env,GH_TOKEN:token};}

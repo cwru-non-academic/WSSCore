@@ -5,7 +5,7 @@ import {readFileSync,writeFileSync,mkdirSync,appendFileSync,realpathSync,existsS
 import {join,resolve,dirname,isAbsolute} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
-import {GitHub,archive,createdSince,loadPlan} from '../release/github.mjs';
+import {GitHub,archive,journalArtifacts,loadPlan} from '../release/github.mjs';
 import {findNormalRuns} from '../release/normal-ci.mjs';
 import {CORE,CORE_JOBS,candidate,canonical,digest,jobs,requireThat} from '../release/verify.mjs';
 import {assertWorkflows,assertWorkflowPair,freezeWorkflows,guardedWriter} from './workflow-freeze.mjs';
@@ -259,20 +259,14 @@ function existing(g,p,a) {
   return a.phase==='applications'?runs.filter(r=>r.display_title===title(p)):runs.filter(r=>Date.parse(r.created_at)>=Date.parse(a.merged_at));
 }
 function priorIntents(g,p,excludeRun='') {
-  const since=createdSince(g.run(CORE,p.candidate.run_id).created_at);
   const context=stageContext(p);
-  const workflow=context.stageWorkflow.split('/').at(-1);
-  const runQuery=`repos/${CORE}/actions/workflows/${workflow}/runs?branch=main&${since}`;
   const prefix=`wss-${context.channel}-stage-intents-${p.candidate.run_id}-`;
   const result=[];
-  for(const r of g.pages(runQuery,'workflow_runs')) {
-    if(String(r.id)===excludeRun) continue;
-    for(const a of g.pages(`repos/${CORE}/actions/runs/${r.id}/artifacts`,'artifacts').filter(a=>a.name.startsWith(prefix))) {
-      requireThat(!a.expired,'Expired dev stage intent; inspect before recovery');
-      const j=JSON.parse(g.download(CORE,String(r.id),a.name,['intent.json'])['intent.json']);
-      requireThat(j.plan_id===p.plan_id && a.name===journalName(p,j.run_id,j.attempt),'Foreign or inconsistent dev stage journal');
-      result.push(...j.actions);
-    }
+  for(const {artifact,runId} of journalArtifacts(g,context.stageWorkflow,prefix,excludeRun)) {
+    requireThat(!artifact.expired,'Expired stage intent; inspect before recovery');
+    const j=JSON.parse(g.download(CORE,runId,artifact.name,['intent.json'])['intent.json']);
+    requireThat(j.plan_id===p.plan_id && j.run_id===runId && artifact.name===journalName(p,j.run_id,j.attempt),'Foreign or inconsistent stage journal');
+    result.push(...j.actions);
   }
   return result;
 }
