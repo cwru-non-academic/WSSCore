@@ -10,7 +10,6 @@ import {CORE,canonical,requireThat} from '../release/verify.mjs';
 import {sourceBytes,expectedLock} from './sync-tooling.mjs';
 import {createHash} from 'node:crypto';
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
-import {integrationConfiguration} from '../release/channels.mjs';
 const fullSha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
 const git=(root,...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8'}).trim();
 const pinRoles=JSON.parse(readFileSync(new URL('./executable-pin-roles.json',import.meta.url),'utf8'));
@@ -256,40 +255,37 @@ function descriptor(repository,profiles,lock){
   requireThat(wrapper?.role==='wrapper'&&wrapper.family===profile.family,'Invalid integration owner');
   return {profile,parent:profile.role==='wrapper'?null:wrapper.target.repository};
 }
-function verifyPins(input,g,candidate){
-  const {repository,profiles,lock,files}=input,{profile,parent}=descriptor(repository,profiles,lock),all=classifyWorkflowSources(input),integration=lock.origins?.integration;
-  const cache=new Map(),object=(repo,ref,path)=>{const key=JSON.stringify([repo,ref,path]);if(!cache.has(key)){const value=g.object(repo,ref,path);requireThat(value&&fullSha(value.sha),'Expected immutable source object');cache.set(key,value.sha);}return cache.get(key);};
+function verifyPins(input,g,selectedParent){
+  const {repository,profiles,lock}=input,{parent}=descriptor(repository,profiles,lock),all=classifyWorkflowSources(input),integration=lock.origins?.integration;
   const extraBlobs=(input.roles?.parent_executable_blobs??pinRoles.parent_executable_blobs??[]).filter(entry=>entry.target===repository);
   requireThat(new Set(extraBlobs.map(entry=>entry.repository)).size===extraBlobs.length,'Duplicate parent executable blob registration');
   for(const entry of extraBlobs)requireThat(entry.repository===parent&&Array.isArray(entry.paths)&&entry.paths.length>0&&new Set(entry.paths).size===entry.paths.length&&entry.paths.every(path=>typeof path==='string'&&!path.split('/').includes('..')),'Invalid parent executable blob registration');
-  const regularObject=(repo,ref,path)=>{const value=g.object(repo,ref,path);requireThat(value?.type==='blob'&&['100644','100755'].includes(value.mode)&&fullSha(value.sha)&&(value.path===undefined||value.path===path),'Expected registered regular executable blob: '+path);return value.sha;};
-  let heads;const ownerPins=[];
+  const ownerPins=[],checkedPaths=new Set();
   for(const pin of all){
     if(!toolingRoles.has(pin.role))continue;
     requireThat(fullSha(pin.ref),`Floating executable source: ${pin.file} / ${pin.job}`);
     if(['core','expected-core'].includes(pin.role)){requireThat(pin.ref===lock.source_commit,`Core workflow pin differs from copied canonical source: ${pin.file}`);continue;}
     if(['engine','expected-engine'].includes(pin.role)){requireThat(pin.ref===integration?.commit&&(['source-field'].includes(pin.kind)||pin.repository===integration.repository),'Receipt bootstrap differs from immutable integration origin');continue;}
     requireThat(parent&&(['source-field'].includes(pin.kind)||pin.repository===parent),'Executable integration owner differs from registered wrapper');
-    if(candidate)requireThat(pin.ref===candidate.selected,'Pinned integration differs from selected future channel owner');
-    const record=g.get(`repos/${parent}/contents/.github/scripts/wss-ci.lock.json?ref=${pin.ref}`);
-    requireThat(record?.encoding==='base64','Pinned native validator lock unavailable');
-    const nativeLock=JSON.parse(Buffer.from(record.content,'base64'));
-    requireThat(nativeLock.repository===parent&&nativeLock.source_commit===lock.source_commit&&canonical(nativeLock.origins)===canonical(lock.origins),'Pinned native validator uses another canonical source lock');
     ownerPins.push(pin);
-    // Preserve the production receipt-specific rule and live parent checks.
-    if(!candidate&&pin.file==='release-receipt.yml'&&(pin.checkoutPath==='validator'||pin.role==='expected-validator'))continue;
-    heads??=candidate?candidate.heads:['dev','main'].map(branch=>g.head(parent,branch));
-    for(const head of heads){
-      requireThat(fullSha(head),'Invalid current integration source');
-      for(const path of ['.github/scripts',integrationConfiguration(profile.family),'.github/dev-propagation.json','.github/main-propagation.json',...(pin.workflow?['.github/workflows',pin.workflow]:[])])
-        requireThat(object(parent,pin.ref,path)===object(parent,head,path),`Pinned integration tooling differs from ${candidate?'future':'current verified'} dev/main: ${pin.file} / ${path}`);
-      for(const entry of extraBlobs)for(const path of entry.paths)
-        requireThat(regularObject(parent,pin.ref,path)===regularObject(parent,head,path),`Pinned integration executable blob differs from ${candidate?'future':'current verified'} dev/main: ${pin.file} / ${path}`);
-    }
+    if(pin.workflow)checkedPaths.add(pin.workflow);
   }
   // Every ordinary invocation of an owner in a receiver binds to one source,
   // including repeated matrix jobs, reusable calls and receipt expected fields.
   requireThat(new Set(ownerPins.map(p=>p.ref)).size<=1,'Caller/callee tooling source mismatch');
+  if(ownerPins.length) {
+    const ref=ownerPins[0].ref;
+    if(selectedParent)requireThat(ref===selectedParent,'Pinned integration differs from selected future channel owner');
+    const record=g.get(`repos/${parent}/contents/.github/scripts/wss-ci.lock.json?ref=${ref}`);
+    requireThat(record?.encoding==='base64','Pinned native validator lock unavailable');
+    const nativeLock=JSON.parse(Buffer.from(record.content,'base64'));
+    requireThat(nativeLock.repository===parent&&nativeLock.source_commit===lock.source_commit&&canonical(nativeLock.origins)===canonical(lock.origins),'Pinned native validator uses another canonical source lock');
+    for(const entry of extraBlobs)for(const path of entry.paths)checkedPaths.add(path);
+    for(const path of checkedPaths) {
+      const value=g.object(parent,ref,path);
+      requireThat(value?.type==='blob'&&['100644','100755'].includes(value.mode)&&fullSha(value.sha)&&(value.path===undefined||value.path===path),'Expected registered regular executable blob: '+path);
+    }
+  }
   return {references:all.length,executable:all.filter(p=>toolingRoles.has(p.role)).length,owner:parent};
 }
 export function verifyWorkflowPins(input,g){
@@ -340,8 +336,8 @@ export function verifyCandidatePinBindings(input,g){
   const {repository,channel,sources,profiles,lock}=input;
   requireThat(guardChannels.includes(channel)&&Array.isArray(sources),'Explicit supported candidate channel and source snapshots required');
   const select=(repo,ch)=>{const found=sources.filter(s=>s.repository===repo&&s.channel===ch);requireThat(found.length===1&&fullSha(found[0].commit)&&fullSha(found[0].tree),'Explicit unique immutable future source required');const s=found[0],actual=g.get(`repos/${repo}/git/commits/${s.commit}`);requireThat(actual?.sha===s.commit&&actual.tree?.sha===s.tree,'Candidate commit/tree differs from explicit snapshot');return s;};
-  const target=select(repository,channel),{parent}=descriptor(repository,profiles,lock),candidate=parent?{selected:select(parent,channel).commit,heads:guardChannels.map(ch=>select(parent,ch).commit)}:undefined;
-  const report=verifyPins(input,g,candidate);
+  const target=select(repository,channel),{parent}=descriptor(repository,profiles,lock);
+  const report=verifyPins(input,g,parent?select(parent,channel).commit:undefined);
   return {...report,mode:'immutable-local-candidate',scope:'workflow-pins-only',channel,commit:target.commit,tree:target.tree,deployment_authorized:false};
 }
 export function verifyCandidateWorkflowPins({repository,channel,profiles,sources,roles=pinRoles}){
@@ -369,8 +365,7 @@ export function verifyCandidateWorkflowPins({repository,channel,profiles,sources
     for(const [path,value] of Object.entries(e.files)){const bytes=g.bytes(repo,ref,path);requireThat(hash(bytes)===value.sha256,`Candidate managed source drift: ${repo}/${path}`);}
   };
   verifyManaged(repository,target.commit);
-  const candidate=parent?{selected:select(parent,channel).commit,heads:guardChannels.map(ch=>select(parent,ch).commit)}:undefined;
-  if(parent)for(const ref of candidate.heads)verifyManaged(parent,ref);
+  if(parent)verifyManaged(parent,select(parent,channel).commit);
   const report=verifyCandidatePinBindings({repository,channel,profiles,lock,files,roles,sources},g);g.finish();
   return {...report,scope:'workflow-pins-and-canonical-managed-bytes',mode:'immutable-local-candidate',channel,commit:target.commit,tree:target.tree,deployment_authorized:false};
 }

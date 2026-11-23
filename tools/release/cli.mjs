@@ -6,6 +6,7 @@ import {appendFileSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {GitHub,archive,collect,freeze,loadPlan,publish} from './github.mjs';
 import {execute,journalName,prepare} from './dispatch.mjs';
+import {campaignReceiptReader} from './controller-discovery.mjs';
 import {CORE,digest,requireThat} from './verify.mjs';
 import {tagPolicy} from './policy.mjs';
 import {assertWorkflows,collectWithWorkflows,freezeWorkflows,guardedWriter} from '../ci/workflow-freeze.mjs';
@@ -64,9 +65,11 @@ try {
   } else if(command==='prepare-dispatches') {
     requireThat(args.length===2,'prepare-dispatches requires producer run ID and output directory');
     requireThat(process.env.WSS_DEV_ACCEPTANCE_ENABLED==='true','Acceptance reconciliation is not enabled');
-    const p=selected(loadPlan(g,args[0])),j=prepare(g,p,process.env.GITHUB_RUN_ID,Number(process.env.GITHUB_RUN_ATTEMPT));
+    const p=selected(loadPlan(g,args[0]));
+    const {intent:j,pending}=prepare(g,p,process.env.GITHUB_RUN_ID,Number(process.env.GITHUB_RUN_ATTEMPT));
     mkdirSync(args[1],{recursive:true});writeFileSync(join(args[1],'intent.json'),JSON.stringify(j,null,2)+'\n');
-    appendFileSync(process.env.GITHUB_OUTPUT,`artifact_name=${journalName(p,j.run_id,j.attempt)}\n`);
+    appendFileSync(process.env.GITHUB_OUTPUT,`artifact_name=${journalName(p,j.run_id,j.attempt)}\nactions=${j.actions.length}\nreceipts_ready=${pending.length===0}\n`);
+    if(pending.length&&process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,`Waiting for acceptance receipts from ${pending.join(', ')}.\n`);
   } else if(command==='dispatch') {
     requireThat(args.length===2,'dispatch requires producer run ID and saved intent.json');
     requireThat(process.env.WSS_DEV_ACCEPTANCE_ENABLED==='true' && process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main','Dispatch runs only enabled trusted default-branch workflow');
@@ -78,8 +81,9 @@ try {
     const [run,destination]=args;
     requireThat(args.length===2,'verify/publish requires producer run ID and output directory');
     if(command==='publish') requireThat(process.env.WSS_EVIDENCE_READ_TOKEN,'Publication requires a separate read-only evidence token');
-    const reader=command==='publish'?new GitHub(process.env.WSS_EVIDENCE_READ_TOKEN):g;
-    const p=selected(loadPlan(reader,run)),accepted=collectWithWorkflows(reader,p,collect);
+    const evidence=command==='publish'?new GitHub(process.env.WSS_EVIDENCE_READ_TOKEN):g;
+    const p=selected(loadPlan(evidence,run)),reader=campaignReceiptReader(evidence,p);
+    const accepted=collectWithWorkflows(reader,p,collect);
     mkdirSync(destination,{recursive:true});
     writeFileSync(join(destination,'acceptance.json'),JSON.stringify(accepted.record,null,2)+'\n');
     if(command==='publish') {

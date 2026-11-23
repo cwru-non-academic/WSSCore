@@ -46,7 +46,6 @@ function fixture(channel='dev') {
     e.targets[t.id].receipt_sha256=bytesDigest(e.targets[t.id].receipt_bytes);
   });
   e.producer.run.head_branch=channel;
-  e.producer.run.created_at='2026-10-28T23:00:00Z';
   for(const target of Object.values(e.targets)){
     target.pr.base.ref=channel;target.normal_run.head_branch=channel;target.emitter_run.head_branch=channel;
     for(const preflight of target.preflights)preflight.run.head_branch=channel;
@@ -156,10 +155,7 @@ function collectorFixture(f) {
       if(path.includes('/git/matching-refs/')||path.endsWith('/releases'))return [];
       const repo=path.split('/').slice(1,3).join('/'),t=target(repo);
       if(path.includes('/artifacts'))return path.includes('/runs/'+t.preflights[0].run.id+'/')?artifacts(t):[t.artifact];
-      if(path.includes('/release-receipt.yml/')) {
-        assert.ok(path.endsWith('&created=%3E%3D2026-10-28T23%3A00%3A00Z'));
-        return [t.emitter_run];
-      }
+      if(path.includes('/release-receipt.yml/'))return[t.emitter_run];
       return[t.normal_run];
     },
     get:path=>{const t=target(path.split('/').slice(1,3).join('/'));return path.includes('/actions/artifacts/')?artifacts(t).find(a=>String(a.id)===path.split('/').at(-1)):t.pr;},
@@ -336,15 +332,16 @@ const lateChanges={
 function lateHook(f,phase,mutate) {
  let fired=false,count=0;
  const last=f.p.manifest.targets.at(-1).repository;
+ const policyPath=`repos/${CORE}/contents/${channelContext(f.p.channel).targetPolicy}?ref=${f.p.candidate.commit}`;
  const trigger=()=>{if(!fired){fired=true;mutate(f);}};
- const name=phase==='native-artifact'?'artifactBytes':phase==='native-log'?'jobLogBytes':phase==='receiver'?'download':phase==='workflow'?'object':'jobs';
+ const name=phase==='native-artifact'?'artifactBytes':phase==='native-log'?'jobLogBytes':phase==='receiver'?'download':phase==='workflow'?'get':'jobs';
  const read=f.g[name];
  f.g[name]=(...args)=>{
   const value=read(...args);
   if(phase==='native-artifact'&&args[0]===last&&args[1]==='901'&&++count===2||
      phase==='native-log'&&args[0]===last&&++count===2||
      phase==='receiver'&&args[0]===last||
-     phase==='workflow'&&args[0]===last&&args[2]==='.github/workflows'||
+     phase==='workflow'&&args[0]===policyPath||
      phase==='metadata'&&args[0]===last&&args[1].path!=='.github/workflows/wss-preflight.yml')trigger();
   return value;
  };
@@ -366,6 +363,18 @@ for(const channel of ['dev','main'])test(`publication admission ${channel} accep
  const writer=guardedWriter({pages:()=>[],command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedHeads:Object.fromEntries(Object.entries(accepted.record.targets).map(([id,t])=>[id,t.merge.sha])),acceptedAdmission:accepted});
  const directory=mkdtempSync(join(tmpdir(),'final-admission-'));
  try{assert.equal(publish(writer,f.p,accepted,directory,f.g).state,'created');assert.equal(writes.length,1);}finally{rmSync(directory,{recursive:true,force:true});}
+});
+for(const channel of ['dev','main'])test(`verification ${channel} rejects receipt movement after its final policy read`,()=>{
+ const f=boundaryFixture(channel),get=f.g.get;
+ const path=`repos/${CORE}/contents/${channelContext(channel).targetPolicy}?ref=${f.p.candidate.commit}`;
+ let reads=0;
+ f.g.get=value=>{
+  const result=get(value);
+  if(value===path&&++reads===2)f.e.targets['python-cli'].emitter_run.run_attempt++;
+  return result;
+ };
+ assert.throws(()=>collectWithWorkflows(f.g,f.p,collect),/attempt/i);
+ assert.equal(reads,2);
 });
 for(const channel of ['dev','main'])for(const change of ['target','Core','parent','attempt'])test(`publication recollection ${channel} rejects late native ${change} with zero writes`,()=>{
  const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];

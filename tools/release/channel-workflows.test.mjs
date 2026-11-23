@@ -36,8 +36,9 @@ test('main bootstrap exposes only read-only manual verification, never scheduled
     assert.doesNotMatch(r.text,/^  (workflow_run|schedule):/m);assert.match(r.text,/^  workflow_dispatch:/m);
     if(operation==='propagation')assert.match(r.text,/false && needs.prepare.outputs.actions/);
     else{
-      for(const name of ['Prepare read-only reconciliation intents','Retain dispatch intent before any cross-repository request','Create receipt reconciliation Actions token','Reconcile existing merges with fresh normal CI and read-only receipts'])
-        assert.ok(r.text.includes(`- name: ${name}\n        if: false`));
+      assert.ok(r.text.includes('- name: Prepare read-only reconciliation intents\n        if: false'));
+      for(const name of ['Retain dispatch intent before any cross-repository request','Create receipt reconciliation Actions token','Reconcile existing merges with fresh normal CI and read-only receipts'])
+        assert.ok(r.text.includes(`- name: ${name}\n        if: steps.reconciliation.outputs.actions != '0' && (false)`));
       assert.match(r.text,/false && \(false\) && github.run_attempt == 1/);
     }
   }
@@ -91,7 +92,8 @@ test('acceptance verification is a separate read-only job bound to the original 
     const reconcile=acceptanceJob(text,'reconcile'),verify=acceptanceJob(text,'verify'),publish=acceptanceJob(text,'publish');
     assert.match(reconcile,/producer_run_id: \$\{\{ steps.producer.outputs.run_id \}\}/);
     assert.doesNotMatch(reconcile,/cli\.mjs verify|accepted\/acceptance\.json/);
-    assert.match(verify,/needs: reconcile\n    if: needs.reconcile.result == 'success'/);
+    assert.match(verify,/needs: reconcile\n    if: >-\n      needs.reconcile.result == 'success' &&/);
+    assert.match(verify,/needs.reconcile.outputs.receipts_ready == 'true' \|\|\n       \(github.event_name == 'workflow_dispatch' && inputs.mode == 'verify'\)/);
     assert.match(verify,/permissions:\n      contents: read\n      actions: read/);
     assert.doesNotMatch(verify,/write|receipt-token|WSS_JOURNAL_READ_TOKEN|select-producer|REQUESTED_RUN|cli\.mjs (dispatch|prepare-dispatches|publish)/);
     assert.match(verify,/permission-contents: read/);assert.match(verify,/permission-actions: read/);assert.match(verify,/permission-pull-requests: read/);

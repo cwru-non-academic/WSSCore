@@ -20,9 +20,11 @@ const g={head:(_r,b)=>b==='dev'?sha(4):sha(5),object:()=>({sha:sha(6)}),get:path
 const changed=files=>({...input,files});
 const refresh=data=>refreshWorkflowPins({...input,adapter:sha(8),adapterLock:nativeLock,...data});
 
-test('every literal checkout is verified against live deployed parents and copied Core authority',()=>{
- assert.equal(verifyWorkflowPins(input,g).references,2);
- assert.throws(()=>verifyWorkflowPins(input,{...g,object:(_r,ref,path)=>({sha:ref===sha(3)&&path==='.github/scripts'?sha(9):sha(6)})}),/Pinned integration tooling/);
+test('literal checkouts bind one immutable parent lock and the copied Core authority',()=>{
+ let reads=0;
+ const reader={...g,head:()=>assert.fail('An immutable pin does not depend on live branch heads'),get:path=>{reads++;return g.get(path);}};
+ assert.equal(verifyWorkflowPins(input,reader).references,2);
+ assert.equal(reads,1);
  assert.throws(()=>verifyWorkflowPins(changed({'ci.yml':files['ci.yml'].replace(sha(1),sha(9))}),g),/Core workflow pin/);
 });
 test('additional quoted/commented checkouts and YAML aliases cannot hide outside the inventory',()=>{
@@ -36,7 +38,7 @@ test('trailing uses comments preserve action and first-party source classificati
  assert.equal(verifyWorkflowPins(changed({'ci.yml':commented}),g).references,2);
  assert.equal(refresh({files:{'ci.yml':commented}})['ci.yml'],commented.replace(sha(3),sha(8)),'Refresh retains comments and replaces only the actual registered ref');
  const callee=`  reusable:\n    uses: ${parent}/.github/workflows/_python-validation.yml@${sha(3)} # reviewed callee\n`,pair={'ci.yml':files['ci.yml']+callee},r=register(pair,p=>p.repository===core?'core':'integration');
- assert.equal(verifyWorkflowPins({...input,files:pair,roles:r},g).references,3);
+ assert.equal(verifyWorkflowPins({...input,files:pair,roles:r},{...g,object:(_repo,_ref,path)=>path.endsWith('.yml')?{sha:sha(6),type:'blob',mode:'100644'}:{sha:sha(6)}}).references,3);
  assert.throws(()=>verifyWorkflowPins(changed({'ci.yml':files['ci.yml']+callee}),g),/Unclassified/,'A commented reusable call cannot hide outside the inventory');
  for(const text of [files['ci.yml']+checkout(parent,sha(9),'hidden').replace('uses: actions/checkout@v4','uses: actions/checkout@v4 # extra'),files['ci.yml']+checkout(parent,sha(9),'hidden').replace('uses: actions/checkout@v4',"uses: 'actions/checkout@v4' # quoted")])assert.throws(()=>verifyWorkflowPins(changed({'ci.yml':text}),g));
 });
@@ -69,8 +71,7 @@ test('checkout mapping order is irrelevant and unsupported forms never become im
  for(const valid of [reordered(parent,sha(3),'tools').replace('with:',"'with':"),reordered(parent,sha(3),'tools').replace('with:','with :'),reordered(parent,sha(3),'tools').replace('repository:',"'repository':"),`      - {'uses': 'actions/checkout@v4', 'with': {'repository': '${parent}', 'ref': '${sha(3)}', path: tools}}\n`])assert.equal(verifyWorkflowPins(changed({'ci.yml':workflow(valid+checkout(core,sha(1),'core'))}),g).references,2);
  for(const value of variants)assert.throws(()=>verifyWorkflowPins(changed({'ci.yml':workflow(value+checkout(core,sha(1),'core'))}),g));
 });
-test('parent lock, family execution configuration and both live branch objects remain required',()=>{
- for(const path of ['.github/scripts','.github/python-ci.json','.github/dev-propagation.json','.github/main-propagation.json'])assert.throws(()=>verifyWorkflowPins(input,{...g,object:(_r,ref,p)=>({sha:ref===sha(5)&&p===path?sha(9):sha(6)})}),/Pinned integration tooling/);
+test('the pinned wrapper must use the same immutable canonical tooling sources',()=>{
  assert.throws(()=>verifyWorkflowPins(input,{...g,get:()=>({encoding:'base64',content:Buffer.from(JSON.stringify({...nativeLock,source_commit:sha(9)})).toString('base64')})}),/another canonical source/);
  assert.throws(()=>refresh({adapterLock:{...nativeLock,source_commit:sha(9)}}),/matching integration source/);
 });
@@ -91,9 +92,17 @@ test('a missed repeated matrix-job checkout fails and refresh changes all occurr
 });
 test('caller, callee and expected-validator sources cannot disagree even with equivalent blobs',()=>{
  const f={'ci.yml':files['ci.yml']+`  reusable:\n    uses: ${parent}/.github/workflows/_python-validation.yml@${sha(3)}\n`},r=register(f,p=>p.repository===core?'core':'integration'),data={...input,files:f,roles:r};
- assert.equal(verifyWorkflowPins(data,g).references,3);
- assert.throws(()=>verifyWorkflowPins({...data,files:{'ci.yml':f['ci.yml'].replace(`yml@${sha(3)}`,`yml@${sha(8)}`)}},g),/Caller\/callee/);
- for(const path of ['.github/workflows','.github/workflows/_python-validation.yml'])assert.throws(()=>verifyWorkflowPins(data,{...g,object:(_r,ref,p)=>({sha:ref===sha(3)&&p===path?sha(9):sha(6)})}),/Pinned integration tooling/);
+ const pinned={...g,object:(_r,ref,path)=>{
+   assert.notEqual(path,'.github/workflows','Reuse must not compare workflow directories');
+   if(path==='.github/workflows/_python-validation.yml'){
+     assert.ok([sha(3),sha(8)].includes(ref),'Only read the workflow at the pinned revision');
+     return {sha:sha(6),type:'blob',mode:'100644'};
+   }
+   return {sha:sha(6)};
+ }};
+ assert.equal(verifyWorkflowPins(data,pinned).references,3);
+ assert.throws(()=>verifyWorkflowPins({...data,files:{'ci.yml':f['ci.yml'].replace(`yml@${sha(3)}`,`yml@${sha(8)}`)}},pinned),/Caller\/callee/);
+ assert.throws(()=>verifyWorkflowPins(data,g),/Expected registered regular executable blob/);
 });
 test('unauthorized expression, repository, path, reusable and inline substitutions fail closed',()=>{
  for(const text of [files['ci.yml'].replace(sha(3),'${{ inputs.tools_sha }}'),files['ci.yml'].replace(parent,'cwru-non-academic/Unknown'),files['ci.yml']+checkout(parent.replace('cwru-','CWRU-'),sha(9),'unregistered-case'),files['ci.yml'].replace(`ref: ${sha(3)}`,`ref: ${sha(3)}\n          ref: '${sha(3)}' # duplicate`),files['ci.yml'].replace('path: tools','path: mystery'),files['ci.yml']+`  extra:\n    uses: ${parent}/.github/workflows/_python-validation.yml@${sha(3)}\n`,workflow('      - uses: actions/checkout@v4\n        with: {repository: '+parent+', ref: '+sha(3)+'}\n')])assert.throws(()=>verifyWorkflowPins(changed({'ci.yml':text}),g));
@@ -137,10 +146,10 @@ test('candidate future-owner mode uses exact snapshots without deployed-head aut
  const sources=[{repository,channel:'dev',commit:sha(7),tree:sha(6)},{repository,channel:'main',commit:sha(8),tree:sha(6)},{repository:parent,channel:'dev',commit:sha(3),tree:sha(6)},{repository:parent,channel:'main',commit:sha(4),tree:sha(6)}];
  const reader={...g,head:()=>{throw Error('No deployed head reads allowed');}};
  for(const channel of ['dev','main']){const f={'ci.yml':files['ci.yml'].replace(sha(3),channel==='dev'?sha(3):sha(4))},data={...input,channel,files:f,sources},report=verifyCandidatePinBindings(data,reader);assert.equal(report.deployment_authorized,false);assert.equal(report.mode,'immutable-local-candidate');assert.throws(()=>verifyWorkflowPins(data,g),/not a deployed/);}
- assert.throws(()=>verifyCandidatePinBindings({...input,sources:sources.slice(0,-1)},reader),/Explicit unique/);
+ assert.equal(verifyCandidatePinBindings({...input,sources:sources.filter(s=>s.channel==='dev')},reader).references,2);
+ assert.throws(()=>verifyCandidatePinBindings({...input,sources:sources.filter(s=>s.repository!==parent)},reader),/Explicit unique/);
  assert.throws(()=>verifyCandidatePinBindings({...input,sources,channel:'preview'},reader),/supported/);
  assert.throws(()=>verifyCandidatePinBindings({...input,sources,files:{'ci.yml':files['ci.yml'].replace(sha(3),sha(9))}},reader),/selected future/);
- assert.throws(()=>verifyCandidatePinBindings({...input,sources}, {...reader,object:(_r,ref,path)=>({sha:ref===sha(4)&&path==='.github/scripts'?sha(9):sha(6)})}),/future dev\/main/);
  assert.throws(()=>verifyCandidatePinBindings({...input,sources}, {...reader,get:path=>path.includes('/git/commits/')?{sha:path.split('/').at(-1),tree:{sha:sha(9)}}:g.get(path)}),/commit\/tree/);
 });
 test('local reader binds exact commit/tree, preserves gitlinks and never falls back to branches or network',()=>{
@@ -229,14 +238,19 @@ test('ROS-style aliases retain every consuming source role and shared edits agre
  for(const bad of ['jobs: &loop {check: *loop}\n','jobs: {check: {steps: [*missing]}}\n','a: &same value\nb: &same other\njobs: {}\n',nested+'  extra:\n    steps: ['+Array(1001).fill('*checkout').join(',')+']\n'])assert.throws(()=>workflowPins(bad,[],{repository}),/alias|anchor|limit/i);
 });
 
-test('MATLAB parent closure binds exactly both executable diagnostic blobs on both authorities',()=>{
+test('MATLAB parent closure verifies both executable diagnostic blobs at the pinned revision',()=>{
  const owner='cwru-non-academic/Matlab_WSS_Integration_Lib',target='cwru-non-academic/CLI_Matlab_WSS_Application',paths=['.github/actions/mac-artifact-diagnostic/action.yml','ci/runMacArtifactDiagnostic.m'];
  const p={wrapper:{role:'wrapper',family:'matlab',wrapper:'wrapper',target:{repository:owner}},app:{role:'cli',family:'matlab',wrapper:'wrapper',target:{repository:target}}},f={'ci.yml':workflow(checkout(owner,sha(3),'.mac-tools'))},r=register(f,()=> 'integration',target),l={...lock,repository:target},nl={...l,repository:owner},data={repository:target,channel:'dev',profiles:p,lock:l,files:f,roles:r};
  const reader={...g,get:path=>path.includes('/contents/')?{encoding:'base64',content:Buffer.from(JSON.stringify(nl)).toString('base64')}:g.get(path),object:(_repo,_ref,path)=>({sha:sha(6),mode:paths.includes(path)?'100644':'040000',type:paths.includes(path)?'blob':'tree',path})};
  const sources=[{repository:target,channel:'dev',commit:sha(7),tree:sha(6)},{repository:owner,channel:'dev',commit:sha(3),tree:sha(6)},{repository:owner,channel:'main',commit:sha(5),tree:sha(6)}];
- const verify=[{check:g=>verifyWorkflowPins(data,g),refs:[sha(3),sha(4),sha(5)]},{check:g=>verifyCandidatePinBindings({...data,sources},g),refs:[sha(3),sha(5)]}];
- for(const {check,refs} of verify){assert.equal(check(reader).references,1);assert.equal(check({...reader,object:(repo,ref,path)=>path==='ci/README.md'?{sha:sha(9),mode:'100644',type:'blob',path}:reader.object(repo,ref,path)}).references,1,'Unexecuted ci docs are outside tooling equality');
-  for(const ref of refs)for(const path of paths)for(const mutation of [{sha:sha(9)},null,{mode:'120000'},{mode:'160000',type:'commit'},{mode:'040000',type:'tree'}]){const changed={...reader,object:(repo,r,p)=>r===ref&&p===path?(mutation===null?null:{...reader.object(repo,r,p),...mutation}):reader.object(repo,r,p)};assert.throws(()=>check(changed),/executable blob/);}
+ for(const check of [g=>verifyWorkflowPins(data,g),g=>verifyCandidatePinBindings({...data,sources},g)]){
+  const checked=[];
+  assert.equal(check({...reader,object:(repo,ref,path)=>{assert.equal(ref,sha(3));checked.push(path);return reader.object(repo,ref,path);}}).references,1);
+  assert.deepEqual(checked,paths);
+  for(const path of paths)for(const mutation of [null,{sha:'bad'},{mode:'120000'},{mode:'160000',type:'commit'},{mode:'040000',type:'tree'}]){
+   const changed={...reader,object:(repo,ref,p)=>p===path?(mutation===null?null:{...reader.object(repo,ref,p),...mutation}):reader.object(repo,ref,p)};
+   assert.throws(()=>check(changed),/executable blob/);
+  }
  }
  const registry=JSON.parse(readFileSync(new URL('./executable-pin-roles.json',import.meta.url))).parent_executable_blobs;assert.deepEqual(registry,[{target,repository:owner,paths}]);
 });
