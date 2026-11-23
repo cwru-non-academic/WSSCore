@@ -66,10 +66,14 @@ try {
     requireThat(args.length===2,'prepare-dispatches requires producer run ID and output directory');
     requireThat(process.env.WSS_DEV_ACCEPTANCE_ENABLED==='true','Acceptance reconciliation is not enabled');
     const p=selected(loadPlan(g,args[0]));
-    const {intent:j,pending}=prepare(g,p,process.env.GITHUB_RUN_ID,Number(process.env.GITHUB_RUN_ATTEMPT));
+    const {intent:j,pending,blocked}=prepare(g,p,process.env.GITHUB_RUN_ID,Number(process.env.GITHUB_RUN_ATTEMPT));
     mkdirSync(args[1],{recursive:true});writeFileSync(join(args[1],'intent.json'),JSON.stringify(j,null,2)+'\n');
     appendFileSync(process.env.GITHUB_OUTPUT,`artifact_name=${journalName(p,j.run_id,j.attempt)}\nactions=${j.actions.length}\nreceipts_ready=${pending.length===0}\n`);
     if(pending.length&&process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,`Waiting for acceptance receipts from ${pending.join(', ')}.\n`);
+    for(const [target,reason] of Object.entries(blocked)) {
+      console.warn(`${target}: ${reason}`);
+      if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,`Blocked ${target}: ${reason.split('\n')[0]}\n`);
+    }
   } else if(command==='dispatch') {
     requireThat(args.length===2,'dispatch requires producer run ID and saved intent.json');
     requireThat(process.env.WSS_DEV_ACCEPTANCE_ENABLED==='true' && process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main','Dispatch runs only enabled trusted default-branch workflow');
