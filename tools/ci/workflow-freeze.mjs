@@ -150,7 +150,7 @@ export function collectWithWorkflows(g,p,collect) {
   assertWorkflows(g,p,'acceptance');
   const accepted=collect(g,p);
   assertWorkflows(g,p,'acceptance');
-  if(accepted?.admission&&!executedWorkflowAuthority(p.manifest))requireThat(same(refreshAdmission(g,p,accepted.admission),accepted.record),'Acceptance evidence changed during workflow verification');
+  if(accepted?.admission)requireThat(same(refreshAdmission(g,p,accepted.admission),accepted.record),'Acceptance evidence changed during workflow verification');
   return accepted;
 }
 // Read-only receiver entrypoint, including direct manual dispatches. Keep the
