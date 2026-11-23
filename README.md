@@ -8,6 +8,18 @@ Start with [Build](#build), [One universal distribution](#one-universal-distribu
 and [C# and Unity consumption](#c-and-unity-consumption). The complete build,
 platform, test and automation reference is retained below in expandable sections.
 
+## Build and run the core tests
+
+Install the .NET 8 runtime and .NET 9 SDK. From the repository root, with NuGet access:
+
+```bash
+dotnet restore WSS_Core_Interface.sln --locked-mode
+dotnet build WSS_Core_Interface.sln -c Release --no-restore
+dotnet test tests/Core/WSS.Core.Tests/WSS.Core.Tests.csproj -c Release --no-build --no-restore
+```
+
+These commands exercise the managed build and Core test suite without a device. See [Build](#build) for native builds and [One universal distribution](#one-universal-distribution) for the release artifact. To operate WSS from an application, use the [application quickstarts](https://github.com/cwru-non-academic/WSS_Documentation/blob/main/apiDocs/conceptual/start-here-using-an-application.md#which-applications-are-available).
+
 ## Configuration snapshots and host reset
 
 `WssConfigurationSnapshot` stages validated JSON without creating or backfilling
