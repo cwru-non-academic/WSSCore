@@ -84,10 +84,10 @@ jobs:
           path: ${{ runner.temp }}/main-stage/intent.json
           if-no-files-found: error
       - name: Retain all-integration authorization
-        if: steps.stage.outputs.barrier == 'true' && ((github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile'))
+        if: steps.stage.outputs.barrier == 'true' && steps.stage.outputs.actions != '0' && ((github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile'))
         uses: actions/upload-artifact@v4
         with:
-          name: wss-integration-barrier-${{ steps.stage.outputs.producer_run_id }}-a${{ github.run_attempt }}
+          name: ${{ steps.stage.outputs.barrier_name }}
           path: ${{ runner.temp }}/main-stage/barrier.json
           if-no-files-found: error
   dispatch:

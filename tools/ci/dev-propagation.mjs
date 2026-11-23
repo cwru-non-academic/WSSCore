@@ -6,7 +6,7 @@ import {join,resolve,dirname,isAbsolute} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {GitHub,archive,loadPlan} from '../release/github.mjs';
-import {campaignReceiptRuns,createdSince,dispatchWasSkipped,journalArtifacts} from '../release/controller-discovery.mjs';
+import {campaignReceiptRuns,createdSince,dispatchWasSkipped,journalArtifacts,needsCommittedCIDispatch} from '../release/controller-discovery.mjs';
 import {findNormalRuns} from '../release/normal-ci.mjs';
 import {CORE,CORE_JOBS,candidate,canonical,digest,jobs,requireThat} from '../release/verify.mjs';
 import {assertWorkflows,assertWorkflowPair,executedWorkflowAuthority,freezeWorkflows,guardedWriter} from './workflow-freeze.mjs';
@@ -100,7 +100,17 @@ export function inspectInitialHandoff(g,p,family,context,env=process.env) {
       r.head_branch===context.branch&&r.head_sha===expectedSource&&Number.isSafeInteger(r.run_attempt)&&r.run_attempt>=1,'Correlated initial promotion source/workflow differs');
     requireThat(r.status!=='completed'||r.conclusion==='success','Prior correlated initial promotion failed; inspect before recovery');
   } else {
-    requireThat(String(env.GITHUB_RUN_ATTEMPT)==='1','No correlated promotion after an earlier attempt; inspect uncertain dispatch before retry');
+    const attempts=Number(env.GITHUB_RUN_ATTEMPT);
+    if(attempts>1&&executedWorkflowAuthority(p.policy)) {
+      const label={python:'Python',unity:'Unity',matlab:'MATLAB'}[family];
+      for(let attempt=1;attempt<attempts;attempt++) {
+        const previous=g.get(`repos/${CORE}/actions/runs/${env.GITHUB_RUN_ID}/attempts/${attempt}`);
+        requireThat(String(previous.id)===env.GITHUB_RUN_ID&&previous.run_attempt===attempt&&previous.repository?.full_name===CORE&&
+          previous.head_repository?.full_name===CORE&&previous.path===`.github/workflows/propagate-${family}.yml`&&previous.head_branch==='main'&&
+          previous.event==='workflow_run'&&dispatchWasSkipped(g,previous,attempt,{jobName:`Dispatch ${label} Integration promotion`,stepName:'Dispatch once; inspect uncertain outcomes before retry'}),
+          'No correlated promotion after an earlier attempt; inspect uncertain dispatch before retry');
+      }
+    } else requireThat(attempts===1,'No correlated promotion after an earlier attempt; inspect uncertain dispatch before retry');
     requireThat(g.head(profile.repository,context.branch)===expectedSource,'Initial destination source moved before preparation');
   }
   return {dispatch_needed:runs.length===0,producer_run_id:p.candidate.run_id,source_sha:expectedSource,channel:context.channel};
@@ -317,7 +327,7 @@ function integrationReceipt(g,acceptance,target,verified,since,saved) {
     r.emitter?.workflow===workflow,`Library receipt differs from the tested candidate or merge for ${target.id}`);
   return binding;
 }
-export function prepareStage(g,p,run,attempt,{discoverDispatches=true,excludeCurrent=false,savedBarrier,checkReceipts=discoverDispatches||Boolean(savedBarrier),loadAcceptance=loadPlan}={}) {
+export function prepareStage(g,p,run,attempt,{discoverDispatches=true,excludeCurrent=false,savedBarrier,loadAcceptance=loadPlan}={}) {
   validatePlan(p);
   const context=stageContext(p);
   assertWorkflows(g,p,'stage',{live:false});
@@ -341,7 +351,10 @@ export function prepareStage(g,p,run,attempt,{discoverDispatches=true,excludeCur
     try {
       const runs=normalRuns(g,p,t,accepted);
       requireThat(runs.length<=1,`Ambiguous committed-state CI for ${t.id}; inspect recovery`);
-      if(!runs.length) {actions.push(action(p,t,accepted,'normal-ci',{}));pending.push(t.id);continue;}
+      if(!runs.length) {
+        if(!requiresReceipts||needsCommittedCIDispatch(t.id))actions.push(action(p,t,accepted,'normal-ci',{}));
+        pending.push(t.id);continue;
+      }
       const r=runs[0];
       requireThat(r.repository?.full_name===t.repository && r.head_repository?.full_name===t.repository && r.path===`.github/workflows/${t.normal}` && r.head_sha===accepted.head_sha,'Normal CI source mismatch');
       requireThat(r.status!=='completed' || r.conclusion==='success',`Failed integration CI for ${t.id}; no blind retry`);
@@ -352,7 +365,7 @@ export function prepareStage(g,p,run,attempt,{discoverDispatches=true,excludeCur
     } catch(error) {if(!independent)throw error;blocked.push({target:t.id,reason:error.message});pending.push(t.id);}
   }
   const allReady=p.policy.libraries.every(t=>Object.hasOwn(ready,t.id));
-  if(requiresReceipts&&allReady&&checkReceipts) {
+  if(requiresReceipts&&allReady&&(discoverDispatches||savedBarrier)) {
     const acceptance=loadAcceptance(g,p.candidate.run_id);
     requireThat(acceptance.channel===context.channel&&same(acceptance.candidate,p.candidate)&&
       (context.channel!=='main'||acceptance.plan_id===p.acceptance_plan_id),'Library receipt plan differs from stage candidate');
@@ -428,36 +441,77 @@ export function executeStage(g,reader,p,j) {
   }
   if(failures.length)throw new Error(failures.join('\n'));
 }
-export function verifyBarrier(g,producerId,runId,attempt,repository,{channel='dev'}={}) {
-  const context=channelContext(channel),p=loadStage(g,producerId,{channel});
-  const target=p.policy.libraries.find(t=>t.repository===repository);
-  requireThat(target,'Unknown application fanout caller');
-  requireThat(/^[1-9][0-9]*$/.test(runId) && Number.isSafeInteger(attempt) && attempt>=1,'Invalid barrier emitter identity');
-  const r=g.run(CORE,runId);
-  requireThat(r.repository?.full_name===CORE && r.head_repository?.full_name===CORE && r.path===context.stageWorkflow && r.head_branch==='main' &&
-    (executedWorkflowAuthority(p.policy)?sha(r.head_sha):r.head_sha===g.head(CORE,'main')) && r.run_attempt===attempt && ['workflow_run','schedule','workflow_dispatch'].includes(r.event),'Barrier did not originate from trusted Core main');
-  const actual=g.jobs(CORE,r).filter(j=>j.name===`Prepare verified ${context.channel} propagation stage`);
-  requireThat(actual.length===1 && actual[0].status==='completed' && actual[0].conclusion==='success','Barrier preparation job did not succeed');
-  const name=`wss-integration-barrier-${producerId}-a${attempt}`,a=g.artifact(CORE,runId,name);
-  requireThat(a.workflow_run.head_sha===r.head_sha,'Barrier artifact source mismatch');
+function barrierName(p,attempt) {
+  const name=`wss-integration-barrier-${p.candidate.run_id}`;
+  return receiptBarrierRequired(p.policy)?name:`${name}-a${attempt}`;
+}
+function readBarrier(g,p,runId,attempt,artifactId) {
+  const context=stageContext(p);
+  requireThat(decimal(runId),'Invalid barrier emitter identity');
+  const run=g.run(CORE,runId);
+  requireThat(String(run.id)===runId&&run.repository?.full_name===CORE&&run.head_repository?.full_name===CORE&&run.path===context.stageWorkflow&&run.head_branch==='main'&&
+    (executedWorkflowAuthority(p.policy)?sha(run.head_sha):run.head_sha===g.head(CORE,'main'))&&
+    Number.isSafeInteger(run.run_attempt)&&run.run_attempt>=1&&(attempt===undefined||run.run_attempt===attempt)&&
+    ['workflow_run','schedule','workflow_dispatch'].includes(run.event),'Barrier did not originate from trusted Core main');
+  jobs(g.jobs(CORE,run),[`Prepare verified ${context.channel} propagation stage`]);
+  const name=barrierName(p,run.run_attempt),artifact=g.artifact(CORE,runId,name);
+  requireThat(String(artifact.workflow_run?.id)===runId&&artifact.workflow_run.head_sha===run.head_sha,'Barrier artifact source mismatch');
+  requireThat(artifactId===undefined||String(artifact.id)===artifactId,'Barrier artifact changed during lookup');
   const barrier=JSON.parse(g.download(CORE,runId,name,['barrier.json'])['barrier.json']);
-  const live=prepareStage(g,p,runId,attempt,{excludeCurrent:true,discoverDispatches:false,savedBarrier:receiptBarrierRequired(p.policy)?barrier:undefined});
-  if(receiptBarrierRequired(p.policy)) {
-    requireThat(live.barrier&&same(barrier,live.barrier),'All four library receipts must still authorize application promotion');
-  } else if(p.policy.application_fanout==='per-integration') {
-    assertFamilyBarrier(p,barrier,live.barrier,target,runId,attempt);
-  } else requireThat(barrier.schema==='wss-integration-barrier/v1' && same(barrier,live.barrier),'Current integrations no longer match the authorized barrier');
+  requireThat(same(barrier.emitter,{run_id:runId,attempt:run.run_attempt,workflow:context.stageWorkflow}),'Barrier artifact attempt mismatch');
+  return barrier;
+}
+export function authorizeRecordedBarrier(g,p,barrier,target,loadAcceptance=loadPlan) {
+  const context=stageContext(p),main=context.channel==='main';
+  const all=barrier?.integrations;
+  requireThat(barrier?.schema===(main?'wss-integration-barrier/v3':'wss-integration-barrier/v2')&&(!main||barrier.channel==='main')&&
+    barrier.plan_id===p.plan_id&&same(barrier.candidate,p.candidate)&&Object.keys(all||{}).length===4&&
+    p.policy.libraries.every(t=>all[t.id]?.repository===t.repository&&sha(all[t.id].head_sha)&&
+      decimal(all[t.id].normal_ci?.run_id)&&decimal(all[t.id].receipt?.run_id)&&decimal(all[t.id].receipt?.artifact_id)),
+    'Core did not authorize all four library receipts for this candidate');
+  // Core checked the complete set before dispatch. A family-scoped receiver
+  // rechecks its own current merge and receipt without sibling credentials.
+  const accepted=all[target.id],current=mergedLibrary(g,p,target);
+  requireThat(current&&same(current,Object.fromEntries(Object.keys(current).map(key=>[key,accepted[key]]))),'Application integration moved after Core authorization');
+  const runs=normalRuns(g,p,target,current);
+  requireThat(runs.length===1&&runs[0].status==='completed'&&runs[0].conclusion==='success'&&
+    same(accepted.normal_ci,{run_id:String(runs[0].id),attempt:runs[0].run_attempt}),'Application integration CI changed after Core authorization');
+  jobs(g.jobs(target.repository,runs[0]),target.jobs);
+  if(p.test_selection)requireThat(same(accepted.selected_tests,verifySelectedTestArtifact(p,`${target.id}-wrapper`,runs[0],collectSelectedTestArtifact(g,p,`${target.id}-wrapper`,runs[0]))),'Application library selected tests changed after Core authorization');
+  const acceptance=loadAcceptance(g,p.candidate.run_id);
+  const receiptTarget=acceptance.manifest.targets.find(t=>t.id===`${target.id}-wrapper`);
+  requireThat(receiptTarget?.repository===target.repository&&receiptTarget.branch===context.branch,'Application library receipt policy differs');
+  requireThat(integrationReceipt(g,acceptance,receiptTarget,accepted,undefined,accepted.receipt),'Application library receipt is no longer ready');
+}
+export function verifyBarrier(g,producerId,runId,attempt,repository,{channel='dev'}={}) {
+  const p=loadStage(g,producerId,{channel,checkArchive:false});
+  const target=p.policy.libraries.find(t=>t.repository===repository);
+  requireThat(target&&Number.isSafeInteger(attempt)&&attempt>=1,'Unknown application fanout caller or invalid stage attempt');
+  const barrier=readBarrier(g,p,runId,attempt);
+  if(receiptBarrierRequired(p.policy))authorizeRecordedBarrier(g,p,barrier,target);
+  else {
+    archive(g,p.candidate);
+    const live=prepareStage(g,p,runId,attempt,{excludeCurrent:true,discoverDispatches:false});
+    if(p.policy.application_fanout==='per-integration')assertFamilyBarrier(p,barrier,live.barrier,target,runId,attempt);
+    else requireThat(barrier.schema==='wss-integration-barrier/v1'&&same(barrier,live.barrier),'Current integrations no longer match the authorized barrier');
+  }
   return barrier;
 }
 export function verifyApplicationStage(g,producerId,repository,env=process.env) {
   const {channel}=channelContext(env.WSS_CI_CHANNEL);
-  // Application preflights already checked the ZIP. This boundary checks the
-  // immutable stage and committed library evidence before offering a PR.
   const p=loadStage(g,producerId,{channel,checkArchive:false});
-  requireThat(p.policy.libraries.some(lib=>lib.applications.includes(repository)),'Unknown staged application');
+  const target=p.policy.libraries.find(lib=>lib.applications.includes(repository));
+  requireThat(target,'Unknown staged application');
   if(receiptBarrierRequired(p.policy)) {
-    const verified=prepareStage(g,p,env.GITHUB_RUN_ID,Number(env.GITHUB_RUN_ATTEMPT),{discoverDispatches:false,checkReceipts:true});
-    requireThat(verified.barrier,`Waiting for verified library receipts: ${verified.pending.join(', ')}`);
+    const name=barrierName(p);
+    const matches=g.pages(`repos/${CORE}/actions/artifacts?name=${name}`,'artifacts').filter(a=>a.name===name&&a.expired===false);
+    requireThat(matches.length>0,'Waiting for verified library receipts');
+    requireThat(matches.every(a=>decimal(a.id)&&decimal(a.workflow_run?.id))&&new Set(matches.map(a=>String(a.id))).size===matches.length,'Invalid library authorization inventory');
+    // A later scheduled reconciliation can retain the same approval. Validate
+    // only the most recent artifact, and never fall back to a stale approval.
+    const newest=matches.reduce((latest,item)=>BigInt(item.id)>BigInt(latest.id)?item:latest);
+    const barrier=readBarrier(g,p,String(newest.workflow_run.id),undefined,String(newest.id));
+    authorizeRecordedBarrier(g,p,barrier,target);
   }
   return {channel,candidate:p.candidate};
 }
@@ -487,7 +541,7 @@ async function main() {
     const j=prepareStage(g,p,process.env.GITHUB_RUN_ID,Number(process.env.GITHUB_RUN_ATTEMPT));
     mkdirSync(directory,{recursive:true});writeFileSync(join(directory,'intent.json'),canonical(j)+'\n');
     if(j.barrier) writeFileSync(join(directory,'barrier.json'),canonical(j.barrier)+'\n');
-    appendFileSync(process.env.GITHUB_OUTPUT,`producer_run_id=${id}\nartifact_name=${journalName(p,j.run_id,j.attempt)}\nactions=${j.actions.length}\nbarrier=${Boolean(j.barrier)}\n`);
+    appendFileSync(process.env.GITHUB_OUTPUT,`producer_run_id=${id}\nartifact_name=${journalName(p,j.run_id,j.attempt)}\nactions=${j.actions.length}\nbarrier_name=${barrierName(p,j.attempt)}\nbarrier=${Boolean(j.barrier)}\n`);
     appendFileSync(process.env.GITHUB_STEP_SUMMARY,`Dev propagation: ${j.state}; pending integrations: ${j.pending.join(', ') || 'none'}; blocked families: ${(j.blocked||[]).map(x=>`${x.target}: ${x.reason}`).join('; ') || 'none'}. No release publication.\n`);
   } else if(command==='dispatch') {
     requireThat(process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main' && process.env.GITHUB_WORKFLOW_REF===`${CORE}/${context.stageWorkflow}@refs/heads/main`,'Dispatch only from registered trusted Core main workflow');

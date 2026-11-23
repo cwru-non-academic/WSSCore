@@ -3,7 +3,7 @@ import {CAMPAIGN_TEST_POLICY,selectionRequest,selectionFields,targetTestEvidence
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {prepareStage,executeStage,assertFamilyBarrier} from '../ci/dev-propagation.mjs';
+import {prepareStage,executeStage,assertFamilyBarrier,authorizeRecordedBarrier} from '../ci/dev-propagation.mjs';
 import {CORE,digest} from './verify.mjs';
 import {freezeWorkflows} from '../ci/workflow-freeze.mjs';
 import {channelContext,integrationConfiguration} from './channels.mjs';
@@ -57,13 +57,15 @@ for(const channel of ['dev','main'])test(`${channel} can start one library's com
   f.p.policy_sha256=digest(f.p.policy);
   const {plan_id,...body}=f.p;
   f.p.plan_id=digest(body);
-  f.state.missing.add('python');
+  f.state.merged.clear();
+  f.state.merged.add('csharp');
+  f.state.missing.add('csharp');
   const j=prepareStage(f.g,f.p,'9',1);
-  assert.deepEqual(j.actions.map(a=>[a.target,a.phase]),[['python','normal-ci']]);
+  assert.deepEqual(j.actions.map(a=>[a.target,a.phase]),[['csharp','normal-ci']]);
   f.state.saved=j;
   executeStage(f.g,f.g,f.p,j);
   assert.equal(f.commands.length,1);
-  assert.ok(f.commands[0][3].endsWith(`/${f.python.normal}/dispatches`));
+  assert.ok(f.commands[0][3].endsWith('/wss-compatibility.yml/dispatches'));
 });
 for(const channel of ['dev','main'])test(`${channel} authorizes apps only after all four exact library receipts`,()=>{
   const f=fixture(true,channel,true),context=channelContext(channel),manifest=JSON.parse(readFileSync(new URL(`./targets.${channel}.json`,import.meta.url)));
@@ -102,7 +104,9 @@ for(const channel of ['dev','main'])test(`${channel} authorizes apps only after 
   f.g.download=repo=>({'receipt.json':Buffer.from(JSON.stringify(receipts.get(repo)))});
   const prepare=(opts={})=>prepareStage(f.g,f.p,'9',1,{loadAcceptance:()=>acceptance,...opts});
   f.state.missing.add('unity');
-  assert.deepEqual(prepare().actions.map(a=>[a.target,a.phase]),[['unity','normal-ci']]);
+  assert.deepEqual(prepare().actions,[],'A push-triggered library waits for its own normal CI, without a duplicate dispatch');
+  f.state.missing.add('matlab');
+  assert.deepEqual(prepare().actions.map(a=>[a.target,a.phase]),[['matlab','normal-ci']]);
   f.state.missing.clear();
   for(const repo of [...runs.keys()].slice(0,3))available.add(repo);
   const pending=prepare();
@@ -118,6 +122,18 @@ for(const channel of ['dev','main'])test(`${channel} authorizes apps only after 
   assert.equal(authorized.actions.length,4);
   assert.ok(Object.values(authorized.barrier.integrations).every(t=>t.receipt.artifact_id));
   assert.deepEqual(prepare({discoverDispatches:false,savedBarrier:authorized.barrier}).barrier,authorized.barrier);
+  const scoped={...f.g};
+  for(const method of ['head','object','run','jobs'])scoped[method]=(repo,...args)=>{
+    assert.ok([CORE,f.python.repository].includes(repo),'No sibling credentials are available to the receiver');
+    return f.g[method](repo,...args);
+  };
+  for(const method of ['get','pages'])scoped[method]=(path,...args)=>{
+    assert.ok([CORE,f.python.repository].includes(path.split('/').slice(1,3).join('/')),'No sibling credentials are available to the receiver');
+    return f.g[method](path,...args);
+  };
+  authorizeRecordedBarrier(scoped,f.p,authorized.barrier,f.python,()=>acceptance);
+  const incomplete=structuredClone(authorized.barrier);delete incomplete.integrations.unity;
+  assert.throws(()=>authorizeRecordedBarrier(scoped,f.p,incomplete,f.python,()=>acceptance),/all four library receipts/);
   const python=runs.get(f.python.repository),receipt=receipts.get(f.python.repository);
   receipt.candidate={...f.p.candidate,sha256:'b'.repeat(64)};
   assert.throws(()=>prepare(),/differs from the tested candidate/);

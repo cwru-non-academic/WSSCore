@@ -56,6 +56,7 @@ GitHub.prototype.head=(repo,branch)=>{if(repo===CORE){if(branch==='main')return 
   if(mode==='target-moved'&&repo===profile.repository&&branch===d.channel)return 'f'.repeat(40);
   return d.heads[repo+':'+branch];};
 GitHub.prototype.get=path=>{
+  if(path==='repos/'+CORE+'/actions/runs/51/attempts/1'&&mode.startsWith('retry-'))return {id:51,run_attempt:1,repository:{full_name:CORE},head_repository:{full_name:CORE},path:'.github/workflows/propagate-unity.yml',head_branch:'main',event:'workflow_run',status:'completed'};
   if(path.includes('/contents/tools/ci/'+d.channel+'-propagation.json'))return json(mode==='policy'?{...d.stage.policy,channel:'other'}:d.stage.policy);
   if(path.includes('/contents/tools/release/targets.'))return json(d.acceptance.manifest);
   if(path.includes('/contents/.github/matlab-ci.json'))return json({baseline_ready:mode!=='matlab-baseline',candidate_preflight_ready:mode!=='matlab-candidate'});
@@ -67,7 +68,7 @@ GitHub.prototype.get=path=>{
 };
 GitHub.prototype.object=(repo,ref,path)=>{if(path!=='.github/workflows')throw Error('Unexpected object');return {type:'tree',sha:mode==='workflow-drift'&&repo===profile.repository?'e'.repeat(40):d.trees[repo+':'+ref]};};
 GitHub.prototype.run=()=>{const r=structuredClone(d.producer);if(mode==='producer-fork')r.head_repository.full_name='foreign/repo';if(mode==='producer-event')r.event='workflow_dispatch';if(mode==='producer-status')r.status='in_progress';if(mode==='producer-branch')r.head_branch=d.channel==='dev'?'main':'dev';if(mode==='producer-workflow')r.workflow_id=999;if(mode==='producer-attempt')r.run_attempt=2;return r;};
-GitHub.prototype.jobs=()=>{const jobs=d.jobs.map(name=>({name,status:'completed',conclusion:'success'}));if(mode==='job-missing')jobs.pop();if(mode==='job-duplicate')jobs.push({...jobs[0]});if(['job-skipped','job-cancelled','job-failed'].includes(mode))jobs[0].conclusion=mode.slice(4);return jobs;};
+GitHub.prototype.jobs=(_repo,run)=>{if(run?.id===51)return [{name:'Dispatch Unity Integration promotion',status:'completed',steps:[{name:'Dispatch once; inspect uncertain outcomes before retry',status:'completed',conclusion:mode==='retry-skipped'?'skipped':'failure'}]}];const jobs=d.jobs.map(name=>({name,status:'completed',conclusion:'success'}));if(mode==='job-missing')jobs.pop();if(mode==='job-duplicate')jobs.push({...jobs[0]});if(['job-skipped','job-cancelled','job-failed'].includes(mode))jobs[0].conclusion=mode.slice(4);return jobs;};
 GitHub.prototype.artifact=()=>({id:mode==='artifact-id'?13:12,name:'universal-release-assets',workflow_run:{id:mode==='artifact-run'?13:11,head_sha:mode==='artifact-source'?'e'.repeat(40):d.c.commit}});
 GitHub.prototype.download=(repo,id,name)=>{if(name==='universal-release-assets')return {[d.c.archive]:Buffer.from(mode==='archive-digest'?'corrupt':'fixture archive'),'SHA256SUMS.txt':Buffer.from(d.c.sha256+'  '+d.c.archive+'\\n')};
   const p=structuredClone(name==='wss-propagation-plan'?d.acceptance:d.stage);
@@ -105,6 +106,12 @@ for(const channel of ['dev','main'])test(`initial handoff on ${channel} checks t
     const wrongSource=f.execute('unity',{mode:'existing-source'});
     assert.notEqual(wrongSource.status,0);
     assert.equal(wrongSource.postCount,0);
+    const missed=f.execute('unity',{mode:'retry-skipped',overrides:{GITHUB_RUN_ATTEMPT:'2'}});
+    assert.equal(missed.status,0,missed.stderr);
+    assert.match(missed.output,/dispatch_needed=true/);
+    const uncertain=f.execute('unity',{mode:'retry-attempted',overrides:{GITHUB_RUN_ATTEMPT:'2'}});
+    assert.notEqual(uncertain.status,0);
+    assert.equal(uncertain.postCount,0);
   } finally {f.cleanup();}
 });
 

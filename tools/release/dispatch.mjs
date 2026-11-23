@@ -1,7 +1,7 @@
 import {basename} from 'node:path';
 import {channelContext} from './channels.mjs';
 import {archive} from './github.mjs';
-import {campaignReceiptRuns,createdSince,dispatchWasSkipped,journalArtifacts} from './controller-discovery.mjs';
+import {campaignReceiptRuns,createdSince,dispatchWasSkipped,journalArtifacts,needsCommittedCIDispatch} from './controller-discovery.mjs';
 import {findNormalRuns} from './normal-ci.mjs';
 import {bytesDigest,canonical,CORE,digest,plan,producer,requireThat} from './verify.mjs';
 import {assertWorkflows,executedWorkflowAuthority,guardedWriter} from '../ci/workflow-freeze.mjs';
@@ -74,7 +74,7 @@ export function prepare(g,p,run,attempt) {
     const normals=findNormalRuns(g,t,head,prs[0].merged_at);
     if(normals.length===0) {
       // The stage coordinator is the sole writer for integration normal CI.
-      if(t.kind==='gitlink') request(t,t.workflow,head,{},prs[0].merged_at);
+      if(t.kind==='gitlink'&&(!current||needsCommittedCIDispatch(t.id))) request(t,t.workflow,head,{},prs[0].merged_at);
       continue;
     }
     requireThat(normals[0].status!=='completed' || normals[0].conclusion==='success',`Postmerge CI failed for ${t.id}; inspect recovery`);
