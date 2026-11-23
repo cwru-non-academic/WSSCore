@@ -6,10 +6,10 @@ import {join,resolve,dirname,isAbsolute} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {GitHub,archive,loadPlan} from '../release/github.mjs';
-import {journalArtifacts} from '../release/controller-discovery.mjs';
+import {createdSince,journalArtifacts} from '../release/controller-discovery.mjs';
 import {findNormalRuns} from '../release/normal-ci.mjs';
 import {CORE,CORE_JOBS,candidate,canonical,digest,jobs,requireThat} from '../release/verify.mjs';
-import {assertWorkflows,assertWorkflowPair,freezeWorkflows,guardedWriter} from './workflow-freeze.mjs';
+import {assertWorkflows,assertWorkflowPair,executedWorkflowAuthority,freezeWorkflows,guardedWriter} from './workflow-freeze.mjs';
 import {channelContext,integrationConfiguration} from '../release/channels.mjs';
 import {channelActivation,controllerContext} from './channel-controls.mjs';
 
@@ -88,7 +88,8 @@ export function inspectInitialHandoff(g,p,family,context,env=process.env) {
   requireThat(decimal(workflow.id),'Initial destination workflow identity is invalid');
   const expectedSource=p.receivers[family].heads[context.branch];
   const title='Promote universal WSS / wss-'+p.candidate.run_id+'-'+p.candidate.artifact_id;
-  const runs=g.pages('repos/'+profile.repository+'/actions/workflows/promote-wss.yml/runs?event=workflow_dispatch','workflow_runs').filter(r=>r.display_title===title);
+  const after=executedWorkflowAuthority(p.policy)?`&${createdSince(g.run(CORE,p.candidate.run_id).created_at)}`:'';
+  const runs=g.pages('repos/'+profile.repository+'/actions/workflows/promote-wss.yml/runs?event=workflow_dispatch'+after,'workflow_runs').filter(r=>r.display_title===title);
   requireThat(runs.length<=1,'Ambiguous correlated initial promotion');
   if(runs.length) {
     const r=runs[0];
@@ -169,7 +170,7 @@ export function freezeStage(g,m,c,{freeze=true,testSelection}={}) {
       requireThat(cap.schema===context.receiverSchema && cap.core_workflow===context.stageWorkflow && cap.fanout_workflow===t.fanout && cap.staged_applications===true && same([...cap.applications].sort(),[...t.applications].sort()),`Deploy staged application guard on ${t.repository}/${branch}`);
       trusted[branch]=Object.fromEntries([context.receiverPolicy,'.github/scripts',`.github/workflows/${t.normal}`,`.github/workflows/${t.fanout}`,...(m.application_fanout==='per-integration'?['.github/workflows/notify-core-stage.yml']:[]),...(context.channel==='main'?[integrationConfiguration(t.id),'.github/workflows']:[])].map(p=>[p,g.object(t.repository,heads[branch],p).sha]));
     }
-    if(context.channel==='main')for(const path of ['.github/scripts',integrationConfiguration(t.id),'.github/workflows'])requireThat(trusted.main[path]===trusted.dev[path],`Owner channel tooling differs between main and dev: ${t.id}/${path}`);
+    if(context.channel==='main'&&!executedWorkflowAuthority(m))for(const path of ['.github/scripts',integrationConfiguration(t.id),'.github/workflows'])requireThat(trusted.main[path]===trusted.dev[path],`Owner channel tooling differs between main and dev: ${t.id}/${path}`);
     for(const f of [t.normal,t.fanout,'promote-wss.yml','wss-preflight.yml']) registered(g,t.repository,f);
     if(m.application_fanout==='per-integration')registered(g,t.repository,'notify-core-stage.yml');
     for(const app of t.applications) {
@@ -224,9 +225,13 @@ export function loadStage(g,id,{channel='dev',initialEvent}={}) {
 function trusted(g,p,t,head) {
   assertWorkflows(g,p,'stage',{ids:[t.id]});
   const context=stageContext(p);
-  for(const branch of ['main','dev']) {
+  const branches=executedWorkflowAuthority(p.policy)?[context.branch]:['main','dev'];
+  for(const branch of branches) {
     const ref=branch===context.branch?head:g.head(t.repository,branch);
-    for(const [path,sha] of Object.entries(p.receivers[t.id].trusted[branch])) requireThat(g.object(t.repository,ref,path).sha===sha,`Staged receiver tooling changed: ${t.id}/${branch}/${path}`);
+    for(const [path,sha] of Object.entries(p.receivers[t.id].trusted[branch])) {
+      if(path==='.github/workflows'&&executedWorkflowAuthority(p.policy))continue;
+      requireThat(g.object(t.repository,ref,path).sha===sha,`Staged receiver tooling changed: ${t.id}/${branch}/${path}`);
+    }
   }
 }
 function mergedLibrary(g,p,t) {
@@ -239,14 +244,15 @@ function mergedLibrary(g,p,t) {
   requireThat(pr.merged===true && pr.state==='closed' && pr.merge_commit_sha===head && pr.user?.type==='Bot' && pr.merged_by?.type==='User' && pr.head?.repo?.full_name===t.repository && pr.base?.repo?.full_name===t.repository && pr.base.ref===context.branch,`Require human-reviewed bot dependency merge for ${t.id}`);
   trusted(g,p,t,head);
   const accepted={repository:t.repository,head_sha:head,pr_number:String(pr.number),merged_at:pr.merged_at};
-  if(context.channel==='main')accepted.execution={source_sha:head,authority_source_sha:p.receivers[t.id].heads.main,trusted:Object.fromEntries(['.github/scripts',integrationConfiguration(t.id),'.github/workflows'].map(path=>[path,p.receivers[t.id].trusted.main[path]]))};
+  if(context.channel==='main')accepted.execution={source_sha:head,authority_source_sha:p.receivers[t.id].heads.main,trusted:Object.fromEntries(['.github/scripts',integrationConfiguration(t.id),'.github/workflows'].map(path=>[path,executedWorkflowAuthority(p.policy)?g.object(t.repository,head,path).sha:p.receivers[t.id].trusted.main[path]]))};
   return accepted;
 }
 function normalRuns(g,p,t,accepted) {
   return findNormalRuns(g,{repository:t.repository,workflow:`.github/workflows/${t.normal}`,branch:stageContext(p).branch},accepted.head_sha,accepted.merged_at);
 }
 const title=p=>`Resume application promotion / wss-${p.candidate.run_id}`;
-const journalName=(p,run,attempt)=>`wss-${stageContext(p).channel}-stage-intents-${p.candidate.run_id}-${run}-a${attempt}`;
+const journalPrefix=p=>`wss-${stageContext(p).channel}-stage-intents-${p.candidate.run_id}`;
+const journalName=(p,run,attempt)=>executedWorkflowAuthority(p.policy)?journalPrefix(p):`${journalPrefix(p)}-${run}-a${attempt}`;
 function action(p,t,accepted,phase,inputs) {
   const context=stageContext(p),main=context.channel==='main';
   const body={candidate:p.candidate,plan_id:p.plan_id,target:t.id,repository:t.repository,head_sha:accepted.head_sha,merged_at:accepted.merged_at,phase,
@@ -259,11 +265,12 @@ function existing(g,p,a) {
   const runs=g.pages(`repos/${a.repository}/actions/workflows/${a.workflow}/runs?branch=${a.ref}&event=workflow_dispatch&head_sha=${a.source_sha}`,'workflow_runs');
   return a.phase==='applications'?runs.filter(r=>r.display_title===title(p)):runs.filter(r=>Date.parse(r.created_at)>=Date.parse(a.merged_at));
 }
-function priorIntents(g,p,excludeRun='') {
+function priorIntents(g,p,run,excludeCurrent=false) {
   const context=stageContext(p);
-  const prefix=`wss-${context.channel}-stage-intents-${p.candidate.run_id}-`;
+  const exact=executedWorkflowAuthority(p.policy);
   const result=[];
-  for(const {artifact,runId} of journalArtifacts(g,context.stageWorkflow,prefix,excludeRun)) {
+  for(const {artifact,runId} of journalArtifacts(g,context.stageWorkflow,exact?journalPrefix(p):`${journalPrefix(p)}-`,{exact,excludeRun:excludeCurrent?run:''})) {
+    requireThat(!exact||runId!==run,'This run already saved a dispatch intent. Start a new reconciliation run.');
     requireThat(!artifact.expired,'Expired stage intent; inspect before recovery');
     const j=JSON.parse(g.download(CORE,runId,artifact.name,['intent.json'])['intent.json']);
     requireThat(j.plan_id===p.plan_id && j.run_id===runId && artifact.name===journalName(p,j.run_id,j.attempt),'Foreign or inconsistent stage journal');
@@ -271,7 +278,7 @@ function priorIntents(g,p,excludeRun='') {
   }
   return result;
 }
-export function prepareStage(g,p,run,attempt,excludeCurrent=false) {
+export function prepareStage(g,p,run,attempt,{discoverDispatches=true,excludeCurrent=false}={}) {
   validatePlan(p);
   const context=stageContext(p);
   assertWorkflows(g,p,'stage',{live:false});
@@ -306,13 +313,16 @@ export function prepareStage(g,p,run,attempt,excludeCurrent=false) {
   }
   const authorized=perFamily?Object.keys(ready).length>0:Object.keys(ready).length===4;
   const barrier=authorized?{schema:context.channel==='main'?'wss-integration-barrier/v3':perFamily?'wss-integration-barrier/v2':'wss-integration-barrier/v1',...(context.channel==='main'?{channel:'main'}:{}),plan_id:p.plan_id,candidate:p.candidate,integrations:ready,emitter:{run_id:run,attempt,workflow:context.stageWorkflow}}:null;
+  if(!discoverDispatches)return {...base,actions:[],...(barrier?{barrier}:{})};
   if(barrier) for(const t of p.policy.libraries.filter(t=>Object.hasOwn(ready,t.id))) actions.push(action(p,t,ready[t.id],'applications',{producer_run_id:p.candidate.run_id,barrier_run_id:run,barrier_attempt:String(attempt),...(context.channel==='main'?{channel:'main'}:{})}));
-  const prior=actions.length ? priorIntents(g,p,excludeCurrent?run:'') : [],needed=[];
+  const needed=[];
+  let prior;
   for(const a of actions) {
     try {
       const runs=existing(g,p,a);
       requireThat(runs.length<=1,`Ambiguous staged dispatch for ${a.target}`);
       if(runs.length) {requireThat(runs[0].status!=='completed' || runs[0].conclusion==='success',`Staged dispatch failed for ${a.target}; inspect before recovery`);continue;}
+      prior??=priorIntents(g,p,run,excludeCurrent);
       requireThat(!prior.some(x=>x.key===a.key),`Uncertain prior dispatch for ${a.target}; no automatic duplicate`);
       needed.push(a);
     } catch(error) {if(!perFamily)throw error;blocked.push({target:a.target,reason:error.message});}
@@ -330,7 +340,7 @@ export function executeStage(g,reader,p,j) {
   const context=stageContext(p);
   const saved=JSON.parse(reader.download(CORE,j.run_id,journalName(p,j.run_id,j.attempt),['intent.json'])['intent.json']);
   requireThat(same(saved,j),'Durable dev stage journal differs');
-  const live=prepareStage(reader,p,j.run_id,j.attempt,true);
+  const live=prepareStage(reader,p,j.run_id,j.attempt,{excludeCurrent:true,discoverDispatches:!executedWorkflowAuthority(p.policy)});
   requireThat(live.plan_id===j.plan_id,'Dev plan changed');
   const perFamily=p.policy.application_fanout==='per-integration';
   if(j.barrier && !perFamily) requireThat(same(j.barrier,live.barrier),'Integration barrier changed after journaling');
@@ -364,7 +374,7 @@ export function verifyBarrier(g,producerId,runId,attempt,repository,{channel='de
   const name=`wss-integration-barrier-${producerId}-a${attempt}`,a=g.artifact(CORE,runId,name);
   requireThat(a.workflow_run.head_sha===r.head_sha,'Barrier artifact source mismatch');
   const barrier=JSON.parse(g.download(CORE,runId,name,['barrier.json'])['barrier.json']);
-  const live=prepareStage(g,p,runId,attempt,true);
+  const live=prepareStage(g,p,runId,attempt,{excludeCurrent:true,discoverDispatches:false});
   if(p.policy.application_fanout==='per-integration') {
     assertFamilyBarrier(p,barrier,live.barrier,target,runId,attempt);
   } else requireThat(barrier.schema==='wss-integration-barrier/v1' && same(barrier,live.barrier),'Current integrations no longer match the authorized barrier');

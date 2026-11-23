@@ -36,7 +36,7 @@ test('trailing uses comments preserve action and first-party source classificati
  assert.equal(verifyWorkflowPins(changed({'ci.yml':commented}),g).references,2);
  assert.equal(refresh({files:{'ci.yml':commented}})['ci.yml'],commented.replace(sha(3),sha(8)),'Refresh retains comments and replaces only the actual registered ref');
  const callee=`  reusable:\n    uses: ${parent}/.github/workflows/_python-validation.yml@${sha(3)} # reviewed callee\n`,pair={'ci.yml':files['ci.yml']+callee},r=register(pair,p=>p.repository===core?'core':'integration');
- assert.equal(verifyWorkflowPins({...input,files:pair,roles:r},g).references,3);
+ assert.equal(verifyWorkflowPins({...input,files:pair,roles:r},{...g,object:(_repo,_ref,path)=>path.endsWith('.yml')?{sha:sha(6),type:'blob',mode:'100644'}:{sha:sha(6)}}).references,3);
  assert.throws(()=>verifyWorkflowPins(changed({'ci.yml':files['ci.yml']+callee}),g),/Unclassified/,'A commented reusable call cannot hide outside the inventory');
  for(const text of [files['ci.yml']+checkout(parent,sha(9),'hidden').replace('uses: actions/checkout@v4','uses: actions/checkout@v4 # extra'),files['ci.yml']+checkout(parent,sha(9),'hidden').replace('uses: actions/checkout@v4',"uses: 'actions/checkout@v4' # quoted")])assert.throws(()=>verifyWorkflowPins(changed({'ci.yml':text}),g));
 });
@@ -91,9 +91,17 @@ test('a missed repeated matrix-job checkout fails and refresh changes all occurr
 });
 test('caller, callee and expected-validator sources cannot disagree even with equivalent blobs',()=>{
  const f={'ci.yml':files['ci.yml']+`  reusable:\n    uses: ${parent}/.github/workflows/_python-validation.yml@${sha(3)}\n`},r=register(f,p=>p.repository===core?'core':'integration'),data={...input,files:f,roles:r};
- assert.equal(verifyWorkflowPins(data,g).references,3);
- assert.throws(()=>verifyWorkflowPins({...data,files:{'ci.yml':f['ci.yml'].replace(`yml@${sha(3)}`,`yml@${sha(8)}`)}},g),/Caller\/callee/);
- for(const path of ['.github/workflows','.github/workflows/_python-validation.yml'])assert.throws(()=>verifyWorkflowPins(data,{...g,object:(_r,ref,p)=>({sha:ref===sha(3)&&p===path?sha(9):sha(6)})}),/Pinned integration tooling/);
+ const pinned={...g,object:(_r,ref,path)=>{
+   assert.notEqual(path,'.github/workflows','Reuse must not compare workflow directories');
+   if(path==='.github/workflows/_python-validation.yml'){
+     assert.ok([sha(3),sha(8)].includes(ref),'Only read the workflow at the pinned revision');
+     return {sha:sha(6),type:'blob',mode:'100644'};
+   }
+   return {sha:sha(6)};
+ }};
+ assert.equal(verifyWorkflowPins(data,pinned).references,3);
+ assert.throws(()=>verifyWorkflowPins({...data,files:{'ci.yml':f['ci.yml'].replace(`yml@${sha(3)}`,`yml@${sha(8)}`)}},pinned),/Caller\/callee/);
+ assert.throws(()=>verifyWorkflowPins(data,g),/Expected registered regular executable blob/);
 });
 test('unauthorized expression, repository, path, reusable and inline substitutions fail closed',()=>{
  for(const text of [files['ci.yml'].replace(sha(3),'${{ inputs.tools_sha }}'),files['ci.yml'].replace(parent,'cwru-non-academic/Unknown'),files['ci.yml']+checkout(parent.replace('cwru-','CWRU-'),sha(9),'unregistered-case'),files['ci.yml'].replace(`ref: ${sha(3)}`,`ref: ${sha(3)}\n          ref: '${sha(3)}' # duplicate`),files['ci.yml'].replace('path: tools','path: mystery'),files['ci.yml']+`  extra:\n    uses: ${parent}/.github/workflows/_python-validation.yml@${sha(3)}\n`,workflow('      - uses: actions/checkout@v4\n        with: {repository: '+parent+', ref: '+sha(3)+'}\n')])assert.throws(()=>verifyWorkflowPins(changed({'ci.yml':text}),g));

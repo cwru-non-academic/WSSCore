@@ -11,9 +11,10 @@ import {receiptAuthorization,assertWorkflows,collectWithWorkflows,freezeWorkflow
 const sha=n=>n.toString(16).padStart(40,'0');
 const json=value=>({type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(value)).toString('base64')});
 const rehash=p=>{if(p.manifest)p.manifest_sha256=digest(p.manifest);else p.policy_sha256=digest(p.policy);const {plan_id,...body}=p;p.plan_id=digest(body);return p;};
-function fixture(kind='acceptance',legacy=false) {
+function fixture(kind='acceptance',legacy=false,executed=false) {
   const stage=JSON.parse(readFileSync(new URL('../ci/dev-propagation.json',import.meta.url)));
   const manifest=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
+  if(!executed){delete stage.workflow_authority;delete manifest.workflow_authority;}
   if(legacy){delete stage.workflow_snapshot_policy;delete manifest.workflow_snapshot_policy;}
   const c={repository:CORE,commit:sha(1),run_id:'11',artifact_id:'12',archive:'WSS-Universal-ci.zip',sha256:'a'.repeat(64)};
   const heads=new Map(),trees=new Map(),commands=[];
@@ -58,6 +59,14 @@ for(const kind of ['acceptance','stage']) {
   test(`${kind} payload-only commits pass but nested-worker-only changes fail`,()=>{
     const id=kind==='stage'?'unity':'unity-wrapper';
     const f=fixture(kind);f.move(id,'dev',false);assertWorkflows(f.g,f.p,kind);f.move(id);assert.throws(()=>assertWorkflows(f.g,f.p,kind),/Workflow tree changed/);
+  });
+  test(`${kind} executed-source policy does not re-scan workflow directories on either branch`,()=>{
+    const f=fixture(kind,false,true),id=kind==='stage'?'unity':'unity-wrapper';
+    f.move(id,'main');f.move(id,'dev');
+    f.g.object=()=>assert.fail('Recorded workflow directories must not be read during execution admission');
+    assert.equal(assertWorkflows(f.g,f.p,kind,{ids:[id]}),true);
+    const readHead=f.g.head;f.g.head=(repo,branch)=>repo===CORE?sha(999):readHead(repo,branch);
+    assert.throws(()=>assertWorkflows(f.g,f.p,kind),/Core moved/);
   });
 }
 test('integration default-main workflow drift is checked independently of dev',()=>{

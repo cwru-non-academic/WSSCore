@@ -15,15 +15,21 @@ const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
 const sha=n=>n.toString(16).padStart(40,'0');
 const json=x=>({type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(x)).toString('base64')});
 const rehash=p=>{const {plan_id,...body}=p;return {...body,plan_id:digest(body)};};
-function fixture(channel,active=true) {
+function fixture(channel,active=true,executedSource=false) {
   const temporary=mkdtempSync(join(tmpdir(),'wss initial spaces é ')),source=join(temporary,'Core source'),runner=join(temporary,'runner temp');
   mkdirSync(source);mkdirSync(runner);
   for(const path of ['tools/ci','tools/release','.github/workflows'])cpSync(join(root,path),join(source,path),{recursive:true});
   writeFileSync(join(source,'tools/ci/channel-activation.json'),JSON.stringify({schema:'wss-ci-channel-activation/v1',dev:true,main:active}));
+  const context=channelContext(channel);
+  if(!executedSource) for(const file of [context.stagePolicy,context.targetPolicy]){
+    const path=join(source,file),policy=JSON.parse(readFileSync(path));
+    delete policy.workflow_authority;
+    writeFileSync(path,JSON.stringify(policy));
+  }
   const git=(...args)=>execFileSync('git',['-C',source,...args],{encoding:'utf8',stdio:'pipe'}).trim();
   git('init','-q');git('add','.');git('-c','user.name=WSS fixture','-c','user.email=fixture@example.invalid','commit','-qm','isolated trusted source');
   const head=git('rev-parse','HEAD'),c={repository:CORE,commit:channel==='main'?head:sha(1),run_id:'11',artifact_id:'12',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(Buffer.from('fixture archive'))};
-  const context=channelContext(channel),policy=JSON.parse(readFileSync(join(source,context.stagePolicy))),manifest=JSON.parse(readFileSync(join(source,context.targetPolicy)));
+  const policy=JSON.parse(readFileSync(join(source,context.stagePolicy))),manifest=JSON.parse(readFileSync(join(source,context.targetPolicy)));
   const heads={},trees={};
   manifest.targets.forEach((t,i)=>{for(const [branch,n] of [['main',100+i],['dev',200+i]]){heads[t.repository+':'+branch]=sha(n);trees[t.repository+':'+sha(n)]=sha(300+i);}});
   const g={head:(repo,branch)=>repo===CORE?(branch==='main'?head:c.commit):heads[repo+':'+branch],
@@ -35,7 +41,7 @@ function fixture(channel,active=true) {
     acceptance=rehash({schema:context.planSchema,channel,candidate:c,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:heads[t.repository+':main'],trusted:Object.fromEntries(t.trusted_paths.map(path=>[path,sha(9)]))}]))});
     ({stage,acceptance}=freezeWorkflowPair(g,acceptance,stage));
   } else stage=freezeWorkflows(g,stage,'stage');
-  const producer={id:11,workflow_id:91,repository:{full_name:CORE},head_repository:{full_name:CORE},path:'.github/workflows/artifacts.yml',head_branch:channel,head_sha:c.commit,event:'push',status:'completed',conclusion:'success',run_attempt:1};
+  const producer={id:11,workflow_id:91,repository:{full_name:CORE},head_repository:{full_name:CORE},path:'.github/workflows/artifacts.yml',head_branch:channel,head_sha:c.commit,event:'push',status:'completed',conclusion:'success',run_attempt:1,created_at:'2026-11-22T12:00:00Z'};
   const data={channel,head,c,stage,acceptance,heads,trees,producer,profiles:INITIAL_HANDOFF_PROFILES,jobs:CORE_JOBS};
   const preload=join(temporary,'read only transport.mjs'),dataPath=join(temporary,'data.json'),event=join(temporary,'event.json'),output=join(temporary,'outputs'),posts=join(temporary,'posts.jsonl');
   writeFileSync(dataPath,JSON.stringify(data));
@@ -67,7 +73,7 @@ GitHub.prototype.download=(repo,id,name)=>{if(name==='universal-release-assets')
   const p=structuredClone(name==='wss-propagation-plan'?d.acceptance:d.stage);
   if(mode==='plan-digest')p.plan_id='0'.repeat(64);if(mode==='pair'&&name!=='wss-propagation-plan')p.acceptance_plan_id='0'.repeat(64);
   return {'plan.json':Buffer.from(JSON.stringify(p))};};
-GitHub.prototype.pages=()=>{if(mode==='uncertain-transport')throw Error('Uncertain transport: inspect before recovery');if(!mode.startsWith('existing'))return [];
+GitHub.prototype.pages=path=>{if(d.stage.policy.workflow_authority==='executed-source'&&!path.includes('created=%3E%3D2026-11-22T12%3A00%3A00Z'))throw Error('Missing producer time filter');if(mode==='uncertain-transport')throw Error('Uncertain transport: inspect before recovery');if(!mode.startsWith('existing'))return [];
   const r={id:71,repository:{full_name:profile.repository},head_repository:{full_name:profile.repository},path:'.github/workflows/promote-wss.yml',workflow_id:92,event:'workflow_dispatch',head_branch:d.channel,head_sha:d.heads[profile.repository+':'+d.channel],run_attempt:1,display_title:'Promote universal WSS / wss-11-12',status:mode==='existing-running'?'in_progress':'completed',conclusion:mode==='existing-failed'?'failure':'success'};
   if(mode==='existing-source')r.head_sha='e'.repeat(40);if(mode==='existing-workflow')r.workflow_id=999;return mode==='existing-duplicate'?[r,r]:[r];};
 `);
@@ -89,6 +95,18 @@ GitHub.prototype.pages=()=>{if(mode==='uncertain-transport')throw Error('Uncerta
   }
   return {temporary,source,runner,head,execute,cleanup:()=>rmSync(temporary,{recursive:true,force:true})};
 }
+
+for(const channel of ['dev','main'])test(`initial handoff on ${channel} checks the execution source without freezing workflow directories`,()=>{
+  const f=fixture(channel,true,true);
+  try {
+    const drift=f.execute('unity',{mode:'workflow-drift'});
+    assert.equal(drift.status,0,drift.stderr);
+    assert.match(drift.output,/dispatch_needed=true/);
+    const wrongSource=f.execute('unity',{mode:'existing-source'});
+    assert.notEqual(wrongSource.status,0);
+    assert.equal(wrongSource.postCount,0);
+  } finally {f.cleanup();}
+});
 
 for(const channel of ['dev','main'])test(`actual initial entrypoints preserve all three family gates on ${channel}`,()=>{
   const f=fixture(channel);

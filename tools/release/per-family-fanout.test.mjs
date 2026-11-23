@@ -9,9 +9,10 @@ import {freezeWorkflows} from '../ci/workflow-freeze.mjs';
 import {channelContext,integrationConfiguration} from './channels.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
-function fixture(perFamily=true,channel='dev'){
+function fixture(perFamily=true,channel='dev',executed=false){
   const context=channelContext(channel);
   const policy=JSON.parse(readFileSync(new URL(`../ci/${channel}-propagation.json`,import.meta.url)));
+  if(!executed)delete policy.workflow_authority;
   if(perFamily)policy.application_fanout='per-integration';else {delete policy.application_fanout;delete policy.workflow_snapshot_policy;}
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:'a'.repeat(64)};
   const receivers=Object.fromEntries(policy.libraries.map((t,i)=>[t.id,{heads:{main:sha(10+i),dev:sha(20+i)},trusted:Object.fromEntries(['main','dev'].map(branch=>[branch,{'.github/scripts':sha(5),...(channel==='main'?{[integrationConfiguration(t.id)]:sha(5),'.github/workflows':sha(5)}:{})}]))}]));
@@ -49,6 +50,17 @@ test('a ready integration authorizes only its linked applications before other i
   assert.equal(j.barrier.schema,'wss-integration-barrier/v2');
   assert.deepEqual(Object.keys(j.barrier.integrations),['python']);
   assert.deepEqual(j.actions.map(a=>[a.target,a.phase]),[['python','applications']]);
+});
+test('main fanout uses the tested merge without comparing the dev workflow tree',()=>{
+  const f=fixture(true,'main',true),object=f.g.object;
+  f.g.object=(repo,ref,path)=>path==='.github/workflows'&&repo===f.python.repository&&ref===f.g.head(repo,'main')?{type:'tree',sha:sha(800)}:object(repo,ref,path);
+  const first=prepareStage(f.g,f.p,'9',1);
+  assert.equal(first.barrier.integrations.python.execution.trusted['.github/workflows'],sha(800));
+  const pages=f.g.pages;
+  f.g.pages=(path,key)=>{assert.notEqual(path,`repos/${CORE}/actions/artifacts`);return pages(path,key);};
+  const read=prepareStage(f.g,f.p,'9',1,{discoverDispatches:false});
+  assert.deepEqual(read.barrier,first.barrier);
+  assert.deepEqual(read.actions,[]);
 });
 test('a failed family does not delay another ready family or authorize its own applications',()=>{
   const f=fixture();f.state.merged.add('csharp');f.state.failed.add('csharp');

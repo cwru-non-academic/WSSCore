@@ -275,13 +275,14 @@ function verifyPins(input,g,candidate){
     requireThat(record?.encoding==='base64','Pinned native validator lock unavailable');
     const nativeLock=JSON.parse(Buffer.from(record.content,'base64'));
     requireThat(nativeLock.repository===parent&&nativeLock.source_commit===lock.source_commit&&canonical(nativeLock.origins)===canonical(lock.origins),'Pinned native validator uses another canonical source lock');
+    if(pin.workflow) regularObject(parent,pin.ref,pin.workflow);
     ownerPins.push(pin);
     // Preserve the production receipt-specific rule and live parent checks.
     if(!candidate&&pin.file==='release-receipt.yml'&&(pin.checkoutPath==='validator'||pin.role==='expected-validator'))continue;
     heads??=candidate?candidate.heads:['dev','main'].map(branch=>g.head(parent,branch));
     for(const head of heads){
       requireThat(fullSha(head),'Invalid current integration source');
-      for(const path of ['.github/scripts',integrationConfiguration(profile.family),'.github/dev-propagation.json','.github/main-propagation.json',...(pin.workflow?['.github/workflows',pin.workflow]:[])])
+      for(const path of ['.github/scripts',integrationConfiguration(profile.family),'.github/dev-propagation.json','.github/main-propagation.json'])
         requireThat(object(parent,pin.ref,path)===object(parent,head,path),`Pinned integration tooling differs from ${candidate?'future':'current verified'} dev/main: ${pin.file} / ${path}`);
       for(const entry of extraBlobs)for(const path of entry.paths)
         requireThat(regularObject(parent,pin.ref,path)===regularObject(parent,head,path),`Pinned integration executable blob differs from ${candidate?'future':'current verified'} dev/main: ${pin.file} / ${path}`);

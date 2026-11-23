@@ -2,6 +2,7 @@
   "schema": "wss-main-stage/v1",
   "channel": "main",
   "workflow_snapshot_policy": "wss-workflow-snapshots/v2",
+  "workflow_authority": "executed-source",
   "libraries": [
     {
       "id": "csharp",

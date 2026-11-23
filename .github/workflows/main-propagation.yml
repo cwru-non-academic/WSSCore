@@ -77,7 +77,7 @@ jobs:
           PRODUCER_RUN: ${{ inputs.producer_run_id }}
         run: node tools/ci/dev-propagation.mjs prepare "$PRODUCER_RUN" "$RUNNER_TEMP/main-stage"
       - name: Retain dispatch intent before any write token or POST
-        if: (github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')
+        if: steps.stage.outputs.actions != '0' && ((github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile'))
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.stage.outputs.artifact_name }}

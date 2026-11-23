@@ -1,12 +1,13 @@
 import {basename} from 'node:path';
 import {channelContext} from './channels.mjs';
 import {archive} from './github.mjs';
-import {createdSince,journalArtifacts} from './controller-discovery.mjs';
+import {campaignReceiptRuns,createdSince,journalArtifacts} from './controller-discovery.mjs';
 import {findNormalRuns} from './normal-ci.mjs';
 import {bytesDigest,canonical,CORE,digest,plan,producer,requireThat} from './verify.mjs';
-import {assertWorkflows,guardedWriter} from '../ci/workflow-freeze.mjs';
+import {assertWorkflows,executedWorkflowAuthority,guardedWriter} from '../ci/workflow-freeze.mjs';
 
-export const journalName = (p,run,attempt) => `wss-dispatch-intents-${p.plan_id}-${run}-a${attempt}`;
+const journalPrefix=p=>`wss-dispatch-intents-${p.plan_id}`;
+export const journalName = (p,run,attempt) => executedWorkflowAuthority(p.manifest)?journalPrefix(p):`${journalPrefix(p)}-${run}-a${attempt}`;
 export function action(p,t,workflow,head,inputs,mergedAt) {
   requireThat(Number.isFinite(Date.parse(mergedAt)),'Missing actual merge time for dispatch intent');
   const body={plan_id:p.plan_id,target_id:t.id,repository:t.repository,workflow,head_sha:head,merged_at:mergedAt,ref:t.branch,inputs};
@@ -30,11 +31,12 @@ export function validateJournal(p,j) {
   }
   return j;
 }
-function previousIntents(g,p) {
+function previousIntents(g,p,run) {
   const result=[];
-  const prefix=`wss-dispatch-intents-${p.plan_id}-`;
+  const exact=executedWorkflowAuthority(p.manifest);
   const workflow=channelContext(p.channel).acceptanceWorkflow;
-  for(const {artifact,runId} of journalArtifacts(g,workflow,prefix)) {
+  for(const {artifact,runId} of journalArtifacts(g,workflow,exact?journalPrefix(p):`${journalPrefix(p)}-`,{exact})) {
+    requireThat(!exact||runId!==run,'This run already saved a dispatch intent. Start a new reconciliation run.');
     requireThat(!artifact.expired,'Prior dispatch intent expired; inspect before recovery');
     const bytes=g.download(CORE,runId,artifact.name,['intent.json'])['intent.json'];
     const j=validateJournal(p,JSON.parse(bytes));
@@ -48,9 +50,11 @@ export function prepare(g,p,run,attempt) {
   assertWorkflows(g,p,'acceptance',{live:false});
   const c=p.candidate,r=g.run(CORE,c.run_id),zip=archive(g,c);
   producer(p,{run:r,current_head:g.head(CORE,p.channel),jobs:g.jobs(CORE,r),artifact:zip.artifact,archive_sha256:bytesDigest(zip.files[c.archive])});
-  const since=createdSince(r.created_at),prior=previousIntents(g,p),actions=[];
+  const since=createdSince(r.created_at),actions=[];
+  let prior;
   function request(t,workflow,head,inputs,mergedAt) {
     const a=action(p,t,workflow,head,inputs,mergedAt);
+    prior??=previousIntents(g,p,run);
     requireThat(!prior.some(x=>x.key===a.key),`Uncertain prior dispatch for ${t.id}; no automatic retry without inspected recovery`);
     actions.push(a);
   }
@@ -68,8 +72,7 @@ export function prepare(g,p,run,attempt) {
     }
     requireThat(normals[0].status!=='completed' || normals[0].conclusion==='success',`Postmerge CI failed for ${t.id}; inspect recovery`);
     if(normals[0].status!=='completed') continue;
-    const title=`WSS acceptance ${t.id} ${p.plan_id}`;
-    const receipts=g.pages(`repos/${t.repository}/actions/workflows/release-receipt.yml/runs?branch=${t.branch}&event=workflow_dispatch&${since}`,'workflow_runs').filter(r=>r.display_title===title);
+    const receipts=campaignReceiptRuns(g,p,t,since);
     requireThat(receipts.length<=1,`Ambiguous receipt runs for ${t.id}`);
     if(receipts.length) {requireThat(receipts[0].status!=='completed' || receipts[0].conclusion==='success',`Receipt failed for ${t.id}; inspect recovery`);continue;}
     request(t,'.github/workflows/release-receipt.yml',head,{producer_run_id:c.run_id,plan_id:p.plan_id},prs[0].merged_at);

@@ -13,6 +13,7 @@ const normalRun=(t,r)=>({repository:{full_name:t.repository},head_repository:{fu
 function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false,targetId='csharp-cli'}={}) {
   const manifest=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
   delete manifest.workflow_snapshot_policy; // Existing journal cases model historical frozen plans.
+  delete manifest.workflow_authority;
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(Buffer.from('zip'))};
   const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:sha(2),trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,sha(3)]))}]))};
   const p={...body,plan_id:digest(body)},t=manifest.targets.find(t=>t.id===targetId),requests=[];
