@@ -18,8 +18,8 @@ test('synchronized consumer rejects code drift and a forged tooling lock',()=>{
     execFileSync('git',['init',root],{stdio:'ignore'});
     const commit=git('rev-parse','HEAD').toString().trim();
     const lock=expectedLock(repository,commit);
-    assert.ok(lock.files['.github/workflows/notify-core-stage.yml'],'Integration-only notifier must be copied to integrations');
-    assert.equal(expectedLock('CLI_Python_WSS_Application',commit).files['.github/workflows/notify-core-stage.yml'],undefined,'Integration-only notifier must not become an application workflow');
+    assert.deepEqual(expectedLock('CLI_Python_WSS_Application',commit).files['.github/workflows/notify-core-stage.yml'],
+      lock.files['.github/workflows/notify-core-stage.yml'],'Applications and integrations use one notifier');
     for(const [path,entry] of Object.entries(lock.files)) {
       mkdirSync(dirname(join(root,path)),{recursive:true});writeFileSync(join(root,path),sourceBytes({origin:entry.origin,path:entry.source}));
     }
@@ -85,4 +85,17 @@ test('candidate locks reuse canonical source definitions with explicit immutable
   assert.ok(calls.length>0);assert.ok(calls.some(c=>c.entry.origin==='core'));assert.ok(calls.some(c=>c.entry.origin==='integration'));
   assert.ok(calls.every(c=>c.workspace==='unused-noncanonical-directory'&&c.commit==='1'.repeat(40)));
   for(const value of Object.values(actual.files))assert.equal(value.sha256,createHash('sha256').update(bytes).digest('hex'));
+});
+
+test('CSharp root and restored inventory readers share the one canonical owner',()=>{
+  const manifest=JSON.parse(readFileSync(new URL('./sync-tooling.json',import.meta.url)));
+  const root=manifest.files['.github/scripts/Universal-WssFiles.ps1'];
+  const restored=manifest.files['.github/scripts/wss-ci/restored-assets/Universal-WssFiles.ps1'];
+  assert.deepEqual(root,{origin:'core',path:restored.path,repositories:['CSharp_WSS_Integration_Lib']});
+  assert.equal(restored.origin,'core');
+  assert.deepEqual(sourceBytes(root),sourceBytes(restored));
+  const commit=execFileSync('git',['-C',fileURLToPath(new URL('../..',import.meta.url)),'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+  const lock=expectedLock('CSharp_WSS_Integration_Lib',commit);
+  assert.equal(lock.files['.github/scripts/Universal-WssFiles.ps1'].sha256,lock.files['.github/scripts/wss-ci/restored-assets/Universal-WssFiles.ps1'].sha256);
+  assert.equal(expectedLock('CLI_CSharp_WSS_Application',commit).files['.github/scripts/Universal-WssFiles.ps1'],undefined);
 });

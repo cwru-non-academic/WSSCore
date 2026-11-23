@@ -13,6 +13,7 @@ const PATH='.github/workflows';
 const same=(a,b)=>canonical(a)===canonical(b);
 const sha=x=>typeof x==='string'&&/^[a-f0-9]{40}$/.test(x);
 const definition=(p,kind)=>kind==='stage'?p.policy:p.manifest;
+export const executedWorkflowAuthority=policy=>policy.workflow_authority==='executed-source';
 const context=(p,kind)=>channelContext(definition(p,kind).channel);
 const policyPath=(p,kind)=>kind==='stage'?context(p,kind).stagePolicy:context(p,kind).targetPolicy;
 
@@ -27,6 +28,7 @@ export function snapshotRequirement(g,p,kind) {
   requireThat(file?.type==='file'&&file.encoding==='base64','Immutable producer workflow policy unavailable');
   const reviewed=JSON.parse(Buffer.from(file.content,'base64').toString('utf8'));
   requireThat(same(reviewed,definition(p,kind)),'Workflow snapshot policy differs from immutable producer policy');
+  requireThat(reviewed.workflow_authority===undefined||executedWorkflowAuthority(reviewed),'Unknown workflow authority policy');
   validatePlanTestSelection(p);
   const required=reviewed.workflow_snapshot_policy;
   requireThat(c.channel==='main'?required===MAIN_SNAPSHOT_POLICY:required===undefined||required===SNAPSHOT_POLICY,'Unknown or missing producer-bound workflow snapshot policy');
@@ -108,6 +110,7 @@ export function freezeWorkflowPair(g,acceptance,stage) {
 }
 export function assertWorkflowPair(g,acceptance,stage) {
   assertPairedTestSelection(acceptance,stage);
+  requireThat(executedWorkflowAuthority(acceptance.manifest)===executedWorkflowAuthority(stage.policy),'Main stage and acceptance must use the same workflow authority');
   requireThat(acceptance.channel==='main'&&stage.policy.channel==='main'&&same(acceptance.candidate,stage.candidate)&&stage.acceptance_plan_id===acceptance.plan_id,'Main stage is not bound to its exact acceptance plan');
   assertWorkflows(g,acceptance,'acceptance',{live:false});assertWorkflows(g,stage,'stage',{live:false});
   const physical=new Map();
@@ -133,7 +136,9 @@ export function assertWorkflows(g,p,kind,{ids,live=true}={}) {
     const location=`${a.repository}:${a.branch}`,prior=physical.get(location);
     if(main&&prior)requireThat(prior.source_sha===a.source_sha&&prior.tree_sha===a.tree_sha,'Conflicting same-branch workflow roles');
     physical.set(location,a);
-    if(!live||ids&&!ids.includes(t.id))continue;
+    // The snapshot still identifies the sources recorded at plan creation. The
+    // dispatch, committed CI and receipt checks bind the source actually used.
+    if(!live||executedWorkflowAuthority(definition(p,kind))||ids&&!ids.includes(t.id))continue;
     requireThat(tree(g,a.repository,a.source_sha)===a.tree_sha,'Frozen workflow source/tree mismatch');
     const head=g.head(a.repository,a.branch);
     requireThat((head===a.source_sha?a.tree_sha:tree(g,a.repository,head))===a.tree_sha,`Workflow tree changed after freeze: ${key}`);

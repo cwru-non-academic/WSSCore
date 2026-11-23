@@ -6,18 +6,20 @@ import {join} from 'node:path';
 import {dispatchPreparedSnapshotIntents} from './campaign-variable-snapshots.mjs';
 import {createSnapshotRequest,SNAPSHOT_WORKFLOW,snapshotTitle} from './local-test-variable-snapshot.mjs';
 import {CORE} from './verify.mjs';
+import {createdSince} from './controller-discovery.mjs';
+const since=createdSince('2026-11-22T12:00:00Z');
 function setup(){
  const temp=mkdtempSync(join(tmpdir(),'wss-once-')),c={commit:'1'.repeat(40),run_id:'10'};
  const r=createSnapshotRequest({schema:'wss-local-test-variable-request/v1',channel:'dev',producer:{repository:CORE,...c,attempt:1},target:{id:'target',repository:'owner/repo'},source:{ref:'refs/heads/dev',commit:'2'.repeat(40),workflow:SNAPSHOT_WORKFLOW,workflow_blob:'3'.repeat(40),tooling_tree:'4'.repeat(40),reviewed_commit:'2'.repeat(40),actor_id:'123'},nonce:'a'.repeat(64)});
  const d={schema:'wss-test-variable-intents/v1',requests:[r]},env={GITHUB_RUN_ATTEMPT:'1',GITHUB_RUN_ID:'10',RUNNER_TEMP:temp};
  const state={posts:0,fail:false,runs:[]};
- const writer={head:()=>r.source.commit,get:()=>({path:SNAPSHOT_WORKFLOW,state:'active'}),pages:()=>state.runs,object:(_repo,_commit,path)=>path==='.github/scripts/wss-ci'?{sha:r.source.tooling_tree,mode:'040000',type:'tree'}:{sha:r.source.workflow_blob,mode:'100644',type:'blob'},command:()=>{assert.ok(existsSync(join(temp,'wss-snapshot-dispatch-10-a1.json')),'marker must exist before POST');state.posts++;if(state.fail)throw Error('uncertain');}};
+ const writer={head:()=>r.source.commit,get:()=>({path:SNAPSHOT_WORKFLOW,state:'active'}),pages:path=>{assert.ok(path.endsWith('&created=%3E%3D2026-11-22T12%3A00%3A00Z'));return state.runs;},object:(_repo,_commit,path)=>path==='.github/scripts/wss-ci'?{sha:r.source.tooling_tree,mode:'040000',type:'tree'}:{sha:r.source.workflow_blob,mode:'100644',type:'blob'},command:()=>{assert.ok(existsSync(join(temp,'wss-snapshot-dispatch-10-a1.json')),'marker must exist before POST');state.posts++;if(state.fail)throw Error('uncertain');}};
  return {temp,c,r,d,env,state,writer};
 }
 for(const partial of [false,true])test(`fixed first-attempt marker blocks repeated invocation including alternate output (partial=${partial})`,()=>{
  const f=setup();try{
   f.state.fail=partial;
-  if(partial)assert.throws(()=>dispatchPreparedSnapshotIntents(f.writer,f.d,f.c,f.env),/uncertain/);else dispatchPreparedSnapshotIntents(f.writer,f.d,f.c,f.env);
+  if(partial)assert.throws(()=>dispatchPreparedSnapshotIntents(f.writer,f.d,f.c,f.env,since),/uncertain/);else dispatchPreparedSnapshotIntents(f.writer,f.d,f.c,f.env,since);
   assert.equal(f.state.posts,1);
   // No output-directory argument can change the marker identity.
   assert.throws(()=>dispatchPreparedSnapshotIntents(f.writer,f.d,f.c,{...f.env,OUTPUT_DIRECTORY:join(f.temp,'other')}),/EEXIST/);

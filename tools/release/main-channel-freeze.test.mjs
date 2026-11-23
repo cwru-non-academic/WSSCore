@@ -14,10 +14,11 @@ import {assertWorkflows,freezeWorkflows,freezeWorkflowPair,assertWorkflowPair,in
 const sha=n=>n.toString(16).padStart(40,'0');
 const json=x=>({type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(x)).toString('base64')});
 const rehash=p=>{if(p.manifest)p.manifest_sha256=digest(p.manifest);else p.policy_sha256=digest(p.policy);const {plan_id,...body}=p;return {...body,plan_id:digest(body)};};
-function fixture(){
+function fixture({legacy=false}={}){
   const manifest=JSON.parse(readFileSync(new URL('./targets.main.json',import.meta.url)));
   const policy=JSON.parse(readFileSync(new URL('../ci/dev-propagation.json',import.meta.url)));
   policy.schema=channelContext('main').stageSchema;policy.channel='main';policy.workflow_snapshot_policy=MAIN_SNAPSHOT_POLICY;
+  if(legacy){delete manifest.workflow_authority;delete policy.workflow_authority;}
   const candidate={repository:CORE,commit:sha(1),run_id:'11',artifact_id:'12',archive:'WSS-Universal-ci.zip',sha256:'a'.repeat(64)};
   const heads=new Map(),trees=new Map();
   manifest.targets.forEach((t,i)=>{for(const [branch,n] of [['main',100+i],['dev',200+i]]){heads.set(`${t.repository}:${branch}`,sha(n));trees.set(`${t.repository}:${sha(n)}`,sha(300+i));}});
@@ -75,7 +76,7 @@ test('main movement between stage and acceptance construction prevents paired au
   assert.throws(()=>freezeWorkflowPair(f.g,f.acceptance,f.stage),/moved/);
 });
 test('family scope checks every authority role and rejects nested main worker drift',()=>{
-  const f=fixture(),p=freezeWorkflows(f.g,f.acceptance,'acceptance'),t=f.manifest.targets.find(t=>t.id==='unity-wrapper');
+  const f=fixture({legacy:true}),p=freezeWorkflows(f.g,f.acceptance,'acceptance'),t=f.manifest.targets.find(t=>t.id==='unity-wrapper');
   f.heads.set(`${t.repository}:main`,sha(999));f.trees.set(`${t.repository}:${sha(999)}`,sha(998));
   assertWorkflows(f.g,p,'acceptance',{ids:['python-wrapper']});
   assert.throws(()=>assertWorkflows(f.g,p,'acceptance',{ids:['unity-wrapper']}),/Workflow tree changed/);

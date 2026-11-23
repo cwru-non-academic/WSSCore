@@ -53,6 +53,11 @@ async function prepare(workspace, repository, channel, originWorkspace, adapter)
   const files = Object.fromEntries(readdirSync(join(target, workflowDirectory))
     .filter(file => /\.ya?ml$/.test(file))
     .map(file => [file, readFileSync(localFile(target, `${workflowDirectory}/${file}`), 'utf8')]));
+  for (const [path, entry] of Object.entries(lock.files)) {
+    if (!path.startsWith(workflowDirectory+'/')) continue;
+    const file = path.slice(workflowDirectory.length+1);
+    files[file] ??= sourceBytes({origin:entry.origin,path:entry.source}, originWorkspace, commit).toString('utf8');
+  }
   const workflowFiles = refreshWorkflowPins({repository:lock.repository, profiles, lock, files, adapter, adapterLock, channel});
   const receipt = await renderReceiptFromLock(repository, lock, originWorkspace, adapter);
   const proposed = new Map([
