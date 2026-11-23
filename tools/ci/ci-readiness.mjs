@@ -124,7 +124,7 @@ export function inspectReadiness({readFile=read, channel, github, env=process.en
   for (const key of new Set([switches.acceptance, switches[channel]])) {
     collect(`Core variable ${key}`, () => requireThat(['','true','false'].includes(env[key] ?? ''), 'Expected unset, true, or false.'));
   }
-  if (channel === 'main' || testSelectionPolicy(release)) {
+  if (channel === 'main' || stage.application_fanout === 'after-integration-receipts' || testSelectionPolicy(release)) {
     collect(`Core variable ${switches.acceptance}`, () => requireThat(env[switches.acceptance] === 'true',
       'The candidate needs stage and acceptance plans. Set this to true.'));
   }
@@ -138,9 +138,12 @@ export function inspectReadiness({readFile=read, channel, github, env=process.en
   add(CORE, context.stageWorkflow, context.acceptanceWorkflow, ...['unity','python','matlab'].map(family => `.github/workflows/propagate-${family}.yml`));
   for (const target of release.targets) add(target.repository, target.workflow, '.github/workflows/wss-preflight.yml', '.github/workflows/release-receipt.yml');
   for (const library of stage.libraries) {
-    add(library.repository, ...[library.normal, library.fanout, 'promote-wss.yml', ...(stage.application_fanout === 'per-integration' ? ['notify-core-stage.yml'] : [])]
+    add(library.repository, ...[library.normal, library.fanout, 'promote-wss.yml', ...(['per-integration','after-integration-receipts'].includes(stage.application_fanout) ? ['notify-core-stage.yml'] : [])]
       .map(file => `.github/workflows/${file}`));
-    for (const repository of library.applications) add(repository, '.github/workflows/promote-integration.yml');
+    for (const repository of library.applications) add(repository, '.github/workflows/promote-integration.yml',
+      // Dev can reconcile from Core while GitHub registers a new app notifier
+      // on the receiver's default branch during the subsequent main rollout.
+      ...(channel === 'main' && stage.application_fanout === 'after-integration-receipts' ? ['.github/workflows/notify-core-stage.yml'] : []));
   }
   for (const [repository, workflows] of registrations) {
     collect(`${repository} registered workflows`, () => {

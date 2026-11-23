@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {resolveOrReuseTestSelection,verifyTestSelection} from '../ci/test-selection.mjs';
 import {freeze} from './github.mjs';
 import {freezeStage} from '../ci/dev-propagation.mjs';
-import {freezeWorkflows,freezeWorkflowPair} from '../ci/workflow-freeze.mjs';
+import {executedWorkflowAuthority,freezeWorkflows,freezeWorkflowPair} from '../ci/workflow-freeze.mjs';
 import {canonical,requireThat} from './verify.mjs';
 import {testSelectionPolicy,selectionRequest,assertPairedTestSelection} from './campaign-test-selection.mjs';
 
@@ -11,6 +11,7 @@ import {testSelectionPolicy,selectionRequest,assertPairedTestSelection} from './
 // This entrypoint never resolves current settings or branch tips itself.
 export function freezeCampaign(g,manifest,policy,candidate,{testSelection,captureDocument,verificationOnly=false}={}) {
   requireThat(manifest.channel===policy.channel,'Campaign policies use different channels');
+  requireThat(executedWorkflowAuthority(manifest)===executedWorkflowAuthority(policy),'Campaign policies must agree on workflow authority');
   const required=testSelectionPolicy(manifest);
   requireThat(canonical(required)===canonical(testSelectionPolicy(policy)),'Campaign policies must share one reviewed test source policy');
   requireThat(!required||testSelection,'Load the authenticated durable test selection before paired freeze');

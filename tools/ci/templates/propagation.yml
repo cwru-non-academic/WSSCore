@@ -77,17 +77,17 @@ jobs:
           PRODUCER_RUN: ${{ inputs.producer_run_id }}
         run: node __WSS_STAGE_ENGINE__ prepare "$PRODUCER_RUN" "$RUNNER_TEMP/__WSS_CHANNEL__-stage"
       - name: Retain dispatch intent before any write token or POST
-        if: __WSS_RECONCILE__
+        if: steps.stage.outputs.actions != '0' && (__WSS_RECONCILE__)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.stage.outputs.artifact_name }}
           path: ${{ runner.temp }}/__WSS_CHANNEL__-stage/intent.json
           if-no-files-found: error
       - name: Retain all-integration authorization
-        if: steps.stage.outputs.barrier == 'true' && (__WSS_RECONCILE__)
+        if: steps.stage.outputs.barrier == 'true' && steps.stage.outputs.actions != '0' && (__WSS_RECONCILE__)
         uses: actions/upload-artifact@v4
         with:
-          name: wss-integration-barrier-${{ steps.stage.outputs.producer_run_id }}-a${{ github.run_attempt }}
+          name: ${{ steps.stage.outputs.barrier_name }}
           path: ${{ runner.temp }}/__WSS_CHANNEL__-stage/barrier.json
           if-no-files-found: error
   dispatch:

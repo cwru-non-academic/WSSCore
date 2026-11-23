@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   reconcile:
-    name: Verify nine merged targets without publication
+    name: Reconcile merge and receipt progress
     if: >-
       github.repository == 'cwru-non-academic/WSSCore' &&
       vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true' &&
@@ -45,6 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       producer_run_id: ${{ steps.producer.outputs.run_id }}
+      receipts_ready: ${{ steps.reconciliation.outputs.receipts_ready }}
     permissions:
       contents: read
       actions: read
@@ -92,14 +93,14 @@ jobs:
           WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
         run: node tools/release/cli.mjs prepare-dispatches '${{ steps.producer.outputs.run_id }}' '${{ runner.temp }}/dispatch-intent'
       - name: Retain dispatch intent before any cross-repository request
-        if: __WSS_RECONCILE__
+        if: steps.reconciliation.outputs.actions != '0' && (__WSS_RECONCILE__)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.reconciliation.outputs.artifact_name }}
           path: ${{ runner.temp }}/dispatch-intent/intent.json
           if-no-files-found: error
       - name: Create receipt reconciliation Actions token
-        if: __WSS_RECONCILE__
+        if: steps.reconciliation.outputs.actions != '0' && (__WSS_RECONCILE__)
         id: receipt-token
         uses: actions/create-github-app-token@v2
         with:
@@ -118,7 +119,7 @@ jobs:
             CLI_Matlab_WSS_Application
           permission-actions: write
       - name: Reconcile existing merges with fresh normal CI and read-only receipts
-        if: __WSS_RECONCILE__
+        if: steps.reconciliation.outputs.actions != '0' && (__WSS_RECONCILE__)
         env:
           GH_TOKEN: ${{ steps.receipt-token.outputs.token }}
           WSS_JOURNAL_READ_TOKEN: ${{ steps.evidence-token.outputs.token }}
@@ -128,7 +129,10 @@ jobs:
   verify:
     name: Verify fresh acceptance receipts
     needs: reconcile
-    if: needs.reconcile.result == 'success'
+    if: >-
+      needs.reconcile.result == 'success' &&
+      (needs.reconcile.outputs.receipts_ready == 'true' ||
+       (github.event_name == 'workflow_dispatch' && inputs.mode == 'verify'))
     runs-on: ubuntu-latest
     permissions:
       contents: read

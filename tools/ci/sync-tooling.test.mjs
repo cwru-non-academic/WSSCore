@@ -18,8 +18,8 @@ test('synchronized consumer rejects code drift and a forged tooling lock',()=>{
     execFileSync('git',['init',root],{stdio:'ignore'});
     const commit=git('rev-parse','HEAD').toString().trim();
     const lock=expectedLock(repository,commit);
-    assert.ok(lock.files['.github/workflows/notify-core-stage.yml'],'Integration-only notifier must be copied to integrations');
-    assert.equal(expectedLock('CLI_Python_WSS_Application',commit).files['.github/workflows/notify-core-stage.yml'],undefined,'Integration-only notifier must not become an application workflow');
+    assert.deepEqual(expectedLock('CLI_Python_WSS_Application',commit).files['.github/workflows/notify-core-stage.yml'],
+      lock.files['.github/workflows/notify-core-stage.yml'],'Applications and integrations use one notifier');
     for(const [path,entry] of Object.entries(lock.files)) {
       mkdirSync(dirname(join(root,path)),{recursive:true});writeFileSync(join(root,path),sourceBytes({origin:entry.origin,path:entry.source}));
     }
@@ -86,7 +86,6 @@ test('candidate locks reuse canonical source definitions with explicit immutable
   assert.ok(calls.every(c=>c.workspace==='unused-noncanonical-directory'&&c.commit==='1'.repeat(40)));
   for(const value of Object.values(actual.files))assert.equal(value.sha256,createHash('sha256').update(bytes).digest('hex'));
 });
-
 
 test('CSharp root and restored inventory readers share the one canonical owner',()=>{
   const manifest=JSON.parse(readFileSync(new URL('./sync-tooling.json',import.meta.url)));

@@ -721,7 +721,6 @@ jobs:
           SHA256: ${{ steps.candidate.outputs.sha256 }}
           WSS_DEV_ACCEPTANCE_ENABLED: ${{ vars.WSS_DEV_ACCEPTANCE_ENABLED }}
           PUBLICATION_ENABLED: ${{ vars[steps.channel.outputs.publication_variable] }}
-          TEST_SELECTION_ENABLED: ${{ steps.channel.outputs.test_selection_enabled }}
         run: |
           $ErrorActionPreference = 'Stop'
           . ./tools/ci/shared/Channel.ps1
@@ -730,18 +729,9 @@ jobs:
           $publicationVariable=$controls.($context.channel)
           if($publicationVariable -cnotin @('WSS_DEV_RELEASE_ENABLED','WSS_MAIN_RELEASE_ENABLED') -or $env:PUBLICATION_ENABLED -cnotin @('','true','false')){throw 'Invalid explicit publication control.'}
           [Environment]::SetEnvironmentVariable($publicationVariable,$env:PUBLICATION_ENABLED,'Process')
-          if($context.channel -ceq 'main' -or $env:TEST_SELECTION_ENABLED -ceq 'true'){
-            if($env:WSS_DEV_ACCEPTANCE_ENABLED -cne 'true'){throw 'Main or selected-test campaign requires both frozen acceptance and stage plans.'}
-            node tools/release/cli.mjs freeze-campaign "$env:RUNNER_TEMP/candidate.json" $context.targetPolicy "$env:RUNNER_TEMP/release-plan" "$env:RUNNER_TEMP/propagation-plan"
-            if($LASTEXITCODE -ne 0){throw 'Atomic paired campaign freeze failed; no handoff.'}
-          }else{
-            node tools/ci/dev-propagation.mjs freeze "$env:RUNNER_TEMP/candidate.json" "$env:RUNNER_TEMP/propagation-plan"
-            if($LASTEXITCODE -ne 0){throw 'Canonical dev stage freeze failed; no handoff.'}
-            if($env:WSS_DEV_ACCEPTANCE_ENABLED -ceq 'true'){
-              node tools/release/cli.mjs freeze "$env:RUNNER_TEMP/candidate.json" $context.targetPolicy "$env:RUNNER_TEMP/release-plan"
-              if($LASTEXITCODE -ne 0){throw 'Required receiver receipt tooling is unavailable; no handoff.'}
-            }
-          }
+          if($env:WSS_DEV_ACCEPTANCE_ENABLED -cne 'true'){throw 'Enable receipt verification before starting library propagation.'}
+          node tools/release/cli.mjs freeze-campaign "$env:RUNNER_TEMP/candidate.json" $context.targetPolicy "$env:RUNNER_TEMP/release-plan" "$env:RUNNER_TEMP/propagation-plan"
+          if($LASTEXITCODE -ne 0){throw 'Unable to prepare matching acceptance and stage plans.'}
       - name: Bind restarted plans to requested receiver snapshots
         env:
           GH_TOKEN: ${{ github.token }}
@@ -757,7 +747,6 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - uses: actions/upload-artifact@v4
-        if: vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true'
         with:
           name: wss-propagation-plan
           path: ${{ runner.temp }}/release-plan/plan.json

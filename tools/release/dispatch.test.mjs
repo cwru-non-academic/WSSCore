@@ -10,25 +10,28 @@ const MERGED_AT='2026-10-29T00:00:00Z';
 const action=(p,t,workflow,head,inputs)=>coreAction(p,t,workflow,head,inputs,MERGED_AT);
 const normalRun=(t,r)=>({repository:{full_name:t.repository},head_repository:{full_name:t.repository},path:t.workflow,
   head_sha:sha(10),head_branch:'dev',event:'workflow_dispatch',created_at:'2026-10-29T00:01:00Z',run_attempt:1,...r});
-function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false,targetId='csharp-cli'}={}) {
+function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false,targetId='csharp-cli',executed=false}={}) {
   const manifest=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
   delete manifest.workflow_snapshot_policy; // Existing journal cases model historical frozen plans.
+  if(!executed)delete manifest.workflow_authority;
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(Buffer.from('zip'))};
   const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:sha(2),trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,sha(3)]))}]))};
   const p={...body,plan_id:digest(body)},t=manifest.targets.find(t=>t.id===targetId),requests=[];
   const old=journal(p,'90',1,prior.length?prior:[action(p,t,t.workflow,sha(10),{})]);
   const g={
     get:path=>{assert.equal(path,`repos/${CORE}/contents/tools/release/targets.dev.json?ref=${candidate.commit}`);return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(manifest)).toString('base64')};},
-    run:()=>({id:1,repository:{full_name:CORE},head_repository:{full_name:CORE},path:'.github/workflows/artifacts.yml',head_sha:sha(1),head_branch:'dev',event:'push',status:'completed',conclusion:'success',run_attempt:1}),
+    run:(_repo,id)=>({id:Number(id),repository:{full_name:CORE},head_repository:{full_name:CORE},path:id==='1'?'.github/workflows/artifacts.yml':'.github/workflows/dev-release.yml',head_sha:sha(1),head_branch:id==='1'?'dev':'main',event:'push',status:'completed',conclusion:'success',run_attempt:1,created_at:'2026-10-28T23:00:00Z'}),
     head:repo=>repo===CORE?sha(1):repo===t.repository?(moved?sha(99):sha(10)):sha(2),
     jobs:()=>CORE_JOBS.map(name=>({name,status:'completed',conclusion:'success'})),
     artifact:()=>({id:2,name:'universal-release-assets',expired:false,workflow_run:{id:1,head_sha:sha(1)}}),
     download:(repo,run,name)=>name==='universal-release-assets'?{'WSS-Universal-ci.zip':Buffer.from('zip'),'SHA256SUMS.txt':Buffer.from(`${candidate.sha256}  WSS-Universal-ci.zip\n`)}:{'intent.json':Buffer.from(JSON.stringify(old))},
     pages:path=>{
-      if(path.includes('/dev-release.yml/')) return prior.length?[{id:90}]:[];
-      if(path.includes(`repos/${CORE}/actions/runs/90/artifacts`))return[{name:journalName(p,'90',1),expired}];
+      if(path===`repos/${CORE}/actions/artifacts`)return prior.length?[{name:journalName(p,'90',1),expired,workflow_run:{id:90,head_sha:sha(1)}}]:[];
       if(path.includes('/commits/'))return[{merged_at:'2026-10-29T00:00:00Z',merge_commit_sha:sha(10),base:{ref:'dev',repo:{full_name:t.repository}},head:{repo:{full_name:t.repository}},user:{type:'Bot'}}];
-      if(path.includes('/release-receipt.yml/'))return receipts.map(r=>({...r,display_title:`WSS acceptance ${t.id} ${p.plan_id}`}));
+      if(path.includes('/release-receipt.yml/')) {
+        assert.ok(path.endsWith('&created=%3E%3D2026-10-28T23%3A00%3A00Z'));
+        return receipts.map(r=>({...r,display_title:`WSS acceptance ${t.id} ${p.plan_id}`}));
+      }
       return normal.map(r=>normalRun(t,r));
     },
     command:args=>requests.push(args)
@@ -36,18 +39,29 @@ function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false,targe
   return {p,t,g,old,requests};
 }
 test('planning new postmerge CI is read-only and yields an exact registered intent',()=>{
-  const f=fixture(),j=prepare(f.g,f.p,'100',1);
+  const f=fixture(),{intent:j,pending}=prepare(f.g,f.p,'100',1);
+  assert.ok(pending.includes(f.t.id));
   assert.equal(f.requests.length,0);assert.equal(j.actions.length,1);assert.equal(j.actions[0].workflow,f.t.workflow);assert.deepEqual(j.actions[0].inputs,{});
 });
 test('planning waits for pending postmerge CI without requesting receipts',()=>{
-  const f=fixture({normal:[{id:10,status:'in_progress'}]});assert.equal(prepare(f.g,f.p,'100',1).actions.length,0);
+  const f=fixture({normal:[{id:10,status:'in_progress'}]});assert.equal(prepare(f.g,f.p,'100',1).intent.actions.length,0);
 });
 test('successful exact normal CI requests a receipt with only immutable plan inputs',()=>{
-  const f=fixture({normal:[{id:10,status:'completed',conclusion:'success'}]}),j=prepare(f.g,f.p,'100',1);
+  const f=fixture({normal:[{id:10,status:'completed',conclusion:'success'}]}),{intent:j}=prepare(f.g,f.p,'100',1);
   assert.equal(j.actions[0].workflow,'.github/workflows/release-receipt.yml');assert.deepEqual(j.actions[0].inputs,{producer_run_id:'1',plan_id:f.p.plan_id});assert.equal(f.requests.length,0);
 });
 test('existing pending receipt is reused',()=>{
-  const f=fixture({normal:[{id:10,status:'completed',conclusion:'success'}],receipts:[{status:'in_progress'}]});assert.equal(prepare(f.g,f.p,'100',1).actions.length,0);
+  const f=fixture({normal:[{id:10,status:'completed',conclusion:'success'}],receipts:[{status:'in_progress'}]});
+  const {intent,pending}=prepare(f.g,f.p,'100',1);
+  assert.equal(intent.actions.length,0);
+  assert.ok(pending.includes(f.t.id));
+});
+test('only successfully completed receipt runs leave the pending set',()=>{
+  const f=fixture({normal:[{id:10,status:'completed',conclusion:'success'}],receipts:[{status:'completed',conclusion:'success'}]});
+  const {intent,pending}=prepare(f.g,f.p,'100',1);
+  assert.equal(intent.actions.length,0);
+  assert.ok(!pending.includes(f.t.id));
+  assert.equal(pending.length,8,'Reconciliation is still waiting for the other eight receipts');
 });
 for(const [name,options] of [
   ['failed postmerge CI',{normal:[{id:10,status:'completed',conclusion:'failure'}]}],
@@ -109,21 +123,33 @@ for(const [name,mutate]of [
 
 test('acceptance never requests integration normal CI owned by the stage coordinator',()=>{
   const f=fixture({targetId:'csharp-wrapper'});
-  assert.deepEqual(prepare(f.g,f.p,'100',1).actions,[]);
+  assert.deepEqual(prepare(f.g,f.p,'100',1).intent.actions,[]);
   const forbidden=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
   assert.throws(()=>validateJournal(f.p,forbidden),/staged coordinator/);
   assert.equal(f.requests.length,0);
 });
+test('app-only branch movement cannot hold up library receipt dispatch',()=>{
+  const f=fixture({targetId:'csharp-wrapper',executed:true,normal:[{id:10,status:'completed',conclusion:'success'}]});
+  const head=f.g.head;
+  f.g.head=repo=>{
+    assert.ok(!f.p.manifest.targets.some(t=>t.repository===repo&&t.kind==='gitlink'),'Inspect apps only after library receipts');
+    return head(repo);
+  };
+  const {intent,pending}=prepare(f.g,f.p,'100',1);
+  assert.equal(intent.actions[0].target_id,'csharp-wrapper');
+  assert.equal(intent.actions[0].workflow,'.github/workflows/release-receipt.yml');
+  assert.equal(pending.length,9);
+});
 
 test('acceptance reuses a successful push run and requests only its receipt',()=>{
   const f=fixture({normal:[{id:10,event:'push',status:'completed',conclusion:'success'}]});
-  const j=prepare(f.g,f.p,'100',1);
+  const {intent:j}=prepare(f.g,f.p,'100',1);
   assert.equal(j.actions.length,1);assert.equal(j.actions[0].workflow,'.github/workflows/release-receipt.yml');
 });
 
 test('a pending push waits without a second normal dispatch',()=>{
   const f=fixture({normal:[{id:10,event:'push',status:'in_progress'}]});
-  assert.deepEqual(prepare(f.g,f.p,'100',1).actions,[]);assert.equal(f.requests.length,0);
+  assert.deepEqual(prepare(f.g,f.p,'100',1).intent.actions,[]);assert.equal(f.requests.length,0);
 });
 
 test('a failed push stops acceptance without a replacement manual dispatch',()=>{

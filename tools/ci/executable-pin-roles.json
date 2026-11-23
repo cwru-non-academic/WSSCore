@@ -933,6 +933,34 @@
     },
     {
       "target": "cwru-non-academic/CLI_CSharp_WSS_Application",
+      "workflow": "notify-core-stage.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/CLI_CSharp_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.workflow_sha }}"
+        },
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_CSharp_WSS_Application",
       "workflow": "cli-ci.yml",
       "channels": [
         "dev",
@@ -2259,6 +2287,34 @@
     },
     {
       "target": "cwru-non-academic/GUI_Unity_WSS_Application",
+      "workflow": "notify-core-stage.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/GUI_Unity_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.workflow_sha }}"
+        },
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/GUI_Unity_WSS_Application",
       "workflow": "promote-integration.yml",
       "channels": [
         "dev",
@@ -3472,6 +3528,34 @@
     },
     {
       "target": "cwru-non-academic/CLI_Python_WSS_Application",
+      "workflow": "notify-core-stage.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/CLI_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.workflow_sha }}"
+        },
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Python_WSS_Application",
       "workflow": "cli-ci.yml",
       "channels": [
         "dev",
@@ -3961,6 +4045,34 @@
           "checkoutPath": "tools",
           "occurrence": 0,
           "role": "integration"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/ROS_Python_WSS_Application",
+      "workflow": "notify-core-stage.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/ROS_Python_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.workflow_sha }}"
+        },
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
         }
       ]
     },
@@ -4998,6 +5110,34 @@
           "occurrence": 0,
           "role": "authenticated-tooling",
           "ref": "${{ inputs.wrapper_sha }}"
+        }
+      ]
+    },
+    {
+      "target": "cwru-non-academic/CLI_Matlab_WSS_Application",
+      "workflow": "notify-core-stage.yml",
+      "channels": [
+        "dev",
+        "main"
+      ],
+      "sources": [
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/CLI_Matlab_WSS_Application",
+          "kind": "checkout",
+          "checkoutPath": ".",
+          "occurrence": 0,
+          "role": "accepted-source",
+          "ref": "${{ github.workflow_sha }}"
+        },
+        {
+          "job": "notify",
+          "repository": "cwru-non-academic/WSSCore",
+          "kind": "checkout",
+          "checkoutPath": "workflow-guard",
+          "occurrence": 0,
+          "role": "lock-core",
+          "ref": "${{ steps.guard.outputs.commit }}"
         }
       ]
     },
