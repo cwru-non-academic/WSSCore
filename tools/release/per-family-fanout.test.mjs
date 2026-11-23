@@ -51,6 +51,79 @@ test('a ready integration authorizes only its linked applications before other i
   assert.deepEqual(Object.keys(j.barrier.integrations),['python']);
   assert.deepEqual(j.actions.map(a=>[a.target,a.phase]),[['python','applications']]);
 });
+for(const channel of ['dev','main'])test(`${channel} can start one library's committed CI without any sibling merge`,()=>{
+  const f=fixture(true,channel,true);
+  f.p.policy.application_fanout='after-integration-receipts';
+  f.p.policy_sha256=digest(f.p.policy);
+  const {plan_id,...body}=f.p;
+  f.p.plan_id=digest(body);
+  f.state.missing.add('python');
+  const j=prepareStage(f.g,f.p,'9',1);
+  assert.deepEqual(j.actions.map(a=>[a.target,a.phase]),[['python','normal-ci']]);
+  f.state.saved=j;
+  executeStage(f.g,f.g,f.p,j);
+  assert.equal(f.commands.length,1);
+  assert.ok(f.commands[0][3].endsWith(`/${f.python.normal}/dispatches`));
+});
+for(const channel of ['dev','main'])test(`${channel} authorizes apps only after all four exact library receipts`,()=>{
+  const f=fixture(true,channel,true),context=channelContext(channel),manifest=JSON.parse(readFileSync(new URL(`./targets.${channel}.json`,import.meta.url)));
+  f.p.policy.application_fanout='after-integration-receipts';
+  f.p.policy_sha256=digest(f.p.policy);
+  const {plan_id,...stageBody}=f.p;
+  f.p.plan_id=digest(stageBody);
+  const acceptance={channel,candidate:f.p.candidate,manifest,plan_id:f.p.acceptance_plan_id||'a'.repeat(64),
+    target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{trusted:{'.github/workflows/release-receipt.yml':sha(5)}}]))};
+  const pages=f.g.pages,get=f.g.get,normalJobs=f.g.jobs,available=new Set(),runs=new Map();
+  for(const [i,t] of f.p.policy.libraries.entries()){
+    f.state.merged.add(t.id);
+    runs.set(t.repository,{id:200+i,run_attempt:1,event:'workflow_dispatch',path:'.github/workflows/release-receipt.yml',head_branch:channel,head_sha:f.g.head(t.repository,channel),status:'completed',conclusion:'success',repository:{full_name:t.repository},head_repository:{full_name:t.repository},display_title:`WSS acceptance ${t.id}-wrapper ${acceptance.plan_id}`});
+  }
+  f.g.pages=(path,key)=>{
+    const repo=path.split('/').slice(1,3).join('/');
+    if(path.includes('/workflows/release-receipt.yml/runs?')) {
+      assert.match(path,/created=/);
+      return available.has(repo)?[runs.get(repo)]:[];
+    }
+    return pages(path,key);
+  };
+  f.g.run=(repo,id)=>repo===CORE?{created_at:'2026-01-01T00:00:00Z'}:runs.get(repo);
+  f.g.jobs=(repo,run)=>run.path.endsWith('release-receipt.yml')?[{name:'Verify exact reviewed acceptance',status:'completed',conclusion:'success'}]:normalJobs(repo,run);
+  f.g.artifact=(repo,run,name)=>({id:900+Number(run),name,expired:false,workflow_run:{id:Number(run),head_sha:runs.get(repo).head_sha}});
+  f.g.get=path=>{
+    if(!path.includes('/actions/artifacts/'))return get(path);
+    const repo=path.split('/').slice(1,3).join('/'),r=runs.get(repo),target=manifest.targets.find(t=>t.repository===repo);
+    return f.g.artifact(repo,r.id,`wss-acceptance-${target.id}-${acceptance.plan_id}-a${r.run_attempt}`);
+  };
+  const receipts=new Map();
+  for(const [i,t] of f.p.policy.libraries.entries()){
+    const r=runs.get(t.repository),id=`${t.id}-wrapper`;
+    receipts.set(t.repository,{schema:context.receiptSchema,plan_id:acceptance.plan_id,channel,target_id:id,mode:'merged-pr',candidate:f.p.candidate,merge:{sha:r.head_sha,pr_number:'1'},normal_ci:{run_id:String(100+i),attempt:1},emitter:{run_id:String(r.id),attempt:1,source_sha:r.head_sha,workflow:r.path}});
+  }
+  f.g.download=repo=>({'receipt.json':Buffer.from(JSON.stringify(receipts.get(repo)))});
+  const prepare=(opts={})=>prepareStage(f.g,f.p,'9',1,{loadAcceptance:()=>acceptance,...opts});
+  f.state.missing.add('unity');
+  assert.deepEqual(prepare().actions.map(a=>[a.target,a.phase]),[['unity','normal-ci']]);
+  f.state.missing.clear();
+  for(const repo of [...runs.keys()].slice(0,3))available.add(repo);
+  const pending=prepare();
+  assert.equal(pending.state,'waiting-for-library-receipts');
+  assert.deepEqual(pending.actions,[]);
+  assert.equal(pending.barrier,undefined);
+  for(const repo of runs.keys())available.add(repo);
+  const object=f.g.object;
+  f.g.object=(repo,ref,path)=>path==='.github/workflows/release-receipt.yml'?{sha:sha(999)}:object(repo,ref,path);
+  assert.throws(()=>prepare(),/Library receipt workflow changed/);
+  f.g.object=object;
+  const authorized=prepare();
+  assert.equal(authorized.actions.length,4);
+  assert.ok(Object.values(authorized.barrier.integrations).every(t=>t.receipt.artifact_id));
+  assert.deepEqual(prepare({discoverDispatches:false,savedBarrier:authorized.barrier}).barrier,authorized.barrier);
+  const python=runs.get(f.python.repository),receipt=receipts.get(f.python.repository);
+  receipt.candidate={...f.p.candidate,sha256:'b'.repeat(64)};
+  assert.throws(()=>prepare(),/differs from the tested candidate/);
+  python.run_attempt++;
+  assert.throws(()=>prepare({discoverDispatches:false,savedBarrier:authorized.barrier}),/changed after authorization/);
+});
 test('main fanout uses the tested merge without comparing the dev workflow tree',()=>{
   const f=fixture(true,'main',true),object=f.g.object;
   f.g.object=(repo,ref,path)=>path==='.github/workflows'&&repo===f.python.repository&&ref===f.g.head(repo,'main')?{type:'tree',sha:sha(800)}:object(repo,ref,path);

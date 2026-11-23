@@ -10,10 +10,10 @@ const MERGED_AT='2026-10-29T00:00:00Z';
 const action=(p,t,workflow,head,inputs)=>coreAction(p,t,workflow,head,inputs,MERGED_AT);
 const normalRun=(t,r)=>({repository:{full_name:t.repository},head_repository:{full_name:t.repository},path:t.workflow,
   head_sha:sha(10),head_branch:'dev',event:'workflow_dispatch',created_at:'2026-10-29T00:01:00Z',run_attempt:1,...r});
-function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false,targetId='csharp-cli'}={}) {
+function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false,targetId='csharp-cli',executed=false}={}) {
   const manifest=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
   delete manifest.workflow_snapshot_policy; // Existing journal cases model historical frozen plans.
-  delete manifest.workflow_authority;
+  if(!executed)delete manifest.workflow_authority;
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(Buffer.from('zip'))};
   const body={schema:'wss-propagation-plan/v1',channel:'dev',candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:sha(2),trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,sha(3)]))}]))};
   const p={...body,plan_id:digest(body)},t=manifest.targets.find(t=>t.id===targetId),requests=[];
@@ -127,6 +127,18 @@ test('acceptance never requests integration normal CI owned by the stage coordin
   const forbidden=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
   assert.throws(()=>validateJournal(f.p,forbidden),/staged coordinator/);
   assert.equal(f.requests.length,0);
+});
+test('app-only branch movement cannot hold up library receipt dispatch',()=>{
+  const f=fixture({targetId:'csharp-wrapper',executed:true,normal:[{id:10,status:'completed',conclusion:'success'}]});
+  const head=f.g.head;
+  f.g.head=repo=>{
+    assert.ok(!f.p.manifest.targets.some(t=>t.repository===repo&&t.kind==='gitlink'),'Inspect apps only after library receipts');
+    return head(repo);
+  };
+  const {intent,pending}=prepare(f.g,f.p,'100',1);
+  assert.equal(intent.actions[0].target_id,'csharp-wrapper');
+  assert.equal(intent.actions[0].workflow,'.github/workflows/release-receipt.yml');
+  assert.equal(pending.length,9);
 });
 
 test('acceptance reuses a successful push run and requests only its receipt',()=>{

@@ -59,11 +59,16 @@ export function prepare(g,p,run,attempt) {
     requireThat(!prior.some(x=>x.key===a.key),`Uncertain prior dispatch for ${t.id}; no automatic retry without inspected recovery`);
     actions.push(a);
   }
-  for(const t of p.manifest.targets) {
+  const current=executedWorkflowAuthority(p.manifest);
+  const libraries=p.manifest.targets.filter(t=>t.kind==='payload');
+  const targets=current?[...libraries,...p.manifest.targets.filter(t=>t.kind==='gitlink')]:p.manifest.targets;
+  for(const t of targets) {
+    if(current&&t.kind==='gitlink'&&libraries.some(library=>pending.has(library.id)))continue;
     assertWorkflows(g,p,'acceptance',{ids:[t.id]});
     const head=g.head(t.repository,t.branch);
     if(head===p.target_snapshots[t.id].head_sha) continue;
     const prs=g.pages(`repos/${t.repository}/commits/${head}/pulls`).filter(pr=>pr.merged_at && pr.merge_commit_sha===head && pr.base?.ref===t.branch && pr.base?.repo?.full_name===t.repository && pr.head?.repo?.full_name===t.repository);
+    if(current&&(prs.length===0||prs.length===1&&prs[0].user?.type!=='Bot'))continue;
     requireThat(prs.length===1 && prs[0].user?.type==='Bot',`Current ${t.id} is not a unique bot dependency merge`);
     const normals=findNormalRuns(g,t,head,prs[0].merged_at);
     if(normals.length===0) {

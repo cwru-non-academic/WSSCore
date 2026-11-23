@@ -14,7 +14,8 @@ function fixture(equal=[],executedSource=false) {
   const policy=JSON.parse(readFileSync(new URL('../ci/dev-propagation.json',import.meta.url)));
   delete policy.workflow_snapshot_policy; // Preserve coverage of prior producer envelopes.
   if(!executedSource)delete policy.workflow_authority;
-  const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:'a'.repeat(64)};
+  const candidate={repository:CORE,commit:sha(1),run_id:executedSource?'2':'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:'a'.repeat(64)};
+  const installedCandidate={...candidate,run_id:'1'};
   const receivers=Object.fromEntries(policy.libraries.map(t=>[t.id,{heads:{main:sha(2),dev:sha(3)},trusted:{main:{},dev:{}}}]));
   const body={schema:'wss-dev-propagation-plan/v1',candidate,policy,policy_sha256:digest(policy),receivers};
   const p={...body,plan_id:digest(body)},trees={},blobs=new Map(),records={};
@@ -37,8 +38,8 @@ function fixture(equal=[],executedSource=false) {
       return item;
     });
     const projection=files.sort((a,b)=>a.source<b.source?-1:1).map(f=>`${f.source}|${f.sha256}${t.id==='unity'?`|${f.meta_sha256}`:''}`).join('\n');
-    const record=t.id==='csharp'?{schema:2,candidate,integration:{source_sha:sha(4),preflight_run_id:'11'},cli:{source_sha:sha(5),preflight_run_id:'12'}}:
-      {schema:`wss-${t.id}-projection/v1`,candidate,files,projection_sha256:bytesDigest(Buffer.from(projection)),
+    const record=t.id==='csharp'?{schema:2,candidate:installedCandidate,integration:{source_sha:sha(4),preflight_run_id:'11'},cli:{source_sha:sha(5),preflight_run_id:'12'}}:
+      {schema:`wss-${t.id}-projection/v1`,candidate:installedCandidate,files,projection_sha256:bytesDigest(Buffer.from(projection)),
         ...(t.id==='python'?{universal_contract:'macos-ble-v1'}:{}),...(t.id==='matlab'?{bootstrap_reference:false}:{})};
     records[t.id]=Buffer.from(JSON.stringify(record));add(t.repository,profile.record,records[t.id]);
     if(t.id==='matlab') add(t.repository,`${profile.root}/payload-source.json`,records[t.id]);
@@ -93,6 +94,16 @@ test('a missing target record blocks writes while still reporting all four targe
   assert.equal(r.downstream_writes_allowed,false);assert.equal(r.results.length,4);
   assert.equal(r.results.find(x=>x.target==='python').status,'blocked');
   assert.equal(r.results.filter(x=>x.status==='payload-change').length,3);
+});
+test('all-equal and mixed projections permit fresh reviewed PRs for a distinct tested ZIP',()=>{
+  for(const equal of [Object.keys(PROFILES),['unity']]) {
+    const f=fixture(equal,true),r=classifyProjections(f.g,f.p,f.hashes);
+    assert.equal(r.downstream_writes_allowed,true);
+    for(const row of r.results){
+      assert.equal(row.status,equal.includes(row.target)?'provenance-update':'payload-change');
+      assert.equal(row.acceptance,false);
+    }
+  }
 });
 test('C# classification preserves exact candidate identities and rejects stale runs and Core lineages',()=>{
   const installed=fixture().p.candidate;

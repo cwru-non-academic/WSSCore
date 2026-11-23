@@ -84,5 +84,5 @@
       }
     }
   ],
-  "application_fanout": "per-integration"
+  "application_fanout": "after-integration-receipts"
 }
