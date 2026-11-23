@@ -316,13 +316,17 @@ export function prepareStage(g,p,run,attempt,{discoverDispatches=true,excludeCur
   if(!discoverDispatches)return {...base,actions:[],...(barrier?{barrier}:{})};
   if(barrier) for(const t of p.policy.libraries.filter(t=>Object.hasOwn(ready,t.id))) actions.push(action(p,t,ready[t.id],'applications',{producer_run_id:p.candidate.run_id,barrier_run_id:run,barrier_attempt:String(attempt),...(context.channel==='main'?{channel:'main'}:{})}));
   const needed=[];
-  let prior;
+  let prior,priorError;
   for(const a of actions) {
     try {
       const runs=existing(g,p,a);
       requireThat(runs.length<=1,`Ambiguous staged dispatch for ${a.target}`);
       if(runs.length) {requireThat(runs[0].status!=='completed' || runs[0].conclusion==='success',`Staged dispatch failed for ${a.target}; inspect before recovery`);continue;}
-      prior??=priorIntents(g,p,run,excludeCurrent);
+      if(!prior&&!priorError) {
+        try {prior=priorIntents(g,p,run,excludeCurrent);}
+        catch(error) {priorError=error;}
+      }
+      if(priorError)throw priorError;
       requireThat(!prior.some(x=>x.key===a.key),`Uncertain prior dispatch for ${a.target}; no automatic duplicate`);
       needed.push(a);
     } catch(error) {if(!perFamily)throw error;blocked.push({target:a.target,reason:error.message});}

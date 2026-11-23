@@ -91,10 +91,16 @@ no token repository scope or permission is expanded. Keep Core-last ordering:
 a not-yet-deployed candidate check does not substitute for live readiness.
 
 Both producer channels use the same gate in `freezeStage` before constructing a
-stage plan. MAIN retains its existing scripts/config/workflow equality checks.
-The paired policy files must travel with the reviewed immutable Core source;
-this does not change the separate C8 receipt bootstrap or P8 engine authority.
-These are point-in-time observations, not an atomic lock on remote branches.
+stage plan. For campaigns using `workflow_authority: executed-source`, the plans
+record their initial sources for receipt compatibility. Admission checks the
+registered workflow and the exact commit that ran it. Ordinary workflow directory
+changes on another branch do not invalidate those runs. Earlier plans retain the
+policy recorded by their producer.
+
+Roll out the receiver tooling and workflow pins before enabling this policy on
+either producer branch. Deploy library receivers first, then generate application
+receivers from their reviewed wrapper commits. Keep both producer branches on the
+same policy and run one verification campaign per branch with publication disabled.
 
 ## Proof and trust boundaries
 
