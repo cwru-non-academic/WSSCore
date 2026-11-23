@@ -141,7 +141,9 @@ export function inspectReadiness({readFile=read, channel, github, env=process.en
     add(library.repository, ...[library.normal, library.fanout, 'promote-wss.yml', ...(['per-integration','after-integration-receipts'].includes(stage.application_fanout) ? ['notify-core-stage.yml'] : [])]
       .map(file => `.github/workflows/${file}`));
     for (const repository of library.applications) add(repository, '.github/workflows/promote-integration.yml',
-      ...(stage.application_fanout === 'after-integration-receipts' ? ['.github/workflows/notify-core-stage.yml'] : []));
+      // Dev can reconcile from Core while GitHub registers a new app notifier
+      // on the receiver's default branch during the subsequent main rollout.
+      ...(channel === 'main' && stage.application_fanout === 'after-integration-receipts' ? ['.github/workflows/notify-core-stage.yml'] : []));
   }
   for (const [repository, workflows] of registrations) {
     collect(`${repository} registered workflows`, () => {
