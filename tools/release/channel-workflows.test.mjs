@@ -92,7 +92,8 @@ test('acceptance verification is a separate read-only job bound to the original 
     const reconcile=acceptanceJob(text,'reconcile'),verify=acceptanceJob(text,'verify'),publish=acceptanceJob(text,'publish');
     assert.match(reconcile,/producer_run_id: \$\{\{ steps.producer.outputs.run_id \}\}/);
     assert.doesNotMatch(reconcile,/cli\.mjs verify|accepted\/acceptance\.json/);
-    assert.match(verify,/needs: reconcile\n    if: needs.reconcile.result == 'success'/);
+    assert.match(verify,/needs: reconcile\n    if: >-\n      needs.reconcile.result == 'success' &&/);
+    assert.match(verify,/needs.reconcile.outputs.receipts_ready == 'true' \|\|\n       \(github.event_name == 'workflow_dispatch' && inputs.mode == 'verify'\)/);
     assert.match(verify,/permissions:\n      contents: read\n      actions: read/);
     assert.doesNotMatch(verify,/write|receipt-token|WSS_JOURNAL_READ_TOKEN|select-producer|REQUESTED_RUN|cli\.mjs (dispatch|prepare-dispatches|publish)/);
     assert.match(verify,/permission-contents: read/);assert.match(verify,/permission-actions: read/);assert.match(verify,/permission-pull-requests: read/);
