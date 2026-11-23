@@ -174,7 +174,14 @@ for(const channel of ['dev','main'])for(const executed of [false,true])test(`${c
   const next=prepareStage(f.g,f.p,'10',1);
   assert.deepEqual(next.actions,[]);
   assert.ok(next.blocked.some(issue=>issue.target==='python'&&issue.reason.includes('Uncertain prior dispatch')));
-  if(executed)assert.ok(prepareStage(f.g,f.p,'9',2).blocked.some(issue=>issue.reason.includes('Start a new reconciliation run')));
+  if(executed){
+    assert.ok(prepareStage(f.g,f.p,'9',2).blocked.some(issue=>issue.reason.includes('Start a new reconciliation run')));
+    const run=f.g.run,jobs=f.g.jobs;
+    f.g.run=(...args)=>({...run(...args),status:'completed'});
+    f.g.jobs=(repo,r)=>repo===CORE?[{name:'Reconcile committed CI or authorized application promotion',status:'completed',
+      steps:[{name:'Recheck saved intent and dispatch once',status:'completed',conclusion:'skipped'}]}]:jobs(repo,r);
+    assert.equal(prepareStage(f.g,f.p,'10',1).actions.length,1);
+  }
 });
 test('the authorized family moving or a foreign barrier cannot use saved authorization',()=>{
   const f=fixture(),j=prepareStage(f.g,f.p,'9',1);f.state.saved=j;f.state.heads.python=sha(99);

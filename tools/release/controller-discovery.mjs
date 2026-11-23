@@ -48,7 +48,14 @@ export function journalArtifacts(g,workflow,name,{exact=false,excludeRun=''}={})
     const run=g.run(CORE,runId);
     requireThat(String(run.id)===runId && run.path===workflow && run.head_branch==='main' && run.repository?.full_name===CORE &&
       run.head_repository?.full_name===CORE && run.head_sha===artifact.workflow_run.head_sha,'Journal artifact came from a foreign workflow source');
-    result.push({artifact,runId});
+    result.push({artifact,runId,run});
   }
   return result;
+}
+export function dispatchWasSkipped(g,run,attempt,{jobName,stepName}) {
+  if(run.status!=='completed')return false;
+  const jobs=g.jobs(CORE,{...run,run_attempt:attempt}).filter(job=>job.name===jobName);
+  if(jobs.length!==1||jobs[0].status!=='completed')return false;
+  const steps=(jobs[0].steps||[]).filter(step=>step.name===stepName);
+  return steps.length===1&&steps[0].status==='completed'&&steps[0].conclusion==='skipped';
 }

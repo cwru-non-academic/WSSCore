@@ -1,7 +1,7 @@
 import {basename} from 'node:path';
 import {channelContext} from './channels.mjs';
 import {archive} from './github.mjs';
-import {campaignReceiptRuns,createdSince,journalArtifacts} from './controller-discovery.mjs';
+import {campaignReceiptRuns,createdSince,dispatchWasSkipped,journalArtifacts} from './controller-discovery.mjs';
 import {findNormalRuns} from './normal-ci.mjs';
 import {bytesDigest,canonical,CORE,digest,plan,producer,requireThat} from './verify.mjs';
 import {assertWorkflows,executedWorkflowAuthority,guardedWriter} from '../ci/workflow-freeze.mjs';
@@ -35,12 +35,13 @@ function previousIntents(g,p,run) {
   const result=[];
   const exact=executedWorkflowAuthority(p.manifest);
   const workflow=channelContext(p.channel).acceptanceWorkflow;
-  for(const {artifact,runId} of journalArtifacts(g,workflow,exact?journalPrefix(p):`${journalPrefix(p)}-`,{exact})) {
+  for(const {artifact,runId,run:emitter} of journalArtifacts(g,workflow,exact?journalPrefix(p):`${journalPrefix(p)}-`,{exact})) {
     requireThat(!exact||runId!==run,'This run already saved a dispatch intent. Start a new reconciliation run.');
     requireThat(!artifact.expired,'Prior dispatch intent expired; inspect before recovery');
     const bytes=g.download(CORE,runId,artifact.name,['intent.json'])['intent.json'];
     const j=validateJournal(p,JSON.parse(bytes));
     requireThat(j.run_id===runId && artifact.name===journalName(p,j.run_id,j.attempt),'Intent artifact identity mismatch');
+    if(exact&&dispatchWasSkipped(g,emitter,j.attempt,{jobName:'Reconcile merge and receipt progress',stepName:'Reconcile existing merges with fresh normal CI and read-only receipts'}))continue;
     result.push(...j.actions);
   }
   return result;

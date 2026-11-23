@@ -6,7 +6,7 @@ import {join,resolve,dirname,isAbsolute} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {GitHub,archive,loadPlan} from '../release/github.mjs';
-import {campaignReceiptRuns,createdSince,journalArtifacts} from '../release/controller-discovery.mjs';
+import {campaignReceiptRuns,createdSince,dispatchWasSkipped,journalArtifacts} from '../release/controller-discovery.mjs';
 import {findNormalRuns} from '../release/normal-ci.mjs';
 import {CORE,CORE_JOBS,candidate,canonical,digest,jobs,requireThat} from '../release/verify.mjs';
 import {assertWorkflows,assertWorkflowPair,executedWorkflowAuthority,freezeWorkflows,guardedWriter} from './workflow-freeze.mjs';
@@ -274,11 +274,12 @@ function priorIntents(g,p,run,excludeCurrent=false) {
   const context=stageContext(p);
   const exact=executedWorkflowAuthority(p.policy);
   const result=[];
-  for(const {artifact,runId} of journalArtifacts(g,context.stageWorkflow,exact?journalPrefix(p):`${journalPrefix(p)}-`,{exact,excludeRun:excludeCurrent?run:''})) {
+  for(const {artifact,runId,run:emitter} of journalArtifacts(g,context.stageWorkflow,exact?journalPrefix(p):`${journalPrefix(p)}-`,{exact,excludeRun:excludeCurrent?run:''})) {
     requireThat(!exact||runId!==run,'This run already saved a dispatch intent. Start a new reconciliation run.');
     requireThat(!artifact.expired,'Expired stage intent; inspect before recovery');
     const j=JSON.parse(g.download(CORE,runId,artifact.name,['intent.json'])['intent.json']);
     requireThat(j.plan_id===p.plan_id && j.run_id===runId && artifact.name===journalName(p,j.run_id,j.attempt),'Foreign or inconsistent stage journal');
+    if(exact&&dispatchWasSkipped(g,emitter,j.attempt,{jobName:'Reconcile committed CI or authorized application promotion',stepName:'Recheck saved intent and dispatch once'}))continue;
     result.push(...j.actions);
   }
   return result;
