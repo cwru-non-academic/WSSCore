@@ -19,10 +19,9 @@ these sources, not separate implementations in each product language.
 | Staging, durable dispatch proof and adapters | Python integration `staging.mjs`, `dispatch-proof.mjs` and associated profiles/bridges |
 | Process arguments and versioned native evidence identity | Python integration `Process.ps1`, `Evidence.ps1` |
 | Correlated preflight requests and exact-run waiting | Python integration `preflight.mjs`, `Preflight.ps1` |
-| Integration-only coordinator notification | Python integration `notify-family.mjs`, `notify-core-stage.yml` |
+| Coordinator notifications for integrations and apps | Python integration `notify-family.mjs`, `notify-core-stage.yml` |
 
-Integrations receive 30 managed files and applications receive 28; notifier files
-are scoped to integrations. Preserve receiver runtime tests, projection/importer
+The shared notifier advances both integrations and applications. Preserve receiver runtime tests, projection/importer
 rules, native evidence interpretation, explicit executable pins, job names and
 application gitlinks. The shared source does not replace language-specific proof.
 
@@ -91,10 +90,16 @@ no token repository scope or permission is expanded. Keep Core-last ordering:
 a not-yet-deployed candidate check does not substitute for live readiness.
 
 Both producer channels use the same gate in `freezeStage` before constructing a
-stage plan. MAIN retains its existing scripts/config/workflow equality checks.
-The paired policy files must travel with the reviewed immutable Core source;
-this does not change the separate C8 receipt bootstrap or P8 engine authority.
-These are point-in-time observations, not an atomic lock on remote branches.
+stage plan. For campaigns using `workflow_authority: executed-source`, the plans
+record their initial sources for receipt compatibility. Admission checks the
+registered workflow and the exact commit that ran it. Ordinary workflow directory
+changes on another branch do not invalidate those runs. Earlier plans retain the
+policy recorded by their producer.
+
+Roll out the receiver tooling and workflow pins before enabling this policy on
+either producer branch. Deploy library receivers first, then generate application
+receivers from their reviewed wrapper commits. Keep both producer branches on the
+same policy and run one verification campaign per branch with publication disabled.
 
 ## Proof and trust boundaries
 
@@ -130,14 +135,22 @@ The common publisher clears inherited multi-valued Git authorization headers
 before supplying one delayed repository-scoped token. Its hosted contracts use
 a real Git HTTP endpoint on Linux, Windows and macOS. Read-only evidence tokens
 remain separate from authoring/dispatch credentials. Durable intent precedes
-dispatch, and uncertain outcomes require inspection before retrying.
+dispatch. A fresh reconciliation can retry when GitHub shows that the prior
+dispatch step was skipped. Attempts with an uncertain outcome still require
+inspection.
 
-Trusted-main reconciliation supports per-family authorization for frozen policies
-declaring `application_fanout: per-integration`. Each family's reviewed dependency
-merge and unique successful committed CI authorize only its linked applications.
-Older frozen policies retain their all-integration barrier. Final acceptance
-still requires all applicable nine targets. The notifier is a guarded wake-up,
-not acceptance or release authorization.
+Current dev and main campaigns use `application_fanout: after-integration-receipts`.
+Each library can run committed CI as soon as its dependency PR merges. The
+application PRs wait for all four library receipts. A fresh candidate whose DLLs
+match the installed files follows the same preflight, provenance PR, committed CI
+and receipt path. A replay of the already installed candidate can end without a
+second PR.
+
+The shared notifier wakes the appropriate controller after merges, successful
+committed CI and successful receipts. The schedule covers missed notifications.
+The immutable candidate and recorded evidence remain authoritative. Verification
+must be enabled on both branches. The separate publication switch controls release
+creation after all nine receipts pass.
 
 Changed tooling invalidates old frozen baselines; old candidate proofs cannot be
 reused after source adoption. A green source PR or registered workflow does not

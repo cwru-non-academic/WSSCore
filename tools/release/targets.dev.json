@@ -2,6 +2,7 @@
   "schema": "wss-required-targets/v1",
   "channel": "dev",
   "workflow_snapshot_policy": "wss-workflow-snapshots/v1",
+  "workflow_authority": "executed-source",
   "release_kind": "beta",
   "stable_enabled": false,
   "targets": [

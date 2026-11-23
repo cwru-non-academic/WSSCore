@@ -7,7 +7,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {GitHub} from '../release/github.mjs';
 import {bytesDigest,candidate,canonical,CORE,requireThat} from '../release/verify.mjs';
 import {validatePlan} from './dev-propagation.mjs';
-import {assertWorkflows} from './workflow-freeze.mjs';
+import {assertWorkflows,executedWorkflowAuthority} from './workflow-freeze.mjs';
 import {channelContext} from '../release/channels.mjs';
 
 export const UNIVERSAL_FILES=JSON.parse(readFileSync(new URL('../ArtifactBuild/manifests/universal.json',import.meta.url))).files;
@@ -123,6 +123,8 @@ export function assertCSharpCandidateLineage(g,incoming,installed) {
 export function classifyProjections(g,p,archiveHashes) {
   validatePlan(p);
   const cache=new Map(),results=[];
+  const sourceCurrent=(t,head)=>g.head(t.repository,p.policy.channel)===head&&
+    (executedWorkflowAuthority(p.policy)||g.head(t.repository,'main')===p.receivers[t.id].heads.main);
   let archiveError;
   try {
     requireThat(archiveHashes?.sha256===p.candidate.sha256 && inventory(Object.keys(archiveHashes.files || {}),UNIVERSAL_FILES) &&
@@ -135,27 +137,27 @@ export function classifyProjections(g,p,archiveHashes) {
     try {
       assertWorkflows(g,p,'stage',{ids:[t.id]});
       requireThat(!archiveError,archiveError);
-      requireThat(/^[a-f0-9]{40}$/.test(head) && g.head(t.repository,p.policy.channel)===head &&
-        g.head(t.repository,'main')===p.receivers[t.id].heads.main,'Receiver moved from frozen heads');
+      requireThat(/^[a-f0-9]{40}$/.test(head)&&sourceCurrent(t,head),'Candidate receiver source moved');
       const old=installed(g,t,head,cache),profile=PROFILES[t.id];
       row.installed_candidate=old.candidate;
       if(t.id==='csharp') row.lineage=assertCSharpCandidateLineage(g,p.candidate,old.candidate);
       const changed=profile.sources.filter(source=>old.hashes[source]!==archiveHashes.files[source]);
-      row.status=changed.length?'payload-change':'equivalent-but-unsupported';
+      row.status=changed.length?'payload-change':
+        executedWorkflowAuthority(p.policy)&&!same(old.candidate,p.candidate)?'provenance-update':'equivalent-but-unsupported';
       row.changed_sources=changed;row.preserved_provenance_sha256=old.provenance_sha256;
       row.reason=changed.length?'New candidate changes the installed projection; normal reviewed promotion is required.':
-        'Installed bytes match; v1 has no equivalence acceptance. Preserve provenance and inspect recovery.';
+        row.status==='provenance-update'?'Installed bytes match. Test the incoming ZIP and open a reviewed dependency PR with fresh provenance.':
+        'Installed bytes match and this plan cannot create a fresh provenance merge.';
     } catch(error) {row.reason=error.message;}
     results.push(row);
   }
   // Classifying one target cannot hide another target moving during these reads.
   for(const row of results) {
-    try {requireThat(g.head(CORE,p.policy.channel)===p.candidate.commit && g.head(row.repository,p.policy.channel)===row.head_sha &&
-      g.head(row.repository,'main')===p.receivers[row.target].heads.main,'Core/receiver moved during classification');}
+    try {requireThat(g.head(CORE,p.policy.channel)===p.candidate.commit&&sourceCurrent({id:row.target,repository:row.repository},row.head_sha),'Core/receiver moved during classification');}
     catch(error) {row.status='blocked';row.reason=error.message;}
   }
   return {schema:'wss-projection-classification/v1',candidate:p.candidate,plan_id:p.plan_id,
-    downstream_writes_allowed:results.length===4 && results.every(r=>r.status==='payload-change'),results};
+    downstream_writes_allowed:results.length===4 && results.every(r=>['payload-change','provenance-update'].includes(r.status)),results};
 }
 
 function main() {
@@ -173,7 +175,7 @@ function main() {
   mkdirSync(dirname(outputPath),{recursive:true});writeFileSync(outputPath,canonical(report)+'\n');
   const rows=report.results.map(r=>`| ${r.target} | ${r.status} | ${String(r.reason).replace(/[|\r\n]/g,' ')} |`).join('\n');
   if(process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY,`\n### Pre-write projection classification\n| Target | Outcome | Detail |\n|---|---|---|\n${rows}\n\nDiagnostic only; no acceptance receipt or provenance update.\n`);
-  requireThat(report.downstream_writes_allowed,'Downstream handoff blocked by pre-write projection classification; inspect the retained report. No no-op acceptance is authorized.');
+  requireThat(report.downstream_writes_allowed,'Downstream handoff blocked by projection classification; inspect the retained report.');
 }
 if(isEntrypoint(import.meta.url))
   try {main();} catch(error) {console.error(error.message);process.exitCode=1;}
