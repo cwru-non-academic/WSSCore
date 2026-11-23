@@ -51,6 +51,7 @@ export function prepare(g,p,run,attempt) {
   const c=p.candidate,r=g.run(CORE,c.run_id),zip=archive(g,c);
   producer(p,{run:r,current_head:g.head(CORE,p.channel),jobs:g.jobs(CORE,r),artifact:zip.artifact,archive_sha256:bytesDigest(zip.files[c.archive])});
   const since=createdSince(r.created_at),actions=[];
+  const pending=new Set(p.manifest.targets.map(t=>t.id));
   let prior;
   function request(t,workflow,head,inputs,mergedAt) {
     const a=action(p,t,workflow,head,inputs,mergedAt);
@@ -74,10 +75,15 @@ export function prepare(g,p,run,attempt) {
     if(normals[0].status!=='completed') continue;
     const receipts=campaignReceiptRuns(g,p,t,since);
     requireThat(receipts.length<=1,`Ambiguous receipt runs for ${t.id}`);
-    if(receipts.length) {requireThat(receipts[0].status!=='completed' || receipts[0].conclusion==='success',`Receipt failed for ${t.id}; inspect recovery`);continue;}
+    if(receipts.length) {
+      const receipt=receipts[0];
+      requireThat(receipt.status!=='completed' || receipt.conclusion==='success',`Receipt failed for ${t.id}; inspect recovery`);
+      if(receipt.status==='completed')pending.delete(t.id);
+      continue;
+    }
     request(t,'.github/workflows/release-receipt.yml',head,{producer_run_id:c.run_id,plan_id:p.plan_id},prs[0].merged_at);
   }
-  return journal(p,run,attempt,actions);
+  return {intent:journal(p,run,attempt,actions),pending:[...pending]};
 }
 export function execute(g,reader,p,j) {
   plan(p);validateJournal(p,j);

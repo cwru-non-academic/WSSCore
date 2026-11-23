@@ -39,18 +39,29 @@ function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false,targe
   return {p,t,g,old,requests};
 }
 test('planning new postmerge CI is read-only and yields an exact registered intent',()=>{
-  const f=fixture(),j=prepare(f.g,f.p,'100',1);
+  const f=fixture(),{intent:j,pending}=prepare(f.g,f.p,'100',1);
+  assert.ok(pending.includes(f.t.id));
   assert.equal(f.requests.length,0);assert.equal(j.actions.length,1);assert.equal(j.actions[0].workflow,f.t.workflow);assert.deepEqual(j.actions[0].inputs,{});
 });
 test('planning waits for pending postmerge CI without requesting receipts',()=>{
-  const f=fixture({normal:[{id:10,status:'in_progress'}]});assert.equal(prepare(f.g,f.p,'100',1).actions.length,0);
+  const f=fixture({normal:[{id:10,status:'in_progress'}]});assert.equal(prepare(f.g,f.p,'100',1).intent.actions.length,0);
 });
 test('successful exact normal CI requests a receipt with only immutable plan inputs',()=>{
-  const f=fixture({normal:[{id:10,status:'completed',conclusion:'success'}]}),j=prepare(f.g,f.p,'100',1);
+  const f=fixture({normal:[{id:10,status:'completed',conclusion:'success'}]}),{intent:j}=prepare(f.g,f.p,'100',1);
   assert.equal(j.actions[0].workflow,'.github/workflows/release-receipt.yml');assert.deepEqual(j.actions[0].inputs,{producer_run_id:'1',plan_id:f.p.plan_id});assert.equal(f.requests.length,0);
 });
 test('existing pending receipt is reused',()=>{
-  const f=fixture({normal:[{id:10,status:'completed',conclusion:'success'}],receipts:[{status:'in_progress'}]});assert.equal(prepare(f.g,f.p,'100',1).actions.length,0);
+  const f=fixture({normal:[{id:10,status:'completed',conclusion:'success'}],receipts:[{status:'in_progress'}]});
+  const {intent,pending}=prepare(f.g,f.p,'100',1);
+  assert.equal(intent.actions.length,0);
+  assert.ok(pending.includes(f.t.id));
+});
+test('only successfully completed receipt runs leave the pending set',()=>{
+  const f=fixture({normal:[{id:10,status:'completed',conclusion:'success'}],receipts:[{status:'completed',conclusion:'success'}]});
+  const {intent,pending}=prepare(f.g,f.p,'100',1);
+  assert.equal(intent.actions.length,0);
+  assert.ok(!pending.includes(f.t.id));
+  assert.equal(pending.length,8,'Reconciliation is still waiting for the other eight receipts');
 });
 for(const [name,options] of [
   ['failed postmerge CI',{normal:[{id:10,status:'completed',conclusion:'failure'}]}],
@@ -112,7 +123,7 @@ for(const [name,mutate]of [
 
 test('acceptance never requests integration normal CI owned by the stage coordinator',()=>{
   const f=fixture({targetId:'csharp-wrapper'});
-  assert.deepEqual(prepare(f.g,f.p,'100',1).actions,[]);
+  assert.deepEqual(prepare(f.g,f.p,'100',1).intent.actions,[]);
   const forbidden=journal(f.p,'100',1,[action(f.p,f.t,f.t.workflow,sha(10),{})]);
   assert.throws(()=>validateJournal(f.p,forbidden),/staged coordinator/);
   assert.equal(f.requests.length,0);
@@ -120,13 +131,13 @@ test('acceptance never requests integration normal CI owned by the stage coordin
 
 test('acceptance reuses a successful push run and requests only its receipt',()=>{
   const f=fixture({normal:[{id:10,event:'push',status:'completed',conclusion:'success'}]});
-  const j=prepare(f.g,f.p,'100',1);
+  const {intent:j}=prepare(f.g,f.p,'100',1);
   assert.equal(j.actions.length,1);assert.equal(j.actions[0].workflow,'.github/workflows/release-receipt.yml');
 });
 
 test('a pending push waits without a second normal dispatch',()=>{
   const f=fixture({normal:[{id:10,event:'push',status:'in_progress'}]});
-  assert.deepEqual(prepare(f.g,f.p,'100',1).actions,[]);assert.equal(f.requests.length,0);
+  assert.deepEqual(prepare(f.g,f.p,'100',1).intent.actions,[]);assert.equal(f.requests.length,0);
 });
 
 test('a failed push stops acceptance without a replacement manual dispatch',()=>{

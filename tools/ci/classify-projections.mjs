@@ -7,7 +7,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {GitHub} from '../release/github.mjs';
 import {bytesDigest,candidate,canonical,CORE,requireThat} from '../release/verify.mjs';
 import {validatePlan} from './dev-propagation.mjs';
-import {assertWorkflows} from './workflow-freeze.mjs';
+import {assertWorkflows,executedWorkflowAuthority} from './workflow-freeze.mjs';
 import {channelContext} from '../release/channels.mjs';
 
 export const UNIVERSAL_FILES=JSON.parse(readFileSync(new URL('../ArtifactBuild/manifests/universal.json',import.meta.url))).files;
@@ -123,6 +123,8 @@ export function assertCSharpCandidateLineage(g,incoming,installed) {
 export function classifyProjections(g,p,archiveHashes) {
   validatePlan(p);
   const cache=new Map(),results=[];
+  const sourceCurrent=(t,head)=>g.head(t.repository,p.policy.channel)===head&&
+    (executedWorkflowAuthority(p.policy)||g.head(t.repository,'main')===p.receivers[t.id].heads.main);
   let archiveError;
   try {
     requireThat(archiveHashes?.sha256===p.candidate.sha256 && inventory(Object.keys(archiveHashes.files || {}),UNIVERSAL_FILES) &&
@@ -135,8 +137,7 @@ export function classifyProjections(g,p,archiveHashes) {
     try {
       assertWorkflows(g,p,'stage',{ids:[t.id]});
       requireThat(!archiveError,archiveError);
-      requireThat(/^[a-f0-9]{40}$/.test(head) && g.head(t.repository,p.policy.channel)===head &&
-        g.head(t.repository,'main')===p.receivers[t.id].heads.main,'Receiver moved from frozen heads');
+      requireThat(/^[a-f0-9]{40}$/.test(head)&&sourceCurrent(t,head),'Candidate receiver source moved');
       const old=installed(g,t,head,cache),profile=PROFILES[t.id];
       row.installed_candidate=old.candidate;
       if(t.id==='csharp') row.lineage=assertCSharpCandidateLineage(g,p.candidate,old.candidate);
@@ -150,8 +151,7 @@ export function classifyProjections(g,p,archiveHashes) {
   }
   // Classifying one target cannot hide another target moving during these reads.
   for(const row of results) {
-    try {requireThat(g.head(CORE,p.policy.channel)===p.candidate.commit && g.head(row.repository,p.policy.channel)===row.head_sha &&
-      g.head(row.repository,'main')===p.receivers[row.target].heads.main,'Core/receiver moved during classification');}
+    try {requireThat(g.head(CORE,p.policy.channel)===p.candidate.commit&&sourceCurrent({id:row.target,repository:row.repository},row.head_sha),'Core/receiver moved during classification');}
     catch(error) {row.status='blocked';row.reason=error.message;}
   }
   return {schema:'wss-projection-classification/v1',candidate:p.candidate,plan_id:p.plan_id,

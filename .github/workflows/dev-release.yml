@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   reconcile:
-    name: Verify nine merged targets without publication
+    name: Reconcile merge and receipt progress
     if: >-
       github.repository == 'cwru-non-academic/WSSCore' &&
       vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true' &&
@@ -45,6 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       producer_run_id: ${{ steps.producer.outputs.run_id }}
+      receipts_ready: ${{ steps.reconciliation.outputs.receipts_ready }}
     permissions:
       contents: read
       actions: read
@@ -128,7 +129,10 @@ jobs:
   verify:
     name: Verify fresh acceptance receipts
     needs: reconcile
-    if: needs.reconcile.result == 'success'
+    if: >-
+      needs.reconcile.result == 'success' &&
+      (needs.reconcile.outputs.receipts_ready == 'true' ||
+       (github.event_name == 'workflow_dispatch' && inputs.mode == 'verify'))
     runs-on: ubuntu-latest
     permissions:
       contents: read

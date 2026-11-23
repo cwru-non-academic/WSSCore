@@ -10,9 +10,10 @@ import {assertCSharpCandidateLineage,classifyProjections,PROFILES,projectedPath,
 import {bytesDigest,CORE,digest} from './verify.mjs';
 
 const sha=n=>n.toString(16).padStart(40,'0');
-function fixture(equal=[]) {
+function fixture(equal=[],executedSource=false) {
   const policy=JSON.parse(readFileSync(new URL('../ci/dev-propagation.json',import.meta.url)));
   delete policy.workflow_snapshot_policy; // Preserve coverage of prior producer envelopes.
+  if(!executedSource)delete policy.workflow_authority;
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:'a'.repeat(64)};
   const receivers=Object.fromEntries(policy.libraries.map(t=>[t.id,{heads:{main:sha(2),dev:sha(3)},trusted:{main:{},dev:{}}}]));
   const body={schema:'wss-dev-propagation-plan/v1',candidate,policy,policy_sha256:digest(policy),receivers};
@@ -130,6 +131,12 @@ test('an installed C# descendant blocks the whole mixed-target handoff',()=>{
   assert.equal(r.results.filter(x=>x.status==='payload-change').length,3);
   assert.deepEqual(JSON.parse(bytes).candidate,record.candidate);
 });
+test('projection admission reads only the active channel in execution-source mode',()=>{
+  const f=fixture([],true),head=f.g.head;
+  f.g.head=(repo,branch)=>{assert.notEqual(branch,'main');return head(repo,branch);};
+  assert.equal(classifyProjections(f.g,f.p,f.hashes).downstream_writes_allowed,true);
+});
+
 for(const [name,corrupt] of [
   ['missing ZIP evidence',f=>f.hashes=undefined],
   ['wrong ZIP digest',f=>f.hashes.sha256='b'.repeat(64)],
