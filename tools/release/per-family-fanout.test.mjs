@@ -57,7 +57,7 @@ test('main fanout uses the tested merge without comparing the dev workflow tree'
   const first=prepareStage(f.g,f.p,'9',1);
   assert.equal(first.barrier.integrations.python.execution.trusted['.github/workflows'],sha(800));
   const pages=f.g.pages;
-  f.g.pages=(path,key)=>{assert.notEqual(path,`repos/${CORE}/actions/artifacts`);return pages(path,key);};
+  f.g.pages=(path,key)=>{assert.ok(!path.startsWith(`repos/${CORE}/actions/artifacts`));return pages(path,key);};
   const read=prepareStage(f.g,f.p,'9',1,{discoverDispatches:false});
   assert.deepEqual(read.barrier,first.barrier);
   assert.deepEqual(read.actions,[]);
@@ -83,14 +83,14 @@ test('another family becoming ready does not invalidate saved authorization for 
   const f=fixture(),j=prepareStage(f.g,f.p,'9',1);f.state.saved=j;f.state.merged.add('unity');
   executeStage(f.g,f.g,f.p,j);assert.equal(f.commands.length,1);assert.ok(f.commands[0].some(x=>x.includes(f.python.repository)));
 });
-for(const channel of ['dev','main'])test(`${channel} stage finds matching journals even if an earlier scheduled run was queued`,()=>{
-  const f=fixture(true,channel), first=prepareStage(f.g,f.p,'9',1),pages=f.g.pages;
-  const artifact=`wss-${channel}-stage-intents-${f.p.candidate.run_id}-9-a1`;
+for(const channel of ['dev','main'])for(const executed of [false,true])test(`${channel} stage finds its journal even if an earlier run was queued (execution source=${executed})`,()=>{
+  const f=fixture(true,channel,executed),first=prepareStage(f.g,f.p,'9',1),pages=f.g.pages;
+  const artifact=`wss-${channel}-stage-intents-${f.p.candidate.run_id}${executed?'':'-9-a1'}`;
   f.state.saved=first;
   f.g.pages=(path,key)=>{
     if(!path.startsWith(`repos/${CORE}/`))return pages(path,key);
     assert.equal(key,'artifacts');
-    assert.equal(path,`repos/${CORE}/actions/artifacts`);
+    assert.equal(path,`repos/${CORE}/actions/artifacts${executed?'?name='+artifact:''}`);
     return [{name:'unrelated-artifact',workflow_run:{id:99}}, {name:artifact,expired:false,workflow_run:{id:9,head_sha:sha(1)}}];
   };
   f.g.run=(repo,id)=>{
@@ -101,6 +101,7 @@ for(const channel of ['dev','main'])test(`${channel} stage finds matching journa
   const next=prepareStage(f.g,f.p,'10',1);
   assert.deepEqual(next.actions,[]);
   assert.ok(next.blocked.some(issue=>issue.target==='python'&&issue.reason.includes('Uncertain prior dispatch')));
+  if(executed)assert.ok(prepareStage(f.g,f.p,'9',2).blocked.some(issue=>issue.reason.includes('Start a new reconciliation run')));
 });
 test('the authorized family moving or a foreign barrier cannot use saved authorization',()=>{
   const f=fixture(),j=prepareStage(f.g,f.p,'9',1);f.state.saved=j;f.state.heads.python=sha(99);

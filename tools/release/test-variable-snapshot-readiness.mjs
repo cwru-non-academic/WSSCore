@@ -6,6 +6,7 @@ import {downloadVerifiedJsonArtifact} from './verified-json-artifact.mjs';
 import {CORE,canonical,requireThat} from './verify.mjs';
 import {isEntrypoint} from './entrypoint.mjs';
 import {createSnapshotRequest,validateSnapshotRequest,verifySnapshotSource,dispatchSnapshotOnce,collectLocalTestVariables,matchingSnapshotRuns,verifySnapshotRun} from './local-test-variable-readiness.mjs';
+import {createdSince} from './controller-discovery.mjs';
 export const WORKFLOW='.github/workflows/test-variable-snapshot-readiness.yml';
 export const REGISTRY='tools/ci/test-variable-readiness-sources.json';
 export const INTENT='wss-readiness-variable-intent';
@@ -27,7 +28,7 @@ export function readinessAuthority(g,env=process.env) {
   requireThat(entry.controller_actor_ids.includes(String(run.actor?.id))&&entry.controller_actor_ids.includes(String(run.triggering_actor?.id))&&String(run.triggering_actor?.id)===env.GITHUB_ACTOR_ID,'Unreviewed readiness controller actor');
   const workflow=g.get(`repos/${CORE}/actions/workflows/${run.workflow_id}`);
   requireThat(workflow.path===WORKFLOW&&workflow.state==='active','Readiness controller is not registered');
-  return {channel,controller:{repository:CORE,commit:env.GITHUB_SHA,run_id:env.GITHUB_RUN_ID,attempt:1},source:entry.source,attempt:Number(env.GITHUB_RUN_ATTEMPT)};
+  return {channel,controller:{repository:CORE,commit:env.GITHUB_SHA,run_id:env.GITHUB_RUN_ID,attempt:1},source:entry.source,attempt:Number(env.GITHUB_RUN_ATTEMPT),since:createdSince(run.created_at)};
 }
 export function prepareReadiness(g,reader,auth) {
   requireThat(auth.attempt===1,'Readiness recovery cannot prepare new settings');
@@ -61,11 +62,11 @@ export function dispatchReadiness(writer,d,auth,env=process.env) {
   requireThat(d.schema==='wss-test-variable-readiness-intent/v1'&&same(d.request.controller,auth.controller),'Wrong readiness dispatch intent');
   const r=validateSnapshotRequest(d.request);
   writeFileSync(join(env.RUNNER_TEMP,`wss-readiness-dispatch-${auth.controller.run_id}-a1.json`),canonical(d)+'\n',{flag:'wx'});
-  return dispatchSnapshotOnce(writer,r,{newIntent:true,authenticatedIntent:r,dispatch:(repository,workflow,body)=>writer.command(['api','--method','POST',`repos/${repository}/actions/workflows/${workflow}/dispatches`,'-f',`ref=${body.ref}`,'-f',`inputs[request]=${body.inputs.request}`])});
+  return dispatchSnapshotOnce(writer,r,{newIntent:true,authenticatedIntent:r,since:auth.since,dispatch:(repository,workflow,body)=>writer.command(['api','--method','POST',`repos/${repository}/actions/workflows/${workflow}/dispatches`,'-f',`ref=${body.ref}`,'-f',`inputs[request]=${body.inputs.request}`])});
 }
 export function collectReadiness(reader,d,auth) {
   requireThat(same(d.request.controller,auth.controller),'Wrong readiness collection authority');
-  const capture=collectLocalTestVariables(reader,d.request);
+  const capture=collectLocalTestVariables(reader,d.request,auth.since);
   requireThat(reader.head(d.request.target.repository,auth.channel)===d.request.source.commit,'Readiness receiver moved before report');
   return {schema:'wss-test-variable-readiness-report/v1',purpose:'readiness-only-not-campaign-evidence',request:d.request,capture};
 }
@@ -99,7 +100,7 @@ if(isEntrypoint(import.meta.url)) {
       requireThat(auth.attempt===1,'Recovery must load the existing readiness report, never republish');
       let ready=false;
       for(let i=0;i<60&&!ready;i++) {
-        const runs=matchingSnapshotRuns(reader,d.request);
+        const runs=matchingSnapshotRuns(reader,d.request,auth.since);
         if(runs.length){const run=verifySnapshotRun(reader,d.request,reader.run(d.request.target.repository,String(runs[0].id)));if(run.status==='completed'){requireThat(run.conclusion==='success','Readiness capture failed');ready=true;}}
         if(!ready)await new Promise(resolve=>setTimeout(resolve,15000));
       }

@@ -37,9 +37,9 @@ export function captureLocalTestVariables(r,env) {
   requireThat(env.GITHUB_ACTIONS==='true'&&env.GITHUB_REPOSITORY===r.target.repository&&env.GITHUB_EVENT_NAME==='workflow_dispatch'&&env.GITHUB_REF===r.source.ref&&env.GITHUB_SHA===r.source.commit&&env.GITHUB_WORKFLOW_SHA===r.source.commit&&env.GITHUB_WORKFLOW_REF===`${r.target.repository}/${r.source.workflow}@${r.source.ref}`&&env.GITHUB_ACTOR_ID===r.source.actor_id&&env.GITHUB_RUN_ATTEMPT==='1'&&decimal(env.GITHUB_RUN_ID),'Snapshot runner/source/actor/attempt mismatch');
   return {schema:'wss-effective-test-variable-snapshot/v1',request:r,local:{repository:r.target.repository,commit:r.source.commit,workflow:r.source.workflow,run_id:env.GITHUB_RUN_ID,attempt:1},settings:normalizeEffectiveTestVariables(env)};
 }
-export function matchingSnapshotRuns(g,r) {
+export function matchingSnapshotRuns(g,r,since='') {
   validateSnapshotRequest(r);
-  const runs=g.pages(`repos/${r.target.repository}/actions/workflows/test-variable-snapshot.yml/runs?event=workflow_dispatch&branch=${r.channel}`,'workflow_runs').filter(x=>x.display_title===snapshotTitle(r));
+  const runs=g.pages(`repos/${r.target.repository}/actions/workflows/test-variable-snapshot.yml/runs?event=workflow_dispatch&branch=${r.channel}${since?'&'+since:''}`,'workflow_runs').filter(x=>x.display_title===snapshotTitle(r));
   requireThat(runs.length<=1,'Duplicate snapshot dispatch; inspect without retry');
   return runs;
 }
@@ -62,8 +62,8 @@ export function verifySnapshotSource(g,r) {
     requireThat(tooling.type==='tree'&&tooling.mode==='040000'&&tooling.sha===r.source.tooling_tree,'Snapshot executable tooling source changed');
   }
 }
-export function collectLocalTestVariables(g,r) {
-  const runs=matchingSnapshotRuns(g,r);
+export function collectLocalTestVariables(g,r,since) {
+  const runs=matchingSnapshotRuns(g,r,since);
   requireThat(runs.length===1,'Missing snapshot run; do not redispatch an uncertain request');
   const run=verifySnapshotRun(g,r,g.run(r.target.repository,String(runs[0].id)));
   requireThat(run.status==='completed'&&run.conclusion==='success','Snapshot run not successful');
@@ -81,10 +81,10 @@ export function collectLocalTestVariables(g,r) {
 }
 // Call only with a separately authenticated durable write-ahead intent. An existing
 // intent means dispatch may already have happened: correlate, NEVER automatically retry.
-export function dispatchSnapshotOnce(g,r,{newIntent,authenticatedIntent,dispatch}) {
+export function dispatchSnapshotOnce(g,r,{newIntent,authenticatedIntent,dispatch,since}) {
   validateSnapshotRequest(r);
   requireThat(same(authenticatedIntent,r),'Dispatch requires the independently loaded durable intent');
-  const matches=matchingSnapshotRuns(g,r);
+  const matches=matchingSnapshotRuns(g,r,since);
   if(matches.length){verifySnapshotRun(g,r,g.run(r.target.repository,String(matches[0].id)));return {dispatched:false,run_id:String(matches[0].id)};}
   requireThat(newIntent===true,'Dispatch outcome uncertain; inspect existing intent without retry');
   requireThat(g.head(r.target.repository,r.channel)===r.source.commit,'Snapshot dispatch ref moved');
