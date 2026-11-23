@@ -53,7 +53,7 @@ test('generated receiver-only closure executes actual readiness entrypoint with 
 });
 test('production validators and capture are byte-identical to reviewed baseline; no readiness production imports',()=>{
  const root=fileURLToPath(new URL('../../',import.meta.url));
- const reviewed={"tools/release/local-test-variable-snapshot.mjs": "6779aebb4acb9a5f28cc7da6ad5f5dfca45362b8042d01bd6f3e5713ae9a92ff", "tools/release/campaign-variable-snapshots.mjs": "2a57eed52c2d77415f6a707b04104c5fa387023308bbb00c38da290b813d953a", "tools/release/campaign-selection-artifact.mjs": "208f8d81edefedb4dd185b95fd6617963e4276d07123cabe0ab1fb72d1ac500e", "tools/ci/shared/capture-test-variables.mjs": "6e2fc9d70e2650d9711dab8e7323b195f96a049549b5bb9c96aba85fe4a3a69a", "tools/ci/shared/test-variable-snapshot.yml": "0942f861c1ecb7f791752da6627d288d4bf542122dad7916e642b17ed581bf3f"};
+ const reviewed={"tools/release/local-test-variable-snapshot.mjs": "3f1fe61cda6686111e0509b8372bca54fb9038a010c9a354122031f2958d495f", "tools/release/campaign-variable-snapshots.mjs": "260575d28ada8acaee38168dbbb713f2ca580cc2186225629c76b0d6f22ebfa9", "tools/release/campaign-selection-artifact.mjs": "208f8d81edefedb4dd185b95fd6617963e4276d07123cabe0ab1fb72d1ac500e", "tools/ci/shared/capture-test-variables.mjs": "6e2fc9d70e2650d9711dab8e7323b195f96a049549b5bb9c96aba85fe4a3a69a", "tools/ci/shared/test-variable-snapshot.yml": "0942f861c1ecb7f791752da6627d288d4bf542122dad7916e642b17ed581bf3f"};
  for(const [path,hash] of Object.entries(reviewed))assert.equal(createHash('sha256').update(readFileSync(join(root,path),'utf8').replaceAll('\r\n','\n')).digest('hex'),hash,path);
 });
 

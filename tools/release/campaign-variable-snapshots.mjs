@@ -6,8 +6,8 @@ import {downloadVerifiedJsonArtifact} from './verified-json-artifact.mjs';
 import {CORE,canonical,requireThat} from './verify.mjs';
 import {testSelectionPolicy} from './campaign-test-selection.mjs';
 import {channelContext} from './channels.mjs';
-import {createdSince} from './controller-discovery.mjs';
-import {createSnapshotRequest,validateSnapshotRequest,dispatchSnapshotOnce,collectLocalTestVariables,matchingSnapshotRuns,verifySnapshotRun,verifySnapshotSource} from './local-test-variable-snapshot.mjs';
+import {createdSince,snapshotRunReader} from './controller-discovery.mjs';
+import {createSnapshotRequest,validateSnapshotRequest,dispatchSnapshotOnce,collectLocalTestVariables,matchingSnapshotRuns,verifySnapshotRun,verifySnapshotSource,SNAPSHOT_WORKFLOW} from './local-test-variable-snapshot.mjs';
 import {isEntrypoint} from './entrypoint.mjs';
 export const INTENT_NAME='wss-test-variable-intents';
 const same=(a,b)=>canonical(a)===canonical(b);
@@ -42,9 +42,9 @@ export function collectCampaignVariableSnapshots(g,c,channel,targets) {
   const since=createdSince(snapshotProducerAuthority(g,c,channel).created_at);
   const d=loadSnapshotIntents(g,c,channel,targets),result={},captures={};
   requireThat(process.env.WSS_TEST_SNAPSHOT_READ_TOKEN,'Existing Actions-read snapshot token required');
-  const reader=new GitHub(process.env.WSS_TEST_SNAPSHOT_READ_TOKEN);
+  const reader=snapshotRunReader(new GitHub(process.env.WSS_TEST_SNAPSHOT_READ_TOKEN),SNAPSHOT_WORKFLOW,since);
   reader.downloadVerified=(repository,artifact,files)=>downloadVerifiedJsonArtifact(reader,repository,artifact,files);
-  for(const r of d.requests){const capture=collectLocalTestVariables(reader,r,since);result[r.target.id]=capture.settings;captures[r.target.id]={request:r,...capture};}
+  for(const r of d.requests){const capture=collectLocalTestVariables(reader,r);result[r.target.id]=capture.settings;captures[r.target.id]={request:r,...capture};}
   return {schema:'wss-authenticated-effective-variables/v1',variables:result,captures};
 }
 // Trusted canonical first-attempt job only, not an arbitrary-client exactly-once
@@ -55,7 +55,8 @@ export function dispatchPreparedSnapshotIntents(writer,d,c,env,since) {
   requireThat(d.schema==='wss-test-variable-intents/v1'&&Array.isArray(d.requests)&&d.requests.length>0,'Invalid durable dispatch intents');
   for(const r of d.requests){validateSnapshotRequest(r);requireThat(r.producer.commit===c.commit&&r.producer.run_id===c.run_id,'Wrong dispatch producer');}
   writeFileSync(join(env.RUNNER_TEMP,`wss-snapshot-dispatch-${c.run_id}-a1.json`),canonical(d)+'\n',{flag:'wx'});
-  for(const r of d.requests)dispatchSnapshotOnce(writer,r,{newIntent:true,authenticatedIntent:r,since,dispatch:(repository,workflow,body)=>writer.command(['api','--method','POST',`repos/${repository}/actions/workflows/${workflow}/dispatches`,'-f',`ref=${body.ref}`,'-f',`inputs[request]=${body.inputs.request}`])});
+  const reader=snapshotRunReader(writer,SNAPSHOT_WORKFLOW,since);
+  for(const r of d.requests)dispatchSnapshotOnce(reader,r,{newIntent:true,authenticatedIntent:r,dispatch:(repository,workflow,body)=>writer.command(['api','--method','POST',`repos/${repository}/actions/workflows/${workflow}/dispatches`,'-f',`ref=${body.ref}`,'-f',`inputs[request]=${body.inputs.request}`])});
 }
 if(isEntrypoint(import.meta.url)) {
   const [operation,candidateFile,manifestFile,output]=process.argv.slice(2);
@@ -88,10 +89,10 @@ if(isEntrypoint(import.meta.url)) {
     if(operation==='wait') {
       const d=loadSnapshotIntents(g,c,m.channel,policy.targets);
       requireThat(process.env.WSS_TEST_SNAPSHOT_READ_TOKEN,'Existing Actions-read snapshot token required');
-      const reader=new GitHub(process.env.WSS_TEST_SNAPSHOT_READ_TOKEN);
+      const reader=snapshotRunReader(new GitHub(process.env.WSS_TEST_SNAPSHOT_READ_TOKEN),SNAPSHOT_WORKFLOW,since);
       let pending=d.requests;
       for(let attempt=0;attempt<60&&pending.length;attempt++) {
-        pending=pending.filter(r=>{const runs=matchingSnapshotRuns(reader,r,since);if(!runs.length)return true;const run=verifySnapshotRun(reader,r,reader.run(r.target.repository,String(runs[0].id)));if(run.status!=='completed')return true;requireThat(run.conclusion==='success','Snapshot workflow failed');return false;});
+        pending=pending.filter(r=>{const runs=matchingSnapshotRuns(reader,r);if(!runs.length)return true;const run=verifySnapshotRun(reader,r,reader.run(r.target.repository,String(runs[0].id)));if(run.status!=='completed')return true;requireThat(run.conclusion==='success','Snapshot workflow failed');return false;});
         if(pending.length)await new Promise(resolve=>setTimeout(resolve,15000));
       }
       requireThat(!pending.length,'Snapshot collection timed out; never redispatch');

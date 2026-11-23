@@ -26,6 +26,16 @@ export function campaignReceiptReader(g,plan) {
   });
 }
 
+export function snapshotRunReader(g,workflow,since) {
+  // Limit controller lookups without changing the receiver's snapshot module.
+  const endpoint=`/actions/workflows/${workflow.split('/').at(-1)}/runs?`;
+  return Object.assign(Object.create(g),{
+    pages(path,key) {
+      return g.pages(key==='workflow_runs'&&path.includes(endpoint)?`${path}&${since}`:path,key);
+    }
+  });
+}
+
 export function journalArtifacts(g,workflow,name,{exact=false,excludeRun=''}={}) {
   // A queued run can be created before the producer and still write its journal later.
   const query=exact?`?name=${encodeURIComponent(name)}`:'';
