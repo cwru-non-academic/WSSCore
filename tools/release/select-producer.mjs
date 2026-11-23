@@ -1,9 +1,9 @@
 import {appendFileSync} from 'node:fs';
-import {GitHub} from './github.mjs';
+import {EvidenceGitHub} from './github-read-retry.mjs';
 import {CORE,requireThat} from './verify.mjs';
 import {channelContext} from './channels.mjs';
 try {
-  const context=channelContext(process.env.WSS_CI_CHANNEL||'dev'),g=new GitHub(),head=g.head(CORE,context.branch);
+  const context=channelContext(process.env.WSS_CI_CHANNEL||'dev'),g=new EvidenceGitHub(),head=g.head(CORE,context.branch);
   let run=process.env.REQUESTED_RUN;
   if(!run) {
     const matches=g.pages(`repos/${CORE}/actions/workflows/artifacts.yml/runs?branch=${context.branch}&event=push&head_sha=${head}`,'workflow_runs');
