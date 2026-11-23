@@ -403,26 +403,30 @@ export function executeStage(g,reader,p,j) {
   requireThat(live.plan_id===j.plan_id,'Dev plan changed');
   const perFamily=p.policy.application_fanout==='per-integration';
   if(j.barrier && !perFamily) requireThat(same(j.barrier,live.barrier),'Integration barrier changed after journaling');
+  const failures=[];
   for(const a of j.actions) {
-    const t=p.policy.libraries.find(t=>t.id===a.target);
-    const inputs=a.phase==='normal-ci'?{}:{producer_run_id:p.candidate.run_id,barrier_run_id:j.run_id,barrier_attempt:String(j.attempt),...(context.channel==='main'?{channel:'main'}:{})};
-    requireThat(t && same(a.inputs,inputs) && same(a,action(p,t,{head_sha:a.head_sha,merged_at:a.merged_at},a.phase,inputs)),'Invalid staged action');
-    requireThat(a.phase==='normal-ci' || a.phase==='applications' && j.barrier && (perFamily?Boolean(j.barrier.integrations[t.id]):Object.keys(j.barrier.integrations).length===4),'Applications require their verified integration authorization');
-    if(perFamily && a.phase==='applications')assertFamilyBarrier(p,j.barrier,live.barrier,t,j.run_id,j.attempt);
-    requireThat(reader.head(CORE,context.branch)===p.candidate.commit,'Core moved before stage dispatch');
-    for(const lib of perFamily||a.phase==='normal-ci'?[t]:p.policy.libraries) requireThat(reader.head(lib.repository,context.branch)=== (j.barrier?.integrations[lib.id]?.head_sha || mergedLibrary(reader,p,lib)?.head_sha),'Integration moved before stage dispatch');
-    // Dev fanout is a registered default-branch coordinator, while the proof and
-    // candidate identify the exact committed dev library source.
-    if(a.phase==='normal-ci'||context.channel==='main'||!receiptBarrierRequired(p.policy))
-      requireThat(reader.head(a.repository,a.ref)===a.source_sha,'Dispatch source moved');
-    trusted(reader,p,t,a.head_sha);
-    const runs=existing(reader,p,a);
-    requireThat(runs.length<=1,'Ambiguous concurrent stage dispatch');
-    if(runs.length) {requireThat(runs[0].status!=='completed' || runs[0].conclusion==='success','Concurrent stage failed');continue;}
-    const args=['api','--method','POST',`repos/${a.repository}/actions/workflows/${a.workflow}/dispatches`,'-f',`ref=${a.ref}`];
-    for(const [k,v] of Object.entries(a.inputs)) args.push('-f',`inputs[${k}]=${v}`);
-    guardedWriter(g,reader,p,'stage',{ids:[t.id],purpose:'stage',...(context.channel==='main'?{executionSource:a.source_sha}:{})}).command(args);
+    try {
+      const t=p.policy.libraries.find(t=>t.id===a.target);
+      const inputs=a.phase==='normal-ci'?{}:{producer_run_id:p.candidate.run_id,barrier_run_id:j.run_id,barrier_attempt:String(j.attempt),...(context.channel==='main'?{channel:'main'}:{})};
+      requireThat(t && same(a.inputs,inputs) && same(a,action(p,t,{head_sha:a.head_sha,merged_at:a.merged_at},a.phase,inputs)),'Invalid staged action');
+      requireThat(a.phase==='normal-ci' || a.phase==='applications' && j.barrier && (perFamily?Boolean(j.barrier.integrations[t.id]):Object.keys(j.barrier.integrations).length===4),'Applications require their verified integration authorization');
+      if(perFamily && a.phase==='applications')assertFamilyBarrier(p,j.barrier,live.barrier,t,j.run_id,j.attempt);
+      requireThat(reader.head(CORE,context.branch)===p.candidate.commit,'Core moved before stage dispatch');
+      for(const lib of perFamily||a.phase==='normal-ci'?[t]:p.policy.libraries) requireThat(reader.head(lib.repository,context.branch)=== (j.barrier?.integrations[lib.id]?.head_sha || mergedLibrary(reader,p,lib)?.head_sha),'Integration moved before stage dispatch');
+      // Dev fanout is a registered default-branch coordinator, while the proof and
+      // candidate identify the exact committed dev library source.
+      if(a.phase==='normal-ci'||context.channel==='main'||!receiptBarrierRequired(p.policy))
+        requireThat(reader.head(a.repository,a.ref)===a.source_sha,'Dispatch source moved');
+      trusted(reader,p,t,a.head_sha);
+      const runs=existing(reader,p,a);
+      requireThat(runs.length<=1,'Ambiguous concurrent stage dispatch');
+      if(runs.length) {requireThat(runs[0].status!=='completed' || runs[0].conclusion==='success','Concurrent stage failed');continue;}
+      const args=['api','--method','POST',`repos/${a.repository}/actions/workflows/${a.workflow}/dispatches`,'-f',`ref=${a.ref}`];
+      for(const [k,v] of Object.entries(a.inputs)) args.push('-f',`inputs[${k}]=${v}`);
+      guardedWriter(g,reader,p,'stage',{ids:[t.id],purpose:'stage',...(context.channel==='main'?{executionSource:a.source_sha}:{})}).command(args);
+    } catch(error) {failures.push(`${a.target}: ${error.message}`);}
   }
+  if(failures.length)throw new Error(failures.join('\n'));
 }
 export function verifyBarrier(g,producerId,runId,attempt,repository,{channel='dev'}={}) {
   const context=channelContext(channel),p=loadStage(g,producerId,{channel});

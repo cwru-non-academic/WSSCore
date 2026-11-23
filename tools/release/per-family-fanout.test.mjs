@@ -156,6 +156,20 @@ test('another family becoming ready does not invalidate saved authorization for 
   const f=fixture(),j=prepareStage(f.g,f.p,'9',1);f.state.saved=j;f.state.merged.add('unity');
   executeStage(f.g,f.g,f.p,j);assert.equal(f.commands.length,1);assert.ok(f.commands[0].some(x=>x.includes(f.python.repository)));
 });
+test('an uncertain request leaves other independent stage requests eligible to send',()=>{
+  const f=fixture();
+  f.state.merged.add('unity');
+  const j=prepareStage(f.g,f.p,'9',1);
+  assert.equal(j.actions.length,2);
+  f.state.saved=j;
+  f.g.command=args=>{
+    f.commands.push(args);
+    if(f.commands.length===1)throw Error('First request outcome is uncertain');
+  };
+  assert.throws(()=>executeStage(f.g,f.g,f.p,j),/First request outcome is uncertain/);
+  assert.equal(f.commands.length,2);
+  assert.notEqual(f.commands[0][3],f.commands[1][3]);
+});
 for(const channel of ['dev','main'])for(const executed of [false,true])test(`${channel} stage finds its journal even if an earlier run was queued (execution source=${executed})`,()=>{
   const f=fixture(true,channel,executed),first=prepareStage(f.g,f.p,'9',1),pages=f.g.pages;
   const artifact=`wss-${channel}-stage-intents-${f.p.candidate.run_id}${executed?'':'-9-a1'}`;

@@ -100,19 +100,23 @@ export function execute(g,reader,p,j) {
   requireThat(canonical(JSON.parse(saved))===canonical(j),'Durable dispatch journal missing or different');
   requireThat(reader.head(CORE,p.channel)===p.candidate.commit,'Core moved after intent preparation');
   for(const a of j.actions) requireThat(reader.head(a.repository,a.ref)===a.head_sha,'Receiver moved after intent preparation');
+  const failures=[];
   for(const a of j.actions) {
-    const isReceipt=a.workflow==='.github/workflows/release-receipt.yml';
-    const runs=isReceipt?reader.pages(`repos/${a.repository}/actions/workflows/${basename(a.workflow)}/runs?branch=${a.ref}&event=workflow_dispatch&head_sha=${a.head_sha}`,'workflow_runs'):findNormalRuns(reader,p.manifest.targets.find(t=>t.id===a.target_id),a.head_sha,a.merged_at);
-    const existing=isReceipt?runs.filter(r=>r.display_title===`WSS acceptance ${a.target_id} ${p.plan_id}`):runs;
-    if(existing.length) {
-      requireThat(existing.length===1,'Ambiguous concurrent proof dispatch');
-      const latest=[...existing].sort((a,b)=>b.id-a.id)[0];
-      requireThat(latest.status!=='completed' || latest.conclusion==='success','Concurrent proof failed; inspect before recovery');
-      continue;
-    }
-    requireThat(reader.head(CORE,p.channel)===p.candidate.commit && reader.head(a.repository,a.ref)===a.head_sha,'Branch moved before proof dispatch');
-    const args=['api','--method','POST',`repos/${a.repository}/actions/workflows/${basename(a.workflow)}/dispatches`,'-f',`ref=${a.ref}`];
-    for(const [key,value] of Object.entries(a.inputs)) args.push('-f',`inputs[${key}]=${value}`);
-    guardedWriter(g,reader,p,'acceptance',{ids:[a.target_id],purpose:'proof',...(p.channel==='main'?{executionSource:a.head_sha}:{})}).command(args);
+    try {
+      const isReceipt=a.workflow==='.github/workflows/release-receipt.yml';
+      const runs=isReceipt?reader.pages(`repos/${a.repository}/actions/workflows/${basename(a.workflow)}/runs?branch=${a.ref}&event=workflow_dispatch&head_sha=${a.head_sha}`,'workflow_runs'):findNormalRuns(reader,p.manifest.targets.find(t=>t.id===a.target_id),a.head_sha,a.merged_at);
+      const existing=isReceipt?runs.filter(r=>r.display_title===`WSS acceptance ${a.target_id} ${p.plan_id}`):runs;
+      if(existing.length) {
+        requireThat(existing.length===1,'Ambiguous concurrent proof dispatch');
+        const latest=[...existing].sort((a,b)=>b.id-a.id)[0];
+        requireThat(latest.status!=='completed' || latest.conclusion==='success','Concurrent proof failed; inspect before recovery');
+        continue;
+      }
+      requireThat(reader.head(CORE,p.channel)===p.candidate.commit && reader.head(a.repository,a.ref)===a.head_sha,'Branch moved before proof dispatch');
+      const args=['api','--method','POST',`repos/${a.repository}/actions/workflows/${basename(a.workflow)}/dispatches`,'-f',`ref=${a.ref}`];
+      for(const [key,value] of Object.entries(a.inputs)) args.push('-f',`inputs[${key}]=${value}`);
+      guardedWriter(g,reader,p,'acceptance',{ids:[a.target_id],purpose:'proof',...(p.channel==='main'?{executionSource:a.head_sha}:{})}).command(args);
+    } catch(error) {failures.push(`${a.target_id}: ${error.message}`);}
   }
+  if(failures.length)throw new Error(failures.join('\n'));
 }
