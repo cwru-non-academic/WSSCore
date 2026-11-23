@@ -6,7 +6,7 @@ import {join,resolve,dirname,isAbsolute} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {GitHub,archive,loadPlan} from '../release/github.mjs';
-import {campaignReceiptRuns,createdSince,dispatchWasSkipped,journalArtifacts,needsCommittedCIDispatch} from '../release/controller-discovery.mjs';
+import {campaignReceiptRuns,createdSince,dispatchWasSkipped,journalArtifacts,needsCommittedCIDispatch,sameDispatchDestination} from '../release/controller-discovery.mjs';
 import {findNormalRuns} from '../release/normal-ci.mjs';
 import {CORE,CORE_JOBS,candidate,canonical,digest,jobs,requireThat} from '../release/verify.mjs';
 import {assertWorkflows,assertWorkflowPair,executedWorkflowAuthority,freezeWorkflows,guardedWriter} from './workflow-freeze.mjs';
@@ -395,7 +395,7 @@ export function prepareStage(g,p,run,attempt,{discoverDispatches=true,excludeCur
         catch(error) {priorError=error;}
       }
       if(priorError)throw priorError;
-      requireThat(!prior.some(x=>x.key===a.key),`Uncertain prior dispatch for ${a.target}; no automatic duplicate`);
+      requireThat(!prior.some(x=>x.key===a.key||(executedWorkflowAuthority(p.policy)&&sameDispatchDestination(x,a))),`Uncertain prior dispatch for ${a.target}; no automatic duplicate`);
       needed.push(a);
     } catch(error) {if(!independent)throw error;blocked.push({target:a.target,reason:error.message});}
   }
