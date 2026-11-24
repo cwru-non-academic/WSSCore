@@ -15,10 +15,14 @@ on:
         required: false
         type: string
       mode:
-        description: Verify is read-only; reconcile may dispatch proof and use the existing publication gate
+        description: Verify observes receipts, reconcile may dispatch proof, publish rechecks and releases an exact version
         type: choice
-        options: [verify, reconcile]
+        options: [verify, reconcile, publish]
         default: reconcile
+      release_tag:
+        description: Exact version tag for publish mode
+        required: false
+        type: string
 
 env:
   WSS_CI_CHANNEL: dev
@@ -58,6 +62,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Check the manual publication request
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish'
+        env:
+          REQUESTED_RUN: ${{ inputs.producer_run_id }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PUBLICATION_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
+        run: |
+          if [[ ! "$REQUESTED_RUN" =~ ^[1-9][0-9]*$ || "$PUBLICATION_ENABLED" != 'true' ]]; then
+            echo 'Publication requires an exact producer run and an enabled channel switch.' >&2
+            exit 1
+          fi
+          node --input-type=module -e "import { versionedReleaseTag } from './tools/release/channels.mjs'; versionedReleaseTag(process.env.WSS_CI_CHANNEL, process.env.RELEASE_TAG);"
       - name: Create read-only cross-repository evidence token
         id: evidence-token
         uses: actions/create-github-app-token@v2
@@ -132,7 +148,7 @@ jobs:
     if: >-
       needs.reconcile.result == 'success' &&
       (needs.reconcile.outputs.receipts_ready == 'true' ||
-       (github.event_name == 'workflow_dispatch' && inputs.mode == 'verify'))
+       (github.event_name == 'workflow_dispatch' && (inputs.mode == 'verify' || inputs.mode == 'publish')))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -189,7 +205,7 @@ jobs:
     name: Publish exact accepted beta bytes only when explicitly enabled
     needs: [reconcile, verify]
     if: >-
-      true && ((github.event_name != 'workflow_dispatch' || inputs.mode == 'reconcile')) && github.run_attempt == 1 &&
+      true && github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' && github.run_attempt == 1 &&
       needs.reconcile.result == 'success' && needs.verify.result == 'success' &&
       vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true' &&
       vars.WSS_DEV_RELEASE_ENABLED == 'true'
@@ -226,9 +242,21 @@ jobs:
           permission-contents: read
           permission-actions: read
           permission-pull-requests: read
+      - name: Mint the WSS release App token for the Core tag claim
+        id: tag-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.WSS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WSS_GITHUB_APP_PRIVATE_KEY }}
+          owner: cwru-non-academic
+          repositories: WSSCore
+          permission-contents: write
       - name: Recollect all live proof and publish without rebuilding
         env:
           GH_TOKEN: ${{ github.token }}
           WSS_EVIDENCE_READ_TOKEN: ${{ steps.evidence-token.outputs.token }}
+          WSS_TAG_WRITE_TOKEN: ${{ steps.tag-token.outputs.token }}
           WSS_DEV_RELEASE_ENABLED: ${{ vars.WSS_DEV_RELEASE_ENABLED }}
-        run: node tools/release/cli.mjs publish '${{ needs.reconcile.outputs.producer_run_id }}' '${{ runner.temp }}/accepted'
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PRODUCER_RUN_ID: ${{ needs.reconcile.outputs.producer_run_id }}
+        run: node tools/release/cli.mjs publish "$PRODUCER_RUN_ID" '${{ runner.temp }}/accepted' "$RELEASE_TAG"

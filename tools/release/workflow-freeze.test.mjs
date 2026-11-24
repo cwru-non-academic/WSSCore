@@ -86,6 +86,7 @@ test('publication cannot omit admission evidence or bypass workflow drift',()=>{
 });
 test('adding snapshots does not bypass the real publisher tag-protection gate',()=>{
   const f=fixture(),writer=guardedWriter(f.g,f.g,f.p,'acceptance',{purpose:'publication'});
+  f.p.manifest.legacy_tag_guard={ruleset_id:null,policy_sha256:null};
   assert.throws(()=>publish(writer,f.p,{record:{},files:{}},'.',f.g),/unconfigured/);assert.equal(f.commands.length,0);
 });
 test('real proof dispatcher rejects a saved intent whose workflows changed after freeze',()=>{
