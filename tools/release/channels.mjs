@@ -28,6 +28,17 @@ export function releaseFingerprint(value,run,planId) {
   if(!/^[1-9][0-9]*$/.test(run)||!/^[a-f0-9]{64}$/.test(planId))throw Error('Fingerprint requires exact producer and frozen plan identities');
   return `${c.channel==='dev'?'dev-beta':'main-stable'}-${run}-${planId.slice(0,12)}`;
 }
+const releaseVersion = 'v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)';
+export function versionedReleaseTag(channel, tag) {
+  const c=channelContext(channel);
+  const suffix=c.kind==='beta'?'\\-beta\\.[1-9][0-9]*':'';
+  if(typeof tag!=='string'||tag!==tag.trim()||!new RegExp(`^${releaseVersion}${suffix}$`).test(tag))
+    throw Error(c.kind==='beta'?'Dev publication requires vMAJOR.MINOR.PATCH-beta.N':'Main publication requires vMAJOR.MINOR.PATCH');
+  return tag;
+}
+export function publicationTag(plan, version) {
+  return version===undefined?releaseFingerprint(plan.channel,plan.candidate.run_id,plan.plan_id):versionedReleaseTag(plan.channel,version);
+}
 // macOS temporary paths can name /var while Node canonicalizes the loaded
 // module to /private/var. Imported assertion sentinels are not filesystem paths.
 if(isEntrypoint(import.meta.url))console.log(JSON.stringify(channelContext(process.argv[2])));

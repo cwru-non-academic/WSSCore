@@ -39,7 +39,7 @@ test('main bootstrap exposes only read-only manual verification, never scheduled
       assert.ok(r.text.includes('- name: Prepare read-only reconciliation intents\n        if: false'));
       for(const name of ['Retain dispatch intent before any cross-repository request','Create receipt reconciliation Actions token','Reconcile existing merges with fresh normal CI and read-only receipts'])
         assert.ok(r.text.includes(`- name: ${name}\n        if: steps.reconciliation.outputs.actions != '0' && (false)`));
-      assert.match(r.text,/false && \(false\) && github.run_attempt == 1/);
+      assert.match(r.text,/false && github.repository == 'cwru-non-academic\/WSSCore' && github.ref == 'refs\/heads\/main' &&\n      github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' && github.run_attempt == 1/);
     }
   }
 });
@@ -53,7 +53,7 @@ test('activated main and dev render the same engines and keep publication behind
       assert.doesNotMatch(r.text,/node tools\/ci\/main-propagation.mjs/);
     }else{
       assert.ok(r.text.includes('node tools/release/cli.mjs publish'));
-      assert.ok(r.text.includes("vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true'"));assert.ok(r.text.includes("vars.WSS_DEV_RELEASE_ENABLED == 'true'"));
+      assert.ok(r.text.includes("vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true'"));assert.ok(r.text.includes(`vars.${publicationControls()[channel]} == 'true'`));
       assert.doesNotMatch(r.text,/WSS_STABLE_RELEASE_ENABLED|gh release create/);
       assert.ok(r.text.includes('ref: ${{ github.sha }}'),'Trusted-main event source is immutable, not a floating checkout');
       assert.ok(r.text.includes('WSS_EVIDENCE_READ_TOKEN:'));
@@ -81,9 +81,9 @@ function acceptanceJob(text,id){
 }
 function publicationCondition(job,values){
   const match=job.match(/^    if: >-\n((?:      .+\n)+)/m);assert.ok(match);
-  const expression=match[1].trim().replace(/\b(?:github\.event_name|github\.run_attempt|inputs\.mode|needs\.reconcile\.result|needs\.verify\.result|vars\.WSS_DEV_ACCEPTANCE_ENABLED|vars\.WSS_DEV_RELEASE_ENABLED)\b/g,key=>JSON.stringify(values[key]));
+  const expression=match[1].trim().replace(/\b(?:github\.event_name|github\.run_attempt|github\.repository|github\.ref|inputs\.mode|needs\.reconcile\.result|needs\.verify\.result|vars\.WSS_DEV_ACCEPTANCE_ENABLED|vars\.WSS_(?:DEV|MAIN)_RELEASE_ENABLED)\b/g,key=>JSON.stringify(values[key]));
   assert.doesNotMatch(expression,/github\.|inputs\.|needs\.|vars\./,'Unrecognized gate must not escape coverage');
-  assert.match(expression,/^[\s\w"'()=!&|.-]+$/);
+  assert.match(expression,/^[\s\w"'()=!&|.\/-]+$/);
   return Function(`"use strict";return (${expression});`)();
 }
 test('acceptance verification is a separate read-only job bound to the original producer',()=>{
@@ -93,7 +93,7 @@ test('acceptance verification is a separate read-only job bound to the original 
     assert.match(reconcile,/producer_run_id: \$\{\{ steps.producer.outputs.run_id \}\}/);
     assert.doesNotMatch(reconcile,/cli\.mjs verify|accepted\/acceptance\.json/);
     assert.match(verify,/needs: reconcile\n    if: >-\n      needs.reconcile.result == 'success' &&/);
-    assert.match(verify,/needs.reconcile.outputs.receipts_ready == 'true' \|\|\n       \(github.event_name == 'workflow_dispatch' && inputs.mode == 'verify'\)/);
+    assert.match(verify,/needs.reconcile.outputs.receipts_ready == 'true' \|\|\n       \(github.event_name == 'workflow_dispatch' && \(inputs.mode == 'verify' \|\| inputs.mode == 'publish'\)\)/);
     assert.match(verify,/permissions:\n      contents: read\n      actions: read/);
     assert.doesNotMatch(verify,/write|receipt-token|WSS_JOURNAL_READ_TOKEN|select-producer|REQUESTED_RUN|cli\.mjs (dispatch|prepare-dispatches|publish)/);
     assert.match(verify,/permission-contents: read/);assert.match(verify,/permission-actions: read/);assert.match(verify,/permission-pull-requests: read/);
@@ -110,13 +110,15 @@ test('acceptance verification is a separate read-only job bound to the original 
 test('actual generated publication expression rejects every check-only rerun and failed prerequisite',()=>{
   for(const enabled of [false,true])for(const channel of ['dev','main']){
     const job=acceptanceJob(renderChannelWorkflow('acceptance',channel,{activation:activation(enabled)}).text,'publish');
-    for(const event of ['workflow_dispatch','schedule','workflow_run'])for(const mode of ['verify','reconcile'])
+    for(const event of ['workflow_dispatch','schedule','workflow_run'])for(const mode of ['verify','reconcile','publish'])
+    for(const [repository,ref] of [['cwru-non-academic/WSSCore','refs/heads/main'],['cwru-non-academic/WSSCore','refs/heads/dev'],['other/WSSCore','refs/heads/main']])
     for(const acceptance of ['','false','true'])for(const release of ['','false','true'])for(const attempt of [1,2,3])
     for(const reconcile of ['success','failure','skipped','cancelled'])for(const verify of ['success','failure','skipped','cancelled']){
       const actual=publicationCondition(job,{'github.event_name':event,'inputs.mode':mode,'github.run_attempt':attempt,
-        'vars.WSS_DEV_ACCEPTANCE_ENABLED':acceptance,'vars.WSS_DEV_RELEASE_ENABLED':release,
+        'github.repository':repository,'github.ref':ref,
+        'vars.WSS_DEV_ACCEPTANCE_ENABLED':acceptance,[`vars.${publicationControls()[channel]}`]:release,
         'needs.reconcile.result':reconcile,'needs.verify.result':verify});
-      const expected=(channel==='dev'||enabled)&&(event!=='workflow_dispatch'||mode==='reconcile')&&attempt===1&&acceptance==='true'&&release==='true'&&reconcile==='success'&&verify==='success';
+      const expected=(channel==='dev'||enabled)&&repository==='cwru-non-academic/WSSCore'&&ref==='refs/heads/main'&&event==='workflow_dispatch'&&mode==='publish'&&attempt===1&&acceptance==='true'&&release==='true'&&reconcile==='success'&&verify==='success';
       assert.equal(actual,expected,JSON.stringify({channel,enabled,event,mode,acceptance,release,attempt,reconcile,verify}));
     }
   }

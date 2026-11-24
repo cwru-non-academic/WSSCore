@@ -9,9 +9,9 @@ import {EvidenceGitHub} from './github-read-retry.mjs';
 import {execute,journalName,prepare} from './dispatch.mjs';
 import {campaignReceiptReader} from './controller-discovery.mjs';
 import {CORE,digest,requireThat} from './verify.mjs';
-import {tagPolicy} from './policy.mjs';
+import {tagPolicy,tagCreationPolicy} from './policy.mjs';
 import {assertWorkflows,collectWithWorkflows,freezeWorkflows,guardedWriter} from '../ci/workflow-freeze.mjs';
-import {channelContext} from './channels.mjs';
+import {channelContext,versionedReleaseTag} from './channels.mjs';
 import {channelActivation,controllerContext,publicationControls} from '../ci/channel-controls.mjs';
 
 const [command,...args]=process.argv.slice(2);
@@ -21,9 +21,11 @@ const selected=p=>{requireThat(p.channel===channelContext(process.env.WSS_CI_CHA
 try {
   if(['prepare-dispatches','dispatch','verify','publish'].includes(command))controllerContext(process.env,command,CORE,activation);
   if(command==='inspect-tag-guard') {
-    requireThat(args.length===1 && /^[1-9][0-9]*$/.test(args[0]),'inspect-tag-guard requires a ruleset ID');
-    const policy=tagPolicy(g.get(`repos/${CORE}/rulesets/${args[0]}`));
-    console.log(JSON.stringify({ruleset_id:args[0],policy_sha256:digest(policy),policy},null,2));
+    const [rulesetId,publisherAppId]=args;
+    requireThat([1,2].includes(args.length)&&/^[1-9][0-9]*$/.test(rulesetId),'inspect-tag-guard requires a ruleset ID and optional publisher App ID');
+    const raw=g.get(`repos/${CORE}/rulesets/${rulesetId}`);
+    const policy=publisherAppId===undefined?tagPolicy(raw):tagCreationPolicy(raw,publisherAppId);
+    console.log(JSON.stringify({ruleset_id:rulesetId,policy_sha256:digest(policy),...(publisherAppId===undefined?{}:{publisher_app_id:publisherAppId}),policy},null,2));
   } else if(command==='prepare-test-selection') {
     requireThat(args.length===3,'prepare-test-selection requires candidate.json manifest.json output directory');
     const [candidateFile,manifestFile,destination]=args;
@@ -83,10 +85,12 @@ try {
     requireThat(j.run_id===process.env.GITHUB_RUN_ID && j.attempt===Number(process.env.GITHUB_RUN_ATTEMPT),'Intent is not from this workflow attempt');
     execute(g,reader,p,j);
   } else if(command==='verify' || command==='publish') {
-    const [run,destination]=args;
-    requireThat(args.length===2,'verify/publish requires producer run ID and output directory');
-    if(command==='publish') requireThat(process.env.WSS_EVIDENCE_READ_TOKEN,'Publication requires a separate read-only evidence token');
-    const evidence=command==='publish'?new GitHub(process.env.WSS_EVIDENCE_READ_TOKEN):new EvidenceGitHub();
+    const [run,destination,tag]=args;
+    const publishing=command==='publish';
+    requireThat(args.length===(publishing?3:2),'Expected producer run ID and output directory, plus the version tag for publication');
+    const version=publishing?versionedReleaseTag(process.env.WSS_CI_CHANNEL||'dev',tag):undefined;
+    if(publishing) requireThat(process.env.WSS_EVIDENCE_READ_TOKEN&&process.env.WSS_TAG_WRITE_TOKEN,'Publication requires separate evidence and tag-creation tokens');
+    const evidence=new EvidenceGitHub(publishing?process.env.WSS_EVIDENCE_READ_TOKEN:undefined);
     const p=selected(loadPlan(evidence,run)),reader=campaignReceiptReader(evidence,p);
     const accepted=collectWithWorkflows(reader,p,collect);
     mkdirSync(destination,{recursive:true});
@@ -94,7 +98,7 @@ try {
     if(command==='publish') {
       requireThat(process.env.GITHUB_REPOSITORY===CORE && process.env.GITHUB_REF==='refs/heads/main','Publisher runs only trusted default-branch workflow');
       assertWorkflows(reader,p,'acceptance');
-      const published=publish(guardedWriter(g,reader,p,'acceptance',{purpose:'publication',acceptedAdmission:accepted,acceptedHeads:Object.fromEntries(Object.entries(accepted.record.targets).map(([id,t])=>[id,t.merge.sha]))}),p,accepted,resolve(destination),reader);
+      const published=publish(guardedWriter(g,reader,p,'acceptance',{purpose:'publication',version,tagWriter:new GitHub(process.env.WSS_TAG_WRITE_TOKEN),acceptedAdmission:accepted,acceptedHeads:Object.fromEntries(Object.entries(accepted.record.targets).map(([id,t])=>[id,t.merge.sha]))}),p,accepted,resolve(destination),reader,version);
       assertWorkflows(reader,p,'acceptance');
       console.log(JSON.stringify(published));
     } else console.log(`All nine targets accepted plan ${p.plan_id}; no publication requested`);

@@ -1,3 +1,4 @@
+import {execFileSync} from 'node:child_process';
 import {GitHub} from './github.mjs';
 
 const retryDelays = [2_000, 8_000, 20_000];
@@ -13,8 +14,9 @@ export function retryGitHubRead(read, wait = sleep) {
     } catch (error) {
       // gh reports the HTTP status in stderr. Leave parsing, authorization,
       // missing evidence, and every other failure on their original path.
-      if (!/^gh: (?:HTTP 502|[\s\S]* \(HTTP 502\))[\t\r\n ]*$/.test(String(error?.stderr ?? ''))) throw error;
-      console.warn(`GitHub API read returned HTTP 502. Retrying in ${delay / 1000}s.`);
+      const status=/^gh: (?:HTTP (50[234])|[\s\S]* \(HTTP (50[234])\))[\t\r\n ]*$/.exec(String(error?.stderr ?? ''));
+      if(!status)throw error;
+      console.warn(`GitHub API read returned HTTP ${status[1]||status[2]}. Retrying in ${delay / 1000}s.`);
       wait(delay);
     }
   }
@@ -23,8 +25,9 @@ export function retryGitHubRead(read, wait = sleep) {
 
 export class EvidenceGitHub extends GitHub {
   get(path) {
-    // GitHub.get issues a GET. Downloads and the shared command runner keep
-    // their existing behavior, so dispatch and publication cannot be retried.
     return retryGitHubRead(() => super.get(path));
+  }
+  artifactBytes(repository,id,maxBytes) {
+    return retryGitHubRead(() => execFileSync('gh',['api',`repos/${repository}/actions/artifacts/${id}/zip`],{env:this.environment,maxBuffer:maxBytes}));
   }
 }

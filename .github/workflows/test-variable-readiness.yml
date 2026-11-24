@@ -1,0 +1,25 @@
+name: Local test variable protocol contracts
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/test-variable-readiness.yml'
+      - 'tools/release/local-test-variable-snapshot*'
+      - 'tools/release/campaign-variable-snapshots*'
+      - 'tools/release/verified-json-artifact*'
+permissions:
+  contents: read
+jobs:
+  contracts:
+    name: Local snapshot contracts (not hosted readiness)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test tools/release/local-test-variable-snapshot.test.mjs tools/release/campaign-variable-snapshots.test.mjs tools/release/verified-json-artifact.test.mjs
+      - run: echo 'Contract tests do not establish App or receiver deployment readiness. No snapshot workflow is dispatched.'

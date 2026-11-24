@@ -247,8 +247,13 @@
     }
   ],
   "excluded": [],
+  "version_tag_creation_guard": {
+    "ruleset_id": "27987974",
+    "policy_sha256": "113994c78d9c250ccf3e6a82106dc4b08d5ed41a6a2717c169d3c099655f0790",
+    "publisher_app_id": "4864404"
+  },
   "legacy_tag_guard": {
-    "ruleset_id": null,
-    "policy_sha256": null
+    "ruleset_id": "27987399",
+    "policy_sha256": "063234d31852cbbaf60e673716eb39a4464735409e6bcba496c0a23c7d58b7bc"
   }
 }

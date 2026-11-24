@@ -2,9 +2,9 @@ import {assertPairedTestSelection,validatePlanTestSelection} from '../release/ca
 // Core coordinator extension. Receiver-owned target profiles remain unchanged.
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {GitHub,loadPlan,refreshAdmission} from '../release/github.mjs';
+import {GitHub,loadPlan,refreshAdmission,claimPublicationTag} from '../release/github.mjs';
 import {candidate,canonical,CORE,CORE_JOBS,digest,jobs,requireThat} from '../release/verify.mjs';
-import {channelContext,releaseFingerprint} from '../release/channels.mjs';
+import {channelContext,publicationTag} from '../release/channels.mjs';
 import {isEntrypoint} from '../release/entrypoint.mjs';
 
 export const SNAPSHOT_POLICY='wss-workflow-snapshots/v1';
@@ -179,7 +179,7 @@ export function receiptAuthorization(g,p,id) {
 
 // Preserve the existing publisher/dispatchers. The only additional write client
 // checks run at their command boundary, using a separate read-only credential.
-export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,acceptedHeads,acceptedAdmission,initialAuthority}={}) {
+export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,acceptedHeads,acceptedAdmission,initialAuthority,version,tagWriter=writer}={}) {
   requireThat(['initial','proof','stage','publication'].includes(purpose),'Unknown guarded write purpose');
   const c=context(p,kind);
   if(c.channel==='main'&&purpose==='initial')requireThat(ids?.length===1,'Initial main mutation requires one exact family scope');
@@ -194,17 +194,18 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,
   }
   return new Proxy(writer,{get(target,key,receiver){
     if(key==='command')return args=>{
+      const claim=purpose==='publication'&&version!==undefined&&same(args,claimPublicationTag(p,version));
       const read=args[0]==='api'&&args.length===2&&/^repos\/cwru-non-academic\//.test(args[1])||
-        purpose==='publication'&&args.length===7&&args[0]==='release'&&args[1]==='download'&&args[3]==='--repo'&&args[4]===CORE&&args[5]==='--dir';
+        purpose==='publication'&&args.length===7&&args[0]==='release'&&args[1]==='download'&&args[2]===publicationTag(p,version)&&args[3]==='--repo'&&args[4]===CORE&&args[5]==='--dir';
       if(!read) {
-        if(purpose==='publication') {
+        if(purpose==='publication'&&!claim) {
           const at=name=>args.indexOf(name);
-          const flags=['--repo','--target',...(c.kind==='beta'?['--prerelease']:[]),'--title','--notes'];
-          requireThat(args[0]==='release'&&args[1]==='create'&&args[2]===releaseFingerprint(c.channel,p.candidate.run_id,p.plan_id)&&
+          const flags=['--repo','--target',...(version===undefined?[]:['--verify-tag']),...(c.kind==='beta'?['--prerelease']:[]),'--title','--notes'];
+          requireThat(args[0]==='release'&&args[1]==='create'&&args[2]===publicationTag(p,version)&&
             at('--repo')>2&&args[at('--repo')+1]===CORE&&at('--target')>2&&args[at('--target')+1]===p.candidate.commit&&
             flags.every(flag=>args.filter(a=>a===flag).length===1)&&
             args.filter(a=>a.startsWith('--')).every(a=>flags.includes(a)),'Unsupported guarded publication mutation');
-        } else {
+        } else if(purpose!=='publication') {
           requireThat(args[0]==='api'&&args[1]==='--method'&&args[2]==='POST'&&allowed.has(args[3]),'Unsupported guarded dispatch mutation');
           if(purpose==='initial') {
             requireThat(args.length===6&&args[4]==='--input','Initial handoff requires the verified request file');
@@ -234,14 +235,14 @@ export function guardedWriter(writer,reader,p,kind,{ids,purpose,executionSource,
         if(purpose==='publication') {
           requireThat(acceptedAdmission?.record&&acceptedAdmission?.admission,'Publication requires collected admission evidence');
           if(acceptedHeads)requireThat(same(acceptedHeads,Object.fromEntries(Object.entries(acceptedAdmission.record.targets).map(([id,t])=>[id,t.merge.sha]))),'Accepted publication heads differ from admission');
-          requireThat(same(refreshAdmission(reader,p,acceptedAdmission.admission,{publication:true}),acceptedAdmission.record),'Acceptance evidence changed at publication boundary');
+          requireThat(same(refreshAdmission(reader,p,acceptedAdmission.admission,{publication:true,version,claimed:version!==undefined&&!claim}),acceptedAdmission.record),'Acceptance evidence changed at publication boundary');
         } else if(c.channel==='main') {
           const target=kind==='stage'?p.policy.libraries.find(t=>t.id===ids[0]):p.manifest.targets.find(t=>t.id===ids[0]);
           const expected=purpose==='initial'?p.receivers[target.id].heads.main:executionSource;
           requireThat(reader.head(target.repository,'main')===expected,'Main execution source moved at mutation boundary');
         }
       }
-      return target.command(args);
+      return (claim?tagWriter:target).command(args);
     };
     const value=Reflect.get(target,key,receiver);
     return typeof value==='function'?value.bind(receiver):value;
