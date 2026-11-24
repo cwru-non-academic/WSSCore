@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {allClear,bytesDigest,canonical,CORE,CORE_JOBS,digest,plan,TARGETS} from './verify.mjs';
 import {collect,freeze,GitHub,publish} from './github.mjs';
-import {tagPolicy} from './policy.mjs';
+import {tagPolicy,tagCreationPolicy} from './policy.mjs';
 import {channelContext,releaseFingerprint} from './channels.mjs';
 
 const zipCache=new Map();
@@ -19,7 +19,7 @@ function candidateZip(candidate) {
 }
 const sha=n=>n.toString(16).padStart(40,'0');
 const successful=names=>names.map(name=>({name,status:'completed',conclusion:'success'}));
-function tagRule() {return{id:123,target:'tag',enforcement:'active',source_type:'Repository',source:CORE,conditions:{ref_name:{include:['refs/tags/v*'],exclude:[]}},bypass_actors:[],rules:[{type:'creation'},{type:'update'},{type:'deletion'}]};}
+function tagRule(path) {if(path?.endsWith('/124'))return {...tagRule(),id:124,bypass_actors:[{actor_id:77,actor_type:'Integration',bypass_mode:'always'}],rules:[{type:'creation'}]};return{id:123,target:'tag',enforcement:'active',source_type:'Repository',source:CORE,conditions:{ref_name:{include:['refs/tags/v*'],exclude:[]}},bypass_actors:[],rules:[{type:'update'},{type:'deletion'}],updated_at:'2026-11-24T12:00:00Z'};}
 function run(repo,workflow,n,head,event='workflow_dispatch') {
   return {id:n,repository:{full_name:repo},head_repository:{full_name:repo},path:workflow,head_sha:head,head_branch:'dev',event,status:'completed',conclusion:'success',run_attempt:1};
 }
@@ -27,6 +27,7 @@ function fixture(channel='dev') {
   const context=channelContext(channel);
   const manifest=JSON.parse(readFileSync(new URL(`./targets.${channel}.json`,import.meta.url)));
   manifest.legacy_tag_guard={ruleset_id:'123',policy_sha256:digest(tagPolicy(tagRule()))};
+  manifest.version_tag_creation_guard={ruleset_id:'124',publisher_app_id:'77',policy_sha256:digest(tagCreationPolicy(tagRule('/124'),'77'))};
   const candidate={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:bytesDigest(Buffer.from('zip'))};
   const body={schema:context.planSchema,channel,candidate,manifest,manifest_sha256:digest(manifest),target_snapshots:Object.fromEntries(manifest.targets.map(t=>[t.id,{head_sha:sha(2),trusted:Object.fromEntries(t.trusted_paths.map(p=>[p,sha(3)]))}]))};
   const p={...body,plan_id:digest(body)};
@@ -124,7 +125,7 @@ for(const [name,mutate] of Object.entries(cases)) test(`reject ${name}`,()=>{
 });
 test('freeze refuses unregistered receiver rather than dropping target',()=>{
   const {p}=fixture();let seen=0;
-  const g={head:()=>sha(1),object:()=>({sha:sha(2)}),get:path=>{if(path.includes('/rulesets/'))return tagRule();seen++;return{path:'.github/workflows/release-receipt.yml',state:'disabled_manually'};}};
+  const g={head:()=>sha(1),object:()=>({sha:sha(2)}),get:path=>{if(path.includes('/rulesets/'))return tagRule(path);seen++;return{path:'.github/workflows/release-receipt.yml',state:'disabled_manually'};}};
   assert.throws(()=>freeze(g,p.manifest,p.candidate),/unavailable/);assert.equal(seen,1);
 });
 test('pagination never silently truncates a target proof list',()=>{
@@ -132,7 +133,7 @@ test('pagination never silently truncates a target proof list',()=>{
 });
 test('publication never overwrites a tag without a matching complete release',()=>{
   const {p,e}=fixture();let mutations=0;
-  const g={get:()=>tagRule(),pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/dev-beta-1-${p.plan_id.slice(0,12)}`,object:{type:'commit',sha:p.candidate.commit}}]:[],command:()=>mutations++};
+  const g={get:tagRule,pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/dev-beta-1-${p.plan_id.slice(0,12)}`,object:{type:'commit',sha:p.candidate.commit}}]:[],command:()=>mutations++};
   assert.throws(()=>publish(g,p,{record:allClear(p,e),files:{}},'.'),/incomplete/);assert.equal(mutations,0);
 });
 
@@ -191,18 +192,18 @@ test('collector rejects a receipt selecting a different exact-head normal run',(
   assert.throws(()=>collect(g,f.p),/different from receipt/);
 });
 for(const channel of ['dev','main'])for(const corrupt of [false,true]) test(`existing ${channel} release ${corrupt?'rejects altered ZIP without a mutation':'replays as verified no-op without creating another release'}`,()=>{
-  const {p,e}=fixture(channel),tag=releaseFingerprint(channel,p.candidate.run_id,p.plan_id),record=allClear(p,e);
+  const {p,e}=fixture(channel),tag=channel==='dev'?'v1.0.0-beta.1':'v1.0.0',record=allClear(p,e);
   const files={[p.candidate.archive]:Buffer.from('zip'),'SHA256SUMS.txt':Buffer.from(`${p.candidate.sha256}  ${p.candidate.archive}\n`)};
-  const expected={...files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical({...record,tag,legacy_tag_guard:p.manifest.legacy_tag_guard})+'\n')};
+  const expected={...files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical({...record,tag,legacy_tag_guard:p.manifest.legacy_tag_guard,version_tag_creation_guard:p.manifest.version_tag_creation_guard})+'\n')};
   let mutations=0;
-  const g={get:()=>tagRule(),pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/${tag}`,object:{type:'commit',sha:p.candidate.commit}}]:[{tag_name:tag,prerelease:channel==='dev',draft:false,assets:Object.keys(expected).map(name=>({name}))}],command:args=>{
+  const g={get:tagRule,pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/${tag}`,object:{type:'commit',sha:p.candidate.commit}}]:[{tag_name:tag,prerelease:channel==='dev',draft:false,assets:Object.keys(expected).map(name=>({name}))}],command:args=>{
     if(args[0]==='release'&&args[1]==='download'){
       const directory=args[args.indexOf('--dir')+1];
       for(const [name,bytes]of Object.entries(expected))writeFileSync(join(directory,name),corrupt&&name===p.candidate.archive?Buffer.from('corrupt'):bytes);
     } else mutations++;
   }};
-  if(corrupt)assert.throws(()=>publish(g,p,{record,files},'.'),/bytes mismatch/);
-  else assert.deepEqual(publish(g,p,{record,files},'.'),{tag,state:'verified-existing'});
+  if(corrupt)assert.throws(()=>publish(g,p,{record,files},'.',g,tag),/bytes mismatch/);
+  else assert.deepEqual(publish(g,p,{record,files},'.',g,tag),{tag,state:'verified-existing'});
   assert.equal(mutations,0);
 });
 
@@ -225,7 +226,7 @@ test('verification mode does not ignore malformed tag protection configuration',
 
 for(const channel of ['dev','main'])test(`${channel} publisher recollects cross-repository proof with its separate reader`,()=>{
   const f=fixture(channel),reader=collectorFixture(f),get=reader.get;
-  reader.get=path=>path.includes('/rulesets/')?tagRule():get(path);
+  reader.get=path=>path.includes('/rulesets/')?tagRule(path):get(path);
   const accepted=collect(reader,f.p),writes=[];
   const writer={pages:path=>{
     assert.ok(path.startsWith(`repos/${CORE}/`),'Core publication token must not read downstream evidence');
@@ -306,7 +307,7 @@ import {freezeWorkflows,collectWithWorkflows,guardedWriter} from '../ci/workflow
 function boundaryFixture(channel,selected=false) {
  const f=selected?selectedFixture(channel):fixture(channel),g=selected?selectedCollector(f):collectorFixture(f),get=g.get,object=g.object,head=g.head;
  let freezing=true;
- g.get=path=>path.includes('/rulesets/')?tagRule():path===`repos/${CORE}/contents/${channelContext(channel).targetPolicy}?ref=${f.p.candidate.commit}`?{type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(f.p.manifest)).toString('base64')}:get(path);
+ g.get=path=>path.includes('/rulesets/')?tagRule(path):path===`repos/${CORE}/contents/${channelContext(channel).targetPolicy}?ref=${f.p.candidate.commit}`?{type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(f.p.manifest)).toString('base64')}:get(path);
  g.object=(repo,ref,path)=>path==='.github/workflows'?{type:'tree',sha:sha(777)}:object(repo,ref,path);
  g.head=(repo,branch)=>repo===CORE?head(repo,branch):branch!==channel?sha(500):freezing?sha(2):head(repo,branch);
  Object.assign(f.p,freezeWorkflows(g,f.p,'acceptance'));freezing=false;
@@ -358,11 +359,40 @@ for(const channel of ['dev','main'])for(const phase of ['workflow','metadata'])f
  const args=['release','create',releaseFingerprint(channel,f.p.candidate.run_id,f.p.plan_id),'--repo',CORE,'--target',f.p.candidate.commit,...(channel==='dev'?['--prerelease']:[]),'--title','fixture','--notes','synthetic'];
  assert.throws(()=>writer.command(args));fired();assert.equal(writes.length,0);
 });
-for(const channel of ['dev','main'])test(`publication admission ${channel} accepts merged heads different from frozen baselines`,()=>{
+for(const channel of ['dev','main'])test(`publication admission ${channel} preserves the exact version ref and release bytes`,()=>{
  const f=boundaryFixture(channel),accepted=collectWithWorkflows(f.g,f.p,collect),writes=[];
- const writer=guardedWriter({pages:()=>[],command:args=>writes.push(args)},f.g,f.p,'acceptance',{purpose:'publication',acceptedHeads:Object.fromEntries(Object.entries(accepted.record.targets).map(([id,t])=>[id,t.merge.sha])),acceptedAdmission:accepted});
+ const version=channel==='dev'?'v1.0.0-beta.1':'v1.0.0',refName=`refs/tags/${version}`;
+ const exactRef={ref:refName,object:{type:'commit',sha:f.p.candidate.commit}};
+ let ref=channel==='main'?exactRef:undefined,release,files;
+ const originalPages=f.g.pages;
+ f.g.pages=path=>path.includes('/git/matching-refs/')?(ref?[ref]:[]):path.endsWith('/releases')?(release?[release]:[]):originalPages(path);
+ const writer=guardedWriter({pages:f.g.pages,command:args=>{
+   if(args[0]==='api') {
+     writes.push(args);assert.equal(ref,undefined);assert.equal(args[5],`ref=${refName}`);assert.equal(args[7],`sha=${f.p.candidate.commit}`);
+     ref=exactRef;
+     return JSON.stringify(ref);
+   }
+   if(args[1]==='download') {
+     for(const [name,bytes] of files)writeFileSync(join(args[6],name),bytes);
+     return;
+   }
+   writes.push(args);assert.equal(args[2],version);assert.ok(args.includes('--verify-tag'));assert.equal(args.includes('--prerelease'),channel==='dev');
+   assert.deepEqual(ref,exactRef);
+   files=args.slice(args.indexOf('--notes')+2).map(path=>[path.split(/[\\/]/).at(-1),readFileSync(path)]);
+   release={tag_name:version,prerelease:channel==='dev',draft:false,assets:files.map(([name])=>({name}))};
+ }},f.g,f.p,'acceptance',{purpose:'publication',version,acceptedAdmission:accepted});
  const directory=mkdtempSync(join(tmpdir(),'final-admission-'));
- try{assert.equal(publish(writer,f.p,accepted,directory,f.g).state,'created');assert.equal(writes.length,1);}finally{rmSync(directory,{recursive:true,force:true});}
+ try{
+   assert.deepEqual(publish(writer,f.p,accepted,directory,f.g,version),{tag:version,state:'created'});
+   assert.equal(writes.length,channel==='dev'?2:1);
+   assert.deepEqual(publish(writer,f.p,accepted,directory,f.g,version),{tag:version,state:'verified-existing'});
+   assert.equal(writes.length,channel==='dev'?2:1);
+ }finally{rmSync(directory,{recursive:true,force:true});}
+});
+test('a version tag claimed at another commit blocks all beta mutations',()=>{
+ const {p,e}=fixture('dev'),tag='v1.0.0-beta.1';
+ const g={get:tagRule,pages:path=>path.includes('matching-refs')?[{ref:`refs/tags/${tag}`,object:{type:'commit',sha:sha(9)}}]:[],command:()=>assert.fail('unexpected write')};
+ assert.throws(()=>publish(g,p,{record:allClear(p,e),files:{}},'.',g,tag),/different commit/);
 });
 for(const channel of ['dev','main'])test(`verification ${channel} rejects receipt movement after its final policy read`,()=>{
  const f=boundaryFixture(channel),get=f.g.get;

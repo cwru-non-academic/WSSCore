@@ -1,7 +1,7 @@
 import {basename} from 'node:path';
 import {channelContext} from './channels.mjs';
 import {archive} from './github.mjs';
-import {campaignReceiptRuns,createdSince,dispatchWasSkipped,journalArtifacts,needsCommittedCIDispatch} from './controller-discovery.mjs';
+import {campaignReceiptRuns,createdSince,dispatchWasSkipped,journalArtifacts,needsCommittedCIDispatch,sameDispatchDestination} from './controller-discovery.mjs';
 import {findNormalRuns} from './normal-ci.mjs';
 import {bytesDigest,canonical,CORE,digest,plan,producer,requireThat} from './verify.mjs';
 import {assertWorkflows,executedWorkflowAuthority,guardedWriter} from '../ci/workflow-freeze.mjs';
@@ -51,45 +51,58 @@ export function prepare(g,p,run,attempt) {
   assertWorkflows(g,p,'acceptance',{live:false});
   const c=p.candidate,r=g.run(CORE,c.run_id),zip=archive(g,c);
   producer(p,{run:r,current_head:g.head(CORE,p.channel),jobs:g.jobs(CORE,r),artifact:zip.artifact,archive_sha256:bytesDigest(zip.files[c.archive])});
-  const since=createdSince(r.created_at),actions=[];
+  const since=createdSince(r.created_at),requested=[],blocked={};
   const pending=new Set(p.manifest.targets.map(t=>t.id));
-  let prior;
   function request(t,workflow,head,inputs,mergedAt) {
-    const a=action(p,t,workflow,head,inputs,mergedAt);
-    prior??=previousIntents(g,p,run);
-    requireThat(!prior.some(x=>x.key===a.key),`Uncertain prior dispatch for ${t.id}; no automatic retry without inspected recovery`);
-    actions.push(a);
+    requested.push(action(p,t,workflow,head,inputs,mergedAt));
   }
   const current=executedWorkflowAuthority(p.manifest);
   const libraries=p.manifest.targets.filter(t=>t.kind==='payload');
   const targets=current?[...libraries,...p.manifest.targets.filter(t=>t.kind==='gitlink')]:p.manifest.targets;
-  for(const t of targets) {
-    if(current&&t.kind==='gitlink'&&libraries.some(library=>pending.has(library.id)))continue;
+  function inspect(t) {
     assertWorkflows(g,p,'acceptance',{ids:[t.id]});
     const head=g.head(t.repository,t.branch);
-    if(head===p.target_snapshots[t.id].head_sha) continue;
+    if(head===p.target_snapshots[t.id].head_sha) return;
     const prs=g.pages(`repos/${t.repository}/commits/${head}/pulls`).filter(pr=>pr.merged_at && pr.merge_commit_sha===head && pr.base?.ref===t.branch && pr.base?.repo?.full_name===t.repository && pr.head?.repo?.full_name===t.repository);
-    if(current&&(prs.length===0||prs.length===1&&prs[0].user?.type!=='Bot'))continue;
+    if(current&&(prs.length===0||prs.length===1&&prs[0].user?.type!=='Bot'))return;
     requireThat(prs.length===1 && prs[0].user?.type==='Bot',`Current ${t.id} is not a unique bot dependency merge`);
     const normals=findNormalRuns(g,t,head,prs[0].merged_at);
     if(normals.length===0) {
       // The stage coordinator is the sole writer for integration normal CI.
       if(t.kind==='gitlink'&&(!current||needsCommittedCIDispatch(t.id))) request(t,t.workflow,head,{},prs[0].merged_at);
-      continue;
+      return;
     }
     requireThat(normals[0].status!=='completed' || normals[0].conclusion==='success',`Postmerge CI failed for ${t.id}; inspect recovery`);
-    if(normals[0].status!=='completed') continue;
+    if(normals[0].status!=='completed') return;
     const receipts=campaignReceiptRuns(g,p,t,since);
     requireThat(receipts.length<=1,`Ambiguous receipt runs for ${t.id}`);
     if(receipts.length) {
       const receipt=receipts[0];
       requireThat(receipt.status!=='completed' || receipt.conclusion==='success',`Receipt failed for ${t.id}; inspect recovery`);
       if(receipt.status==='completed')pending.delete(t.id);
-      continue;
+      return;
     }
     request(t,'.github/workflows/release-receipt.yml',head,{producer_run_id:c.run_id,plan_id:p.plan_id},prs[0].merged_at);
   }
-  return {intent:journal(p,run,attempt,actions),pending:[...pending]};
+  for(const t of targets) {
+    if(current&&t.kind==='gitlink'&&libraries.some(library=>pending.has(library.id)))continue;
+    try { inspect(t); }
+    catch(error) {
+      if(!current)throw error;
+      blocked[t.id]=error.message;
+    }
+  }
+  // A corrupt or missing journal may affect every request. A well-formed
+  // journal with an uncertain dispatch only blocks the matching target.
+  const prior=requested.length?previousIntents(g,p,run):[];
+  const actions=requested.filter(a=>{
+    if(!prior.some(intent=>intent.key===a.key||(current&&sameDispatchDestination(intent,a))))return true;
+    const reason=`Uncertain prior dispatch for ${a.target_id}; no automatic retry without inspected recovery`;
+    if(!current)throw new Error(reason);
+    blocked[a.target_id]=reason;
+    return false;
+  });
+  return {intent:journal(p,run,attempt,actions),pending:[...pending],blocked};
 }
 export function execute(g,reader,p,j) {
   plan(p);validateJournal(p,j);
@@ -99,10 +112,12 @@ export function execute(g,reader,p,j) {
   const saved=reader.download(CORE,j.run_id,journalName(p,j.run_id,j.attempt),['intent.json'])['intent.json'];
   requireThat(canonical(JSON.parse(saved))===canonical(j),'Durable dispatch journal missing or different');
   requireThat(reader.head(CORE,p.channel)===p.candidate.commit,'Core moved after intent preparation');
-  for(const a of j.actions) requireThat(reader.head(a.repository,a.ref)===a.head_sha,'Receiver moved after intent preparation');
+  const current=executedWorkflowAuthority(p.manifest);
+  if(!current)for(const a of j.actions) requireThat(reader.head(a.repository,a.ref)===a.head_sha,'Receiver moved after intent preparation');
   const failures=[];
   for(const a of j.actions) {
     try {
+      if(current)requireThat(reader.head(a.repository,a.ref)===a.head_sha,'Receiver moved after intent preparation');
       const isReceipt=a.workflow==='.github/workflows/release-receipt.yml';
       const runs=isReceipt?reader.pages(`repos/${a.repository}/actions/workflows/${basename(a.workflow)}/runs?branch=${a.ref}&event=workflow_dispatch&head_sha=${a.head_sha}`,'workflow_runs'):findNormalRuns(reader,p.manifest.targets.find(t=>t.id===a.target_id),a.head_sha,a.merged_at);
       const existing=isReceipt?runs.filter(r=>r.display_title===`WSS acceptance ${a.target_id} ${p.plan_id}`):runs;

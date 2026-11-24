@@ -2,5 +2,5 @@
   "schema": "wss-ci-publication-controls/v1",
   "acceptance": "WSS_DEV_ACCEPTANCE_ENABLED",
   "dev": "WSS_DEV_RELEASE_ENABLED",
-  "main": "WSS_DEV_RELEASE_ENABLED"
+  "main": "WSS_MAIN_RELEASE_ENABLED"
 }
