@@ -11,6 +11,9 @@ import {CAMPAIGN_TEST_POLICY,selectionFields,testSelectionPolicy,planTestSelecti
 const sha=n=>String(n).padStart(40,'0');
 function fixture() {
   const m=JSON.parse(readFileSync(new URL('./targets.dev.json',import.meta.url)));
+  // This verification-only fixture has no repository ruleset transport.
+  m.legacy_tag_guard={ruleset_id:null,policy_sha256:null};
+  delete m.version_tag_creation_guard;
   m.test_selection_policy={schema:CAMPAIGN_TEST_POLICY,targets:m.targets.map(t=>({id:t.id,repository:t.repository,default_test_repository:'cwru-non-academic/TestBundle',allowed_test_repositories:['cwru-non-academic/TestBundle']}))};
   const c={repository:CORE,commit:sha(1),run_id:'1',artifact_id:'2',archive:'WSS-Universal-ci.zip',sha256:'a'.repeat(64)};
   const g={head:()=>sha(3),object:()=>({sha:sha(4)}),get:()=>({path:'.github/workflows/release-receipt.yml',state:'active'})};
