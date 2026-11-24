@@ -71,11 +71,22 @@ test('synchronized consumer rejects code drift and a forged tooling lock',()=>{
   } finally {rmSync(root,{recursive:true,force:true});}
 });
 
-test('retained receipt owner imports the exact same Core module bytes as its distributed closure',()=>{
-  const manifest=JSON.parse(readFileSync(new URL('./sync-tooling.json',import.meta.url)));
-  const modules=Object.entries(manifest.files).filter(([path,entry])=>entry.origin==='core'&&path.endsWith('.mjs'));
+test('retained receipt owner uses exact bytes from its own pinned Core source',()=>{
+  const owner=JSON.parse(sourceBytes({origin:'integration',path:'.github/scripts/wss-ci.lock.json'}));
+  assert.equal(owner.repository,'cwru-non-academic/Python_WSS_Integration_Lib');
+  assert.equal(owner.source_repository,'cwru-non-academic/WSSCore');
+  assert.match(owner.source_commit,/^[a-f0-9]{40}$/);
+  assert.equal(owner.source_ref,`refs/heads/ci/tooling/${owner.source_commit}`);
+  const atOwnerPin=entry=>sourceBytes(entry,undefined,owner.source_commit);
+  const manifest=JSON.parse(atOwnerPin({origin:'core',path:'tools/ci/sync-tooling.json'}));
+  const modules=Object.entries(manifest.files).filter(([path,entry])=>entry.origin==='core'&&path.endsWith('.mjs')&&
+    (!entry.repositories||entry.repositories.includes('Python_WSS_Integration_Lib')));
   assert.ok(modules.length>0);
-  for(const [path,entry] of modules)assert.deepEqual(sourceBytes({origin:'integration',path}),sourceBytes(entry),`Immutable owner/Core helper drift: ${path}`);
+  for(const [path,entry] of modules){
+    const bytes=atOwnerPin(entry);
+    assert.deepEqual(owner.files[path],{origin:'core',source:entry.path,sha256:createHash('sha256').update(bytes).digest('hex')},`Receipt owner lock drift: ${path}`);
+    assert.deepEqual(sourceBytes({origin:'integration',path}),bytes,`Immutable owner/Core helper drift: ${path}`);
+  }
 });
 
 
