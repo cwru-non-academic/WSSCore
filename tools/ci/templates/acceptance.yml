@@ -69,8 +69,8 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
           PUBLICATION_ENABLED: ${{ vars.__WSS_PUBLICATION_VARIABLE__ }}
         run: |
-          if [[ ! "$REQUESTED_RUN" =~ ^[1-9][0-9]*$ || "$PUBLICATION_ENABLED" != 'true' ]]; then
-            echo 'Publication requires an exact producer run and an enabled channel switch.' >&2
+          if [[ "$GITHUB_REF" != 'refs/heads/main' || ! "$REQUESTED_RUN" =~ ^[1-9][0-9]*$ || "$PUBLICATION_ENABLED" != 'true' ]]; then
+            echo 'Publication requires the protected controller, an exact producer, and an enabled channel switch.' >&2
             exit 1
           fi
           node --input-type=module -e "import { versionedReleaseTag } from './tools/release/channels.mjs'; versionedReleaseTag(process.env.WSS_CI_CHANNEL, process.env.RELEASE_TAG);"
@@ -205,7 +205,8 @@ jobs:
     name: Publish exact accepted __WSS_KIND__ bytes only when explicitly enabled
     needs: [reconcile, verify]
     if: >-
-      __WSS_ENABLED__ && github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' && github.run_attempt == 1 &&
+      __WSS_ENABLED__ && github.repository == 'cwru-non-academic/WSSCore' && github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' && github.run_attempt == 1 &&
       needs.reconcile.result == 'success' && needs.verify.result == 'success' &&
       vars.WSS_DEV_ACCEPTANCE_ENABLED == 'true' &&
       vars.__WSS_PUBLICATION_VARIABLE__ == 'true'
