@@ -5,6 +5,7 @@ import {collectCampaignVariableSnapshots} from './campaign-variable-snapshots.mj
 import {appendFileSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {GitHub,archive,collect,freeze,loadPlan,publish} from './github.mjs';
+import {EvidenceGitHub} from './github-read-retry.mjs';
 import {execute,journalName,prepare} from './dispatch.mjs';
 import {campaignReceiptReader} from './controller-discovery.mjs';
 import {CORE,digest,requireThat} from './verify.mjs';
@@ -81,7 +82,7 @@ try {
     const [run,destination]=args;
     requireThat(args.length===2,'verify/publish requires producer run ID and output directory');
     if(command==='publish') requireThat(process.env.WSS_EVIDENCE_READ_TOKEN,'Publication requires a separate read-only evidence token');
-    const evidence=command==='publish'?new GitHub(process.env.WSS_EVIDENCE_READ_TOKEN):g;
+    const evidence=command==='publish'?new GitHub(process.env.WSS_EVIDENCE_READ_TOKEN):new EvidenceGitHub();
     const p=selected(loadPlan(evidence,run)),reader=campaignReceiptReader(evidence,p);
     const accepted=collectWithWorkflows(reader,p,collect);
     mkdirSync(destination,{recursive:true});
