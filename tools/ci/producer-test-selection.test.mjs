@@ -22,11 +22,34 @@ test('snapshot token uses existing Actions grant and durable intent precedes dis
   assert.ok(workflow.indexOf('name: wss-test-variable-intents')<workflow.indexOf('Dispatch local snapshots once'));
   assert.ok(start<workflow.indexOf('Prepare immutable local variable requests'));
 });
-test('legacy channel flow remains separate and selected campaigns require both plans',()=>{
-  assert.match(workflow,/Main or selected-test campaign requires both frozen acceptance and stage plans/);
-  assert.match(workflow,/node tools\/ci\/dev-propagation.mjs freeze/);
-  assert.match(cli,/Selected tests require paired freeze with the durable artifact/);
-  assert.match(workflow,/Campaign test policies differ/);
+test('both channels freeze and retain the paired plans before downstream writes',()=>{
+  const propagation=workflow.split(/^  (?=[\w-]+:\r?$)/m).find(job=>job.startsWith('propagate-universal:'));
+  assert.ok(propagation);
+  const [header,...steps]=propagation.split(/^      - /m);
+  assert.match(header,/github\.ref == 'refs\/heads\/dev' \|\| github\.ref == 'refs\/heads\/main'/);
+
+  const freezeCommand='node tools/release/cli.mjs freeze-campaign ';
+  const freeze=steps.findIndex(step=>step.includes(freezeCommand));
+  assert.equal(steps.filter(step=>step.includes(freezeCommand)).length,1);
+  assert.match(steps[freeze],/\$context\.targetPolicy "\$env:RUNNER_TEMP\/release-plan" "\$env:RUNNER_TEMP\/propagation-plan"/);
+  assert.doesNotMatch(steps[freeze],/^        if:/m);
+  assert.doesNotMatch(propagation,/^\s*node tools\/(?:ci\/dev-propagation|release\/cli)\.mjs freeze\s/m);
+  assert.match(propagation,/if\(canonical\(policy\)!==canonical\(stage\)\)throw\b/);
+  assert.match(cli,/requireThat\(!testSelectionPolicy\(m\),/);
+
+  const token=steps.findIndex(step=>step.includes('id: integration-token'));
+  const dispatch=steps.findIndex(step=>step.includes('node tools/ci/workflow-freeze.mjs dispatch-initial csharp "$env:RUNNER_TEMP/propagation-plan/plan.json"'));
+  assert.ok(token>=0&&token<dispatch);
+  for(const [name,directory] of [
+    ['${{ steps.channel.outputs.stage_artifact }}','propagation-plan'],
+    ['wss-propagation-plan','release-plan']
+  ]) {
+    const upload=steps.findIndex(step=>step.startsWith('uses: actions/upload-artifact@')&&
+      step.includes(`name: ${name}`)&&step.includes(`path: \${{ runner.temp }}/${directory}/plan.json`));
+    assert.ok(freeze<upload&&upload<token);
+    assert.match(steps[upload],/if-no-files-found: error/);
+    assert.doesNotMatch(steps[upload],/^        if:/m);
+  }
 });
 
 test('capture source race check is inside paired freeze and before plan files',()=>{
