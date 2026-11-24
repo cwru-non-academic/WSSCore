@@ -46,6 +46,18 @@ jobs:
           ref: ${{ steps.integration.outputs.commit }}
           path: .ci-origins/Python_WSS_Integration_Lib
           persist-credentials: false
+      - name: Fetch the Core source pinned by the receipt owner
+        shell: pwsh
+        run: |
+          $lock=Get-Content .ci-origins/Python_WSS_Integration_Lib/.github/scripts/wss-ci.lock.json -Raw | ConvertFrom-Json
+          if ($lock.source_repository -cne 'cwru-non-academic/WSSCore' -or $lock.source_commit -cnotmatch '^[a-f0-9]{40}$' -or
+              $lock.source_ref -cne "refs/heads/ci/tooling/$($lock.source_commit)") {
+            throw 'The receipt owner must pin an exact Core tooling ref.'
+          }
+          git fetch --no-tags --depth=1 origin $lock.source_ref
+          if ($LASTEXITCODE -ne 0 -or (git rev-parse FETCH_HEAD) -cne $lock.source_commit) {
+            throw 'The retained Core tooling ref does not match the receipt owner lock.'
+          }
       - name: Check reviewed executable guards and both channel policies
         env:
           GH_TOKEN: ${{ github.token }}
