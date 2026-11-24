@@ -3,6 +3,10 @@ import {CORE,requireThat} from './verify.mjs';
 const manualCommittedCI=new Set(['csharp','csharp-wrapper','csharp-cli','matlab','matlab-wrapper','matlab-cli']);
 export const needsCommittedCIDispatch=id=>manualCommittedCI.has(id);
 
+// The API resolves a branch ref at dispatch time, so a newer head does not
+// prove that an earlier request for that same destination was unissued.
+export const sameDispatchDestination=(a,b)=>a.repository===b.repository&&a.workflow===b.workflow&&a.ref===b.ref;
+
 export function createdSince(createdAt) {
   requireThat(typeof createdAt==='string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(createdAt) && Number.isFinite(Date.parse(createdAt)),'Missing canonical producer creation time');
   return `created=${encodeURIComponent(`>=${createdAt}`)}`;

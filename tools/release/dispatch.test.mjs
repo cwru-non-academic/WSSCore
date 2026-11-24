@@ -26,7 +26,7 @@ function fixture({normal=[],receipts=[],prior=[],expired=false,moved=false,targe
     artifact:()=>({id:2,name:'universal-release-assets',expired:false,workflow_run:{id:1,head_sha:sha(1)}}),
     download:(repo,run,name)=>name==='universal-release-assets'?{'WSS-Universal-ci.zip':Buffer.from('zip'),'SHA256SUMS.txt':Buffer.from(`${candidate.sha256}  WSS-Universal-ci.zip\n`)}:{'intent.json':Buffer.from(JSON.stringify(old))},
     pages:path=>{
-      if(path===`repos/${CORE}/actions/artifacts`)return prior.length?[{name:journalName(p,'90',1),expired,workflow_run:{id:90,head_sha:sha(1)}}]:[];
+      if(path===`repos/${CORE}/actions/artifacts`||path.startsWith(`repos/${CORE}/actions/artifacts?name=`))return prior.length?[{name:journalName(p,'90',1),expired,workflow_run:{id:90,head_sha:sha(1)}}]:[];
       if(path.includes('/commits/'))return[{merged_at:'2026-10-29T00:00:00Z',merge_commit_sha:sha(10),base:{ref:'dev',repo:{full_name:t.repository}},head:{repo:{full_name:t.repository}},user:{type:'Bot'}}];
       if(path.includes('/release-receipt.yml/')) {
         assert.ok(path.endsWith('&created=%3E%3D2026-10-28T23%3A00%3A00Z'));
@@ -139,6 +139,47 @@ test('app-only branch movement cannot hold up library receipt dispatch',()=>{
   assert.equal(intent.actions[0].target_id,'csharp-wrapper');
   assert.equal(intent.actions[0].workflow,'.github/workflows/release-receipt.yml');
   assert.equal(pending.length,9);
+});
+
+for(const blockedBy of ['failed CI','uncertain dispatch','uncertain dispatch before branch moved'])test(`a library with ${blockedBy} does not block an independent receipt`,()=>{
+  const targetId='csharp-wrapper';
+  const options={targetId,executed:true,normal:[{id:10,status:'completed',conclusion:blockedBy==='failed CI'?'failure':'success'}]};
+  const seed=fixture(options);
+  const receiptWorkflow='.github/workflows/release-receipt.yml';
+  const inputs={producer_run_id:'1',plan_id:seed.p.plan_id};
+  const priorHead=blockedBy==='uncertain dispatch before branch moved'?sha(9):sha(10);
+  const prior=blockedBy==='failed CI'?[]:[action(seed.p,seed.t,receiptWorkflow,priorHead,inputs)];
+  const f=fixture({...options,prior}),next=f.p.manifest.targets.find(t=>t.id==='unity-wrapper');
+  const head=f.g.head,pages=f.g.pages;
+  f.g.head=repo=>repo===next.repository?sha(10):head(repo);
+  f.g.pages=path=>{
+    if(!path.includes(`repos/${next.repository}/`))return pages(path);
+    if(path.includes('/commits/'))return [{merged_at:MERGED_AT,merge_commit_sha:sha(10),base:{ref:next.branch,repo:{full_name:next.repository}},head:{repo:{full_name:next.repository}},user:{type:'Bot'}}];
+    if(path.includes('/release-receipt.yml/'))return [];
+    return [normalRun(next,{id:11,status:'completed',conclusion:'success'})];
+  };
+  const {intent,pending,blocked}=prepare(f.g,f.p,'100',1);
+  assert.deepEqual(intent.actions,[action(f.p,next,receiptWorkflow,sha(10),inputs)]);
+  assert.deepEqual(Object.keys(blocked),[targetId]);
+  assert.match(blocked[targetId],blockedBy==='failed CI'?/Postmerge CI failed/:/Uncertain prior dispatch/);
+  assert.ok(pending.includes(targetId));
+  assert.equal(f.requests.length,0);
+});
+
+test('a moved library does not prevent dispatch of another ready library receipt',()=>{
+  const f=fixture({targetId:'csharp-wrapper',executed:true,moved:true});
+  const next=f.p.manifest.targets.find(t=>t.id==='unity-wrapper');
+  const workflow='.github/workflows/release-receipt.yml',inputs={producer_run_id:'1',plan_id:f.p.plan_id};
+  const intent=journal(f.p,'100',1,[action(f.p,f.t,workflow,sha(10),inputs),action(f.p,next,workflow,sha(10),inputs)]);
+  const reader={
+    get:f.g.get,
+    download:()=>({'intent.json':Buffer.from(JSON.stringify(intent))}),
+    head:repo=>repo===next.repository?sha(10):f.g.head(repo),
+    pages:()=>[]
+  };
+  assert.throws(()=>execute(f.g,reader,f.p,intent),/csharp-wrapper: Receiver moved/);
+  assert.equal(f.requests.length,1);
+  assert.equal(f.requests[0][3],`repos/${next.repository}/actions/workflows/release-receipt.yml/dispatches`);
 });
 
 test('acceptance reuses a successful push run and requests only its receipt',()=>{

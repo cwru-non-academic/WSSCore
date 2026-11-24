@@ -8,7 +8,7 @@ export function channelActivation(value) {
 }
 export function publicationControls(value=JSON.parse(readFileSync(new URL('./publication-controls.json',import.meta.url)))) {
   if(value?.schema!=='wss-ci-publication-controls/v1'||value.acceptance!=='WSS_DEV_ACCEPTANCE_ENABLED'||value.dev!=='WSS_DEV_RELEASE_ENABLED'||
-    !['WSS_DEV_RELEASE_ENABLED','WSS_MAIN_RELEASE_ENABLED'].includes(value.main)||Object.keys(value).sort().join(',')!=='acceptance,dev,main,schema')throw Error('Invalid Core publication controls');
+    value.main!=='WSS_MAIN_RELEASE_ENABLED'||Object.keys(value).sort().join(',')!=='acceptance,dev,main,schema')throw Error('Invalid Core publication controls');
   return Object.freeze({...value});
 }
 export function controllerContext(env,operation,coreRepository,activation={main:false},controls=publicationControls()) {
@@ -23,6 +23,10 @@ export function controllerContext(env,operation,coreRepository,activation={main:
     if(!['verify','stage-prepare'].includes(operation)&&activation.main!==true)throw Error('Main CI mutation is not activated');
   }
   if(['prepare-dispatches','dispatch','publish'].includes(operation)&&env[context.acceptanceVariable]!=='true')throw Error('Acceptance reconciliation is not enabled');
-  if(operation==='publish'&&env[context.publicationVariable]!=='true')throw Error('Publication must be explicitly enabled after reviewed deployment');
+  if(operation==='publish') {
+    if(env[context.publicationVariable]!=='true')throw Error('Publication must be explicitly enabled after reviewed deployment');
+    if(env.GITHUB_ACTIONS!=='true'||env.GITHUB_REPOSITORY!==coreRepository||env.GITHUB_REF!=='refs/heads/main'||env.GITHUB_WORKFLOW_REF!==expected||
+      !/^[a-f0-9]{40}$/.test(env.GITHUB_SHA||'')||env.GITHUB_WORKFLOW_SHA!==env.GITHUB_SHA||env.GITHUB_EVENT_NAME!=='workflow_dispatch'||env.GITHUB_RUN_ATTEMPT!=='1')throw Error('Publication requires the first attempt of its trusted manual workflow');
+  }
   return context;
 }

@@ -6,16 +6,16 @@ const gatewayError = () => Object.assign(new Error('gh api failed'), {
   stderr: 'gh: Server Error (HTTP 502)\n',
 });
 
-test('retries a GitHub 502 and returns the successful read', () => {
+test('retries temporary GitHub 502, 503 and 504 responses and returns the successful read', () => {
   const delays = [];
   const result = {jobs: [{id: 15}]};
   let attempts = 0;
   const response = retryGitHubRead(() => {
     attempts++;
     if (attempts === 1) throw gatewayError();
-    if (attempts === 2) throw Object.assign(new Error('gh api failed'), {stderr: Buffer.from('gh: HTTP 502\n')});
+    if (attempts === 2) throw Object.assign(new Error('gh api failed'), {stderr: Buffer.from('gh: HTTP 503\n')});
     if (attempts === 3) throw Object.assign(new Error('gh api failed'), {
-      stderr: 'gh: Gateway failed\nPlease retry (HTTP 502)\n',
+      stderr: 'gh: Gateway failed\nPlease retry (HTTP 504)\n',
     });
     return result;
   }, delay => delays.push(delay));

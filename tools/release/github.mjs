@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {allClear,bytesDigest,candidate,canonical,CORE,digest,manifest,plan,producer,requireThat} from './verify.mjs';
 import {checkTagGuard} from './policy.mjs';
 import {findNormalRuns,selectNormalRun} from './normal-ci.mjs';
-import {channelContext,releaseFingerprint} from './channels.mjs';
+import {channelContext,publicationTag} from './channels.mjs';
 
 // No shell expansion, caller-provided commands, implicit pagination or token output.
 export class GitHub {
@@ -142,12 +142,24 @@ export function discoverReceipt(g,p,t) {
     if(g.pages(`repos/${t.repository}/actions/runs/${emitter.id}/artifacts`,'artifacts').some(a=>a.name===name))matches.push({emitter,name});}
   requireThat(matches.length===1,`Missing or ambiguous actual acceptance receipt for ${t.id}`);return matches[0];
 }
-export function assertPublicationAbsent(g,p) {
-  const tag=releaseFingerprint(p.channel,p.candidate.run_id,p.plan_id);
-  requireThat(g.pages(`repos/${CORE}/git/matching-refs/tags/${tag}`).filter(t=>t.ref===`refs/tags/${tag}`).length===0&&
-    g.pages(`repos/${CORE}/releases`).filter(r=>r.tag_name===tag).length===0,'Exact publication tag/release appeared before create');
+function publicationState(g,tag) {
+  const refs=g.pages(`repos/${CORE}/git/matching-refs/tags/${tag}`).filter(t=>t.ref===`refs/tags/${tag}`);
+  const releases=g.pages(`repos/${CORE}/releases`).filter(r=>r.tag_name===tag);
+  requireThat(refs.length<=1&&releases.length<=1,'Ambiguous existing tag/release');
+  return {ref:refs[0],release:releases[0]};
 }
-export function refreshAdmission(g,p,captured,{publication=false}={}) {
+function exactPublicationRef(ref,tag,p) {
+  return ref?.ref===`refs/tags/${tag}`&&ref.object?.type==='commit'&&ref.object.sha===p.candidate.commit;
+}
+export function claimPublicationTag(p,version) {
+  const tag=publicationTag(p,version);
+  return ['api','--method','POST',`repos/${CORE}/git/refs`,'-f',`ref=refs/tags/${tag}`,'-f',`sha=${p.candidate.commit}`];
+}
+export function assertPublicationAbsent(g,p,version,claimed=false) {
+  const tag=publicationTag(p,version),{ref,release}=publicationState(g,tag);
+  requireThat(!release&&(claimed?exactPublicationRef(ref,tag,p):!ref),claimed?'Exact protected publication tag is missing or already has a release':'Exact publication tag/release appeared before create');
+}
+export function refreshAdmission(g,p,captured,{publication=false,version,claimed=false}={}) {
   requireThat(captured?.producer&&captured?.targets,'Publication requires collected admission evidence');
   const evidence=detachAdmission(captured),session=createAdmissionRefresh(g);
   for(const t of p.manifest.targets) {
@@ -165,40 +177,50 @@ export function refreshAdmission(g,p,captured,{publication=false}={}) {
     requireThat(String(artifact.id)===String(e.artifact.id)&&artifact.digest===e.artifact.digest,'Receipt artifact replaced since authentication');e.artifact=artifact;
   }
   evidence.producer=refreshProducerMetadata(g,p,evidence.producer,{session});
-  if(publication){checkTagGuard(g,p.manifest);assertPublicationAbsent(g,p);}
+  if(publication){checkTagGuard(g,p.manifest,{versioned:version!==undefined});assertPublicationAbsent(g,p,version,claimed);}
   session.finish();
   for(const t of p.manifest.targets)evidence.targets[t.id].current_head=g.head(t.repository,t.branch);
   evidence.producer.current_head=g.head(CORE,p.channel);
   return allClear(p,evidence);
 }
 
-export function publish(g,p,accepted,directory,reader=g) {
-  const legacy_tag_guard=checkTagGuard(reader,p.manifest);
-  const context=channelContext(p.channel),tag=releaseFingerprint(p.channel,p.candidate.run_id,p.plan_id);
-  const record={...accepted.record,tag,legacy_tag_guard};
+function verifyPublishedRelease(g,p,tag,prerelease,expected,{ref,release}) {
+  requireThat(exactPublicationRef(ref,tag,p)&&release?.prerelease===prerelease&&release.draft===false,'Existing tag/release is incomplete or mismatched; inspect before recovery');
+  requireThat(canonical(release.assets.map(a=>a.name).sort())===canonical(Object.keys(expected).sort()),'Existing release asset inventory mismatch');
+  const temp=mkdtempSync(join(tmpdir(),'wss-release-'));
+  try {
+    g.command(['release','download',tag,'--repo',CORE,'--dir',temp]);
+    for(const [name,bytes] of Object.entries(expected)) requireThat(bytesDigest(readFileSync(join(temp,name)))===bytesDigest(bytes),'Existing release bytes mismatch');
+  } finally {rmSync(temp,{recursive:true,force:true});}
+}
+
+export function publish(g,p,accepted,directory,reader=g,version) {
+  const legacy_tag_guard=checkTagGuard(reader,p.manifest,{versioned:version!==undefined});
+  const context=channelContext(p.channel),tag=publicationTag(p,version),prerelease=context.kind==='beta';
+  const record={...accepted.record,tag,legacy_tag_guard,...(version===undefined?{}:{version_tag_creation_guard:p.manifest.version_tag_creation_guard})};
   const expected={...accepted.files,'plan.json':Buffer.from(canonical(p)+'\n'),'acceptance.json':Buffer.from(canonical(record)+'\n')};
-  // Existing tag/release state is read first. An API error is not interpreted as absence.
-  const tags=g.pages(`repos/${CORE}/git/matching-refs/tags/${tag}`);
-  const exact=tags.filter(t=>t.ref===`refs/tags/${tag}`);
-  const releases=g.pages(`repos/${CORE}/releases`).filter(r=>r.tag_name===tag);
-  requireThat(exact.length<=1 && releases.length<=1,'Ambiguous existing tag/release');
-  if(exact.length || releases.length) {
-    requireThat(exact.length===1 && releases.length===1 && exact[0].object.type==='commit' && exact[0].object.sha===p.candidate.commit && releases[0].prerelease===(context.kind==='beta') && releases[0].draft===false,'Existing tag/release is incomplete or mismatched; inspect before recovery');
-    requireThat(canonical(releases[0].assets.map(a=>a.name).sort())===canonical(Object.keys(expected).sort()),'Existing release asset inventory mismatch');
-    const temp=mkdtempSync(join(tmpdir(),'wss-release-'));
-    try {
-      g.command(['release','download',tag,'--repo',CORE,'--dir',temp]);
-      for(const [name,bytes] of Object.entries(expected)) requireThat(bytesDigest(readFileSync(join(temp,name)))===bytesDigest(bytes),'Existing release bytes mismatch');
-    } finally {rmSync(temp,{recursive:true,force:true});}
+  // An API error is not interpreted as absence. A claimed version tag can
+  // resume after a failed upload as long as it still points at this candidate.
+  const state=publicationState(g,tag);
+  if(state.release||state.ref&&version===undefined) {
+    verifyPublishedRelease(g,p,tag,prerelease,expected,state);
     return {tag,state:'verified-existing'};
   }
-  // Re-collect live proof immediately before the only publication mutation.
+  if(state.ref)requireThat(exactPublicationRef(state.ref,tag,p),'Existing version tag points at a different commit');
+
   const fresh=collect(reader,p);
   requireThat(canonical(fresh.record)===canonical(accepted.record),'Acceptance evidence changed during publication');
   requireThat(canonical(Object.keys(fresh.files).sort())===canonical(Object.keys(accepted.files).sort())&&Object.entries(fresh.files).every(([name,bytes])=>Buffer.isBuffer(accepted.files[name])&&bytesDigest(bytes)===bytesDigest(accepted.files[name])),'Captured publication bytes changed');
-  checkTagGuard(reader,p.manifest);
+  checkTagGuard(reader,p.manifest,{versioned:version!==undefined});
   const paths=Object.entries(expected).map(([name,bytes])=>{const path=join(directory,name);writeFileSync(path,bytes);return path;});
-  g.command(['release','create',tag,'--repo',CORE,'--target',p.candidate.commit,...(context.kind==='beta'?['--prerelease']:[]),'--title',tag,
-    '--notes',`${context.channel} ${context.kind} accepted by all nine frozen targets. Candidate ${p.candidate.commit}; plan ${p.plan_id}. See acceptance.json for proof, exclusions and coverage limits.`,...paths]);
+  if(version!==undefined&&!state.ref) {
+    // Create Ref is atomic and cannot overwrite a competing tag. The ruleset
+    // prevents changing the ref between the claim and the verified release.
+    const ref=JSON.parse(g.command(claimPublicationTag(p,version)));
+    requireThat(exactPublicationRef(ref,tag,p),'GitHub did not claim the exact publication tag');
+  }
+  g.command(['release','create',tag,'--repo',CORE,'--target',p.candidate.commit,...(version===undefined?[]:['--verify-tag']),...(prerelease?['--prerelease']:[]),'--title',tag,
+    '--notes',`${context.channel} ${context.kind} accepted by all nine targets. Candidate ${p.candidate.commit}, producer ${p.candidate.run_id}, plan ${p.plan_id}. See acceptance.json for proof, exclusions and coverage limits.`,...paths]);
+  if(version!==undefined)verifyPublishedRelease(g,p,tag,prerelease,expected,publicationState(g,tag));
   return {tag,state:'created'};
 }
