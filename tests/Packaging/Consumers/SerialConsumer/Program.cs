@@ -39,14 +39,31 @@ if (assembly.GetName().Name != "WSS.Transport.Serial")
     throw new InvalidOperationException("Core+Serial artifact assembly was not loaded.");
 }
 
-var options = new SerialPortTransportOptions { PortName = "WssConsumerSmokePort" };
+var diagnosticPort = OperatingSystem.IsLinux() ? $"/dev/wss-ci-{Guid.NewGuid():N}" : "WssConsumerSmokePort";
+var options = new SerialPortTransportOptions { PortName = diagnosticPort };
 using (var transport = new SerialPortTransport(options))
 {
-    if (transport.IsConnected || options.PortName != "WssConsumerSmokePort" || options.AutoSelectPort ||
+    if (transport.IsConnected || options.PortName != diagnosticPort || options.AutoSelectPort ||
         options.Baud != 115200 || options.DataBits != 8 || options.Parity != Parity.None ||
         options.StopBits != StopBits.One || options.ReadTimeoutMs != 10)
     {
         throw new InvalidOperationException("Serial construction/state/options compatibility check failed.");
+    }
+
+    if (OperatingSystem.IsLinux())
+    {
+        if (File.Exists(diagnosticPort) || Directory.Exists(diagnosticPort))
+            throw new InvalidOperationException($"Expected a nonexistent diagnostic port: {diagnosticPort}");
+        try
+        {
+            await transport.ConnectAsync();
+            throw new InvalidOperationException($"Unexpectedly opened {diagnosticPort}");
+        }
+        catch (Exception error) when ((error is IOException or UnauthorizedAccessException) &&
+                                      error.Message.Contains(diagnosticPort, StringComparison.Ordinal))
+        {
+            Console.WriteLine("PASS: Linux Serial native open reached and rejected a nonexistent port.");
+        }
     }
 }
 
